@@ -33,7 +33,7 @@ function Install-CodexRtlPatch {
             }
         } catch {
             $skippedCodexShortcuts += $shortcut
-            Write-Warn "Codex RTL shortcut creation skipped for $($shortcut.Path): $($_.Exception.Message)"
+            Write-Warn "Codex Plus shortcut creation skipped for $($shortcut.Path): $($_.Exception.Message)"
         }
     }
 
@@ -43,7 +43,7 @@ function Install-CodexRtlPatch {
             $createdOrRefreshedCount++
         }
     } catch {
-        Write-Warn "Codex RTL Start Menu shortcut creation skipped for $(Get-CodexRtlShortcutPath): $($_.Exception.Message)"
+        Write-Warn "Codex Plus Start Menu shortcut creation skipped for $(Get-CodexRtlShortcutPath): $($_.Exception.Message)"
     }
 
     $state = New-CodexRtlState `
@@ -56,10 +56,10 @@ function Install-CodexRtlPatch {
     Start-CodexForRtl -Inspection $installInfo -Port $port -AllowRestart | Out-Null
     Invoke-CodexRtlInjection -Port $port | Out-Null
 
-    Write-Host "Codex RTL launcher installed." -ForegroundColor Green
-    Write-Host "Created or refreshed $createdOrRefreshedCount Codex RTL shortcut(s)." -ForegroundColor Green
+    Write-Host "Codex Plus launcher installed." -ForegroundColor Green
+    Write-Host "Created or refreshed $createdOrRefreshedCount Codex Plus shortcut(s)." -ForegroundColor Green
     Write-Host "Skipped $($skippedCodexShortcuts.Count) candidate location(s)." -ForegroundColor Green
-    Write-Host "Launch Codex using a Codex RTL shortcut." -ForegroundColor Green
+    Write-Host "Launch Codex using a Codex Plus shortcut." -ForegroundColor Green
 }
 
 function Restore-CodexRtlPatch {
@@ -103,7 +103,7 @@ function Restore-CodexRtlPatch {
         }
     }
 
-    $launcherScriptPath = if ($state -and $state.LauncherScriptPath) { $state.LauncherScriptPath } else { Get-CodexRtlLauncherScriptPath }
+    $launcherScriptPath = if ($state -and $state.LauncherScriptPath) { $state.LauncherScriptPath } else { Get-CodexPlusLauncherScriptPath }
     if ($launcherScriptPath -and (Test-Path -LiteralPath $launcherScriptPath)) {
         Remove-Item -LiteralPath $launcherScriptPath -Force
     }
@@ -115,14 +115,14 @@ function Restore-CodexRtlPatch {
 
     if ($patchedRunningProcess -and $restoreAppExe) {
         Start-CodexNormally -AppExe $restoreAppExe
-        Write-Host "Codex RTL runtime removed." -ForegroundColor Yellow
+        Write-Host "Codex Plus runtime removed." -ForegroundColor Yellow
         Write-Host "Restored $($restored.Count) shortcut backup(s)." -ForegroundColor Yellow
-        Write-Host "Removed $removedOwnedShortcutCount owned Codex RTL shortcut(s)." -ForegroundColor Yellow
+        Write-Host "Removed $removedOwnedShortcutCount owned Codex Plus shortcut(s)." -ForegroundColor Yellow
         Write-Host "Restarted Codex in normal mode." -ForegroundColor Yellow
     } else {
-        Write-Host "Codex RTL runtime removed." -ForegroundColor Yellow
+        Write-Host "Codex Plus runtime removed." -ForegroundColor Yellow
         Write-Host "Restored $($restored.Count) shortcut backup(s)." -ForegroundColor Yellow
-        Write-Host "Removed $removedOwnedShortcutCount owned Codex RTL shortcut(s)." -ForegroundColor Yellow
+        Write-Host "Removed $removedOwnedShortcutCount owned Codex Plus shortcut(s)." -ForegroundColor Yellow
         Write-Host "Restart Codex normally if it is still open." -ForegroundColor Yellow
     }
 }

@@ -37,13 +37,13 @@ function Read-CodexRtlState {
             InstallLocation = $state.InstallLocation
             AppExe = $state.AppExe
             RuntimeRoot = if ($state.RuntimeRoot) { $state.RuntimeRoot } else { Get-CodexRtlRuntimeRoot }
-            LauncherScriptPath = if ($state.LauncherScriptPath) { $state.LauncherScriptPath } else { Get-CodexRtlLauncherScriptPath }
+            LauncherScriptPath = if ($state.LauncherScriptPath) { $state.LauncherScriptPath } else { Get-CodexPlusLauncherScriptPath }
             ShortcutBackups = @($state.ShortcutBackups)
             OwnedArtifacts = @($ownedArtifacts)
             UpdatedAt = $state.UpdatedAt
         }
     } catch {
-        Write-Warn "Codex RTL state is unreadable and will be replaced: $($_.Exception.Message)"
+        Write-Warn "Codex Plus state is unreadable and will be replaced: $($_.Exception.Message)"
         return $null
     }
 }
@@ -78,7 +78,7 @@ function New-CodexRtlState {
         InstallLocation = $InstallInfo.InstallLocation
         AppExe = $InstallInfo.AppExe
         RuntimeRoot = Get-CodexRtlRuntimeRoot
-        LauncherScriptPath = Get-CodexRtlLauncherScriptPath
+        LauncherScriptPath = Get-CodexPlusLauncherScriptPath
         ShortcutBackups = @($ShortcutBackups)
         OwnedArtifacts = @($allOwnedArtifacts)
         UpdatedAt = [DateTimeOffset]::Now.ToString('o')

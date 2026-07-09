@@ -1,5 +1,5 @@
 function Get-CodexRtlShortcutPath {
-    Join-Path $env:APPDATA 'Microsoft\Windows\Start Menu\Programs\Codex RTL.lnk'
+    Join-Path $env:APPDATA 'Microsoft\Windows\Start Menu\Programs\Codex Plus.lnk'
 }
 
 function Get-CodexShortcutSearchRoots {
@@ -80,7 +80,7 @@ function Get-CodexSiblingRtlShortcutPath {
     param([Parameter(Mandatory)][string]$ShortcutPath)
 
     $shortcutDir = Split-Path -Parent $ShortcutPath
-    Join-Path $shortcutDir 'Codex RTL.lnk'
+    Join-Path $shortcutDir 'Codex Plus.lnk'
 }
 
 function Get-CodexIconLocation {
@@ -99,7 +99,7 @@ function Get-CodexIconLocation {
 function New-CodexLauncherShortcutSpec {
     param($InstallInfo = $null)
 
-    $launcherScript = Get-CodexRtlLauncherScriptPath
+    $launcherScript = Get-CodexPlusLauncherScriptPath
     [pscustomobject]@{
         TargetPath = "$env:SystemRoot\System32\wscript.exe"
         Arguments = "`"$launcherScript`""
@@ -134,7 +134,7 @@ function Test-CodexRtlOwnedShortcut {
     try {
         $details = Get-ShortcutDetails -Path $ShortcutPath
         return ($details.TargetPath -like '*\wscript.exe' -and
-            $details.Arguments -like '*launch-codex-rtl.vbs*')
+            $details.Arguments -like '*launch-codex-plus.vbs*')
     } catch {
         return $false
     }

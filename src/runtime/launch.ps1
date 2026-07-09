@@ -235,7 +235,7 @@ function Invoke-CodexRtlInjection {
         try {
             Invoke-CodexRtlInjectionForTarget -Target $target -Payload $payload
         } catch {
-            Write-Warn "Codex RTL injection failed for target '$($target.title)': $($_.Exception.Message)"
+            Write-Warn "Codex Plus injection failed for target '$($target.title)': $($_.Exception.Message)"
         }
     }
     return $true

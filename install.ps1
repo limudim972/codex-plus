@@ -10,7 +10,12 @@
 #   dc:6e:f8:65:eb:3c:00:46:76:98:3b:35:9c:77:1e:ba:31:70:4b:5f:fc:c2:b2:3e:5f:4a:d3:46:44:84:7b:1f
 $ExpectedPubKey = 'eyJNb2R1bHVzIjoiMmI1bHhCYVl5T3Z6ZGdDaHFMTEhGbkFCbGIreXhvRFo3ODRJa0FjQjNOSDFLb2IzQW9JM2xUeS9RaHNHd1lrMDJodnZrejFVb1B0Q3RMalZwZ2EraXRiR3lJMDRZUXRZbDQ2ZXJtbjV1NWhBNk9leUsySi9CRkVjUTkzamlpOVdFYlVQWTM4VCtDcGE3Mk96eFk2OVJ4bjNreksxS01ULzhXOHQ0RFJNWFZpMmxreEw2TXRuUHRKRkJDaW42R0p0RWc2QWt2OERMTmM1VVVtLzdOL0t3S0hTbS85V0MvcmE4ditwbG9RbENQdEEwNUNpMjVpWFk3aE9uSGsyVWk5YTNKbjFDNUZPajhPdFJlV1lUenExbVRVMUpZdXlRYjA5ZGtyNXJSMWovK1htVkdySzMyQ2p6Qm5wY3dPUUtmZFdwbjNzUGttMDBWbDVLeVYwZXFTaHpoL0Z2bjhCa2hWTEczb3NHMkwvbHNGN3AybkxYTTJVOC9KVkRpYXVLdStEb1czWmxoSUpmOGsydTYrTkxtMFdXUzZQdkhLZldXMElNY0JLMVl4L09rQTVZUTI5dW83eTU0WENjUnZBSGMwa01SZHkwbEdsdkIwMWs2T2ZKeitiaEdkUWt5NVZadDdzYVRqUEJkcVBBVjducnBRYU9UdU9hL29XUGZlRWJ3aXJIcDU5UUl6eFJkenVOUkk4Q2R6enMxVXB2TTc5cm4zZHZraHVCNG1WY2RBMi9IUlJXVHJySWM0d0hrZ1lteCtUTngrTjFNNFloZEdHQkJ3bFlySUFWWTQ5MU1GcG9KUnFJNSszNndkNHJySDB3eGdNR2p4cmZIcjBWOHg0ZjZzUFNWSWdiaFp5MG41Ni9NNjl1Sk9FdDBmMmhxN3htMVN4T004TXZOV2ptM0U9IiwiRXhwb25lbnQiOiJBUUFCIn0='
 
-$RepoBase = 'https://raw.githubusercontent.com/Ben-Boaron0/codex-rtl-fix/main'
+if ($env:OS -ne 'Windows_NT') {
+    Write-Host "Codex Plus is Windows-only. Please run it on Windows 10/11." -ForegroundColor Red
+    exit 1
+}
+
+$RepoBase = 'https://raw.githubusercontent.com/limudim972/codex-plus/main'
 $TmpRoot  = Join-Path $env:TEMP 'codex_rtl_fix_patch'
 $TmpFile  = Join-Path $TmpRoot 'patch.ps1'
 $ModuleFiles = @(
@@ -84,7 +89,7 @@ if (-not $valid) {
     Write-Host "  * A maintainer pushed patch.ps1 without re-signing." -ForegroundColor Yellow
     Write-Host ""
     Write-Host "Cross-check the public-key fingerprint at:" -ForegroundColor Cyan
-    Write-Host "  https://github.com/Ben-Boaron0/codex-rtl-fix#security-and-verification" -ForegroundColor Cyan
+    Write-Host "  https://github.com/limudim972/codex-plus#security-and-verification" -ForegroundColor Cyan
     return
 }
 

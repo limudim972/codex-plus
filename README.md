@@ -34,7 +34,7 @@ This project is derived from [`Ben-Boaron0/codex-rtl-fix`](https://github.com/Be
 Open **Windows PowerShell** and run:
 
 ```powershell
-irm https://raw.githubusercontent.com/Ben-Boaron0/codex-rtl-fix/main/install.ps1 | iex
+irm https://raw.githubusercontent.com/limudim972/codex-plus/main/install.ps1 | iex
 ```
 
 The installer verifies `patch.ps1`, downloads the required module files, prompts for elevation, and opens the Codex Plus menu.
@@ -42,8 +42,8 @@ The installer verifies `patch.ps1`, downloads the required module files, prompts
 ## If You Prefer To Run From A Local Checkout
 
 ```powershell
-git clone https://github.com/Ben-Boaron0/codex-rtl-fix.git
-cd codex-rtl-fix
+git clone https://github.com/limudim972/codex-plus.git
+cd codex-plus
 powershell.exe -ExecutionPolicy Bypass -File .\patch.ps1
 ```
 
@@ -139,7 +139,7 @@ By using it, you accept that:
 
 1. You trust the code you are running with administrator privileges.
 2. Modifying Codex behavior may not align with vendor support expectations or terms.
-3. RTL support depends on launching Codex through Codex RTL Fix-created shortcuts.
+3. Enhancements depend on launching Codex through Codex Plus-created shortcuts.
 4. This is a stopgap until Codex provides native RTL support.
 
 ## License

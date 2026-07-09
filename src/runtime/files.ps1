@@ -1,5 +1,5 @@
-function Get-CodexRtlLauncherScriptPath {
-    Join-Path (Get-CodexRtlRuntimeRoot) 'launch-codex-rtl.vbs'
+function Get-CodexPlusLauncherScriptPath {
+    Join-Path (Get-CodexRtlRuntimeRoot) 'launch-codex-plus.vbs'
 }
 
 function Install-CodexRtlRuntimeFiles {
@@ -55,7 +55,7 @@ shell.Run command, 0, False
 function Install-CodexRtlLauncherScript {
     param([Parameter(Mandatory)][string]$PatchScriptPath)
 
-    $launcherPath = Get-CodexRtlLauncherScriptPath
+    $launcherPath = Get-CodexPlusLauncherScriptPath
     $launcherDir = Split-Path -Parent $launcherPath
     if (-not (Test-Path -LiteralPath $launcherDir)) {
         New-Item -ItemType Directory -Force -Path $launcherDir | Out-Null
