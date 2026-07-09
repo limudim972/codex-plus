@@ -1,6 +1,6 @@
 ﻿# HELPER FUNCTIONS
 # -----------------------------------------------------------------------------
-# Persistent log for Codex RTL Fix operations.
+# Persistent log for Codex Plus operations.
 $global:PatchLogFile = Join-Path $env:ProgramData "CodexRtlFix\patch.log"
 
 function Write-LogToFile($level, $msg) {

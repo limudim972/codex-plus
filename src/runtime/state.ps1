@@ -1,5 +1,5 @@
 function Get-CodexRtlStateRoot {
-    Join-Path $env:LOCALAPPDATA 'Codex RTL Fix'
+    Join-Path $env:LOCALAPPDATA 'Codex Plus'
 }
 
 function Get-CodexRtlRuntimeRoot {

@@ -1,8 +1,14 @@
-# Codex RTL Fix
+# Codex Plus
 
-**Right-to-left support for Codex Desktop on Windows.**
+**A local enhancement layer for Codex Desktop on Windows.**
 
-Codex RTL Fix installs a small local runtime that launches Codex through `Codex RTL` shortcuts, opens a loopback-only DevTools port, and injects an idempotent RTL patch into the renderer at runtime. It does not modify the Microsoft Store package under `WindowsApps`.
+Codex Plus is based on the upstream [`codex-rtl-fix`](https://github.com/Ben-Boaron0/codex-rtl-fix) repository and extends that foundation for our own Codex-enhancement workflow.
+
+Codex Plus installs a small local runtime that launches Codex through `Codex Plus` shortcuts, opens a loopback-only DevTools port, and injects an idempotent runtime patch into the renderer. It does not modify the Microsoft Store package under `WindowsApps`.
+
+## Attribution
+
+This project is derived from [`Ben-Boaron0/codex-rtl-fix`](https://github.com/Ben-Boaron0/codex-rtl-fix). We keep that upstream work as the technical foundation for Codex Plus.
 
 [![License: MIT](https://img.shields.io/badge/license-MIT-green.svg)](LICENSE)
 [![Platform: Windows](https://img.shields.io/badge/platform-Windows%2010%2F11-0078D6.svg)](#requirements)
@@ -10,7 +16,7 @@ Codex RTL Fix installs a small local runtime that launches Codex through `Codex 
 
 ## What It Does
 
-- Creates `Codex RTL` shortcuts that launch Codex with local RTL injection.
+- Creates `Codex Plus` shortcuts that launch Codex with local enhancement injection.
 - Keeps mixed Hebrew or Arabic content readable without changing the installed app package.
 - Preserves normal left-to-right behavior for technical fragments such as code blocks and English-only text.
 - Verifies the signed bootstrap script before elevation.
@@ -31,7 +37,7 @@ Open **Windows PowerShell** and run:
 irm https://raw.githubusercontent.com/Ben-Boaron0/codex-rtl-fix/main/install.ps1 | iex
 ```
 
-The installer verifies `patch.ps1`, downloads the required module files, prompts for elevation, and opens the Codex RTL Fix menu.
+The installer verifies `patch.ps1`, downloads the required module files, prompts for elevation, and opens the Codex Plus menu.
 
 ## If You Prefer To Run From A Local Checkout
 
@@ -43,12 +49,12 @@ powershell.exe -ExecutionPolicy Bypass -File .\patch.ps1
 
 ## How It Works
 
-Codex RTL Fix keeps the Microsoft Store installation untouched and works entirely through a local runtime under `%LOCALAPPDATA%\Codex RTL Fix`.
+Codex Plus keeps the Microsoft Store installation untouched and works entirely through a local runtime under `%LOCALAPPDATA%\Codex Plus`.
 
 At patch time it:
 
 1. Copies the signed runtime files into the local runtime folder.
-2. Creates or refreshes `Codex RTL` shortcuts in writable user-facing locations.
+2. Creates or refreshes `Codex Plus` shortcuts in writable user-facing locations.
 3. Launches Codex with:
    - `--remote-debugging-port=<port>`
    - `--remote-debugging-address=127.0.0.1`
@@ -65,17 +71,17 @@ When you run the tool, the menu offers:
 ```text
 Codex Desktop: Found
 
-  1. Patch Codex RTL
-  2. Restore Codex RTL
+  1. Patch Codex Plus
+  2. Restore Codex Plus
   3. Exit
 ```
 
-- `Patch Codex RTL` installs the local runtime, creates or refreshes `Codex RTL` shortcuts, and relaunches Codex with RTL injection if needed.
-- `Restore Codex RTL` removes the local runtime launcher artifacts and owned `Codex RTL` shortcuts.
+- `Patch Codex Plus` installs the local runtime, creates or refreshes `Codex Plus` shortcuts, and relaunches Codex with enhancements if needed.
+- `Restore Codex Plus` removes the local runtime launcher artifacts and owned `Codex Plus` shortcuts.
 
 ## Using It
 
-- Launch Codex through a `Codex RTL` shortcut when you want RTL support.
+- Launch Codex through a `Codex Plus` shortcut when you want the enhanced runtime.
 - Launch Codex through the normal Codex shortcut when you want the unpatched app.
 - If Codex is already open during patch or restore, the tool may restart it so the runtime state is consistent.
 
@@ -83,15 +89,15 @@ Codex Desktop: Found
 
 **Codex Desktop was not found**
 
-Install or reopen Codex Desktop, then run Codex RTL Fix again.
+Install or reopen Codex Desktop, then run Codex Plus again.
 
 **Codex opens without RTL fixes**
 
-Launch Codex through a `Codex RTL` shortcut, not the original Codex shortcut. If the shortcut is missing, run `Patch Codex RTL` again.
+Launch Codex through a `Codex Plus` shortcut, not the original Codex shortcut. If the shortcut is missing, run `Patch Codex Plus` again.
 
 **Controlled Folder Access warns about Codex**
 
-Codex RTL Fix stores its runtime under `%LOCALAPPDATA%\Codex RTL Fix` and launches Codex with local DevTools flags so it can inject RTL support. If Controlled Folder Access is enabled, allow Codex or keep Codex workspaces outside protected folders.
+Codex Plus stores its runtime under `%LOCALAPPDATA%\Codex Plus` and launches Codex with local DevTools flags so it can inject enhancements. If Controlled Folder Access is enabled, allow Codex or keep Codex workspaces outside protected folders.
 
 **Windows PowerShell shows `Import-Module ... AuditToString is already present`**
 

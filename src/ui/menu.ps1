@@ -4,7 +4,7 @@
 function Write-MenuHeader {
     Clear-Host
     Write-Host "======================================================" -ForegroundColor Cyan
-    Write-Host "                  Codex RTL Fix                       " -ForegroundColor Cyan
+    Write-Host "                  Codex Plus                          " -ForegroundColor Cyan
     Write-Host "======================================================" -ForegroundColor Cyan
     Write-Host ""
 }
@@ -20,8 +20,8 @@ function Write-ActionMenu {
 
     Write-Host ""
     Write-Host "Select an action:" -ForegroundColor White
-    Write-Host "  1. Patch Codex RTL"
-    Write-Host "  2. Restore Codex RTL"
+    Write-Host "  1. Patch Codex Plus"
+    Write-Host "  2. Restore Codex Plus"
     Write-Host "  3. Exit"
 }
 
@@ -53,7 +53,7 @@ function Invoke-SelectedAppAction {
     switch ($ActionId) {
         'Patch' {
             & $invokeWithConfirmation `
-                -Warning "Patch will close and relaunch Codex if it is open.`nLaunch Codex using the Codex RTL shortcuts after patching." `
+                -Warning "Patch will close and relaunch Codex if it is open.`nLaunch Codex using the Codex Plus shortcuts after patching." `
                 -Action { Install-CodexRtlPatch }
         }
         'Restore' {

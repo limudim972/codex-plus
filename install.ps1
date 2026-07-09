@@ -1,4 +1,4 @@
-# Codex RTL Fix -- verified installer.
+# Codex Plus -- verified installer.
 #
 # Downloads patch.ps1 and patch.ps1.sig from GitHub, verifies the signature
 # against an RSA-4096 public key hardcoded below, then elevates to install.
@@ -114,6 +114,6 @@ try {
 
 [System.IO.File]::WriteAllText($TmpFile, $content, [System.Text.UTF8Encoding]::new($true))
 
-Write-Host "Codex RTL Fix verified ($($patchBytes.Length) bytes) and modules downloaded. Elevating..." -ForegroundColor Green
+    Write-Host "Codex Plus verified ($($patchBytes.Length) bytes) and modules downloaded. Elevating..." -ForegroundColor Green
 
 Start-Process -FilePath PowerShell.exe -Verb RunAs -ArgumentList "-NoProfile -NoExit -ExecutionPolicy Bypass -File `"$TmpFile`" -TrustedPubKey `"$ExpectedPubKey`""

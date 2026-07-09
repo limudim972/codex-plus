@@ -1,6 +1,6 @@
 <#
 .SYNOPSIS
-    Codex RTL Fix
+    Codex Plus
 .DESCRIPTION
     Installs and restores the local Codex Desktop RTL runtime.
 #>
