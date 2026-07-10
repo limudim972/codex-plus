@@ -118,8 +118,20 @@ function Test-CodexProcessMatchesCodexPlusInstance {
 }
 
 function Get-CodexDesktopProcesses {
-    Get-CimInstance Win32_Process -Filter "Name = 'Codex.exe'" -ErrorAction SilentlyContinue |
-        Where-Object { $_.ExecutablePath -and $_.ExecutablePath -like '*\WindowsApps\OpenAI.Codex_*\app\Codex.exe' }
+    $installInfo = Get-CodexInstallInfo
+    $preferredExeName = if ($installInfo.AppExe) { [System.IO.Path]::GetFileName($installInfo.AppExe) } else { $null }
+    $allowedNames = @('ChatGPT.exe', 'Codex.exe')
+    if ($preferredExeName -and ($allowedNames -notcontains $preferredExeName)) {
+        $allowedNames = @($preferredExeName) + $allowedNames
+    }
+
+    Get-CimInstance Win32_Process -ErrorAction SilentlyContinue |
+        Where-Object {
+            $_.ExecutablePath -and
+            $_.ExecutablePath -like '*\WindowsApps\OpenAI.Codex_*\app\*.exe' -and
+            $_.ExecutablePath -notlike '*\WindowsApps\OpenAI.Codex_*\app\resources\*' -and
+            ($allowedNames -contains [System.IO.Path]::GetFileName($_.ExecutablePath))
+        }
 }
 
 function Get-CodexRtlLaunchPort {
@@ -197,21 +209,26 @@ function Start-CodexForRtl {
     )
 
     $processes = @(Get-CodexDesktopProcesses)
-    $matchingProcesses = @($processes | Where-Object { Test-CodexProcessMatchesCodexPlusInstance -Process $_ -Port $Port })
-    if ($matchingProcesses.Count -eq 0) {
-        Start-CodexWithRtlDebug -AppExe $Inspection.AppExe -Port $Port
-        return 'started'
-    }
+    $browserProcesses = @($processes | Where-Object { Test-CodexProcessIsBrowserProcess -Process $_ })
+    $matchingProcesses = @($browserProcesses | Where-Object { Test-CodexProcessMatchesCodexPlusInstance -Process $_ -Port $Port })
 
-    if (-not $AllowRestart) {
+    if ($matchingProcesses.Count -gt 0) {
         return 'already-running'
     }
 
-    Write-Host 'Restarting Codex with local RTL injection support...' -ForegroundColor Yellow
-    Stop-CodexDesktopProcesses -Port $Port -CurrentInstanceOnly
-    Start-Sleep -Milliseconds 700
+    if ($browserProcesses.Count -gt 0) {
+        if ($AllowRestart) {
+            Write-Host 'Restarting Codex with local RTL injection support...' -ForegroundColor Yellow
+            Stop-CodexDesktopProcesses
+            Start-Sleep -Milliseconds 700
+            Start-CodexWithRtlDebug -AppExe $Inspection.AppExe -Port $Port
+            return 'restarted'
+        }
+        return 'running-without-debug-port'
+    }
+
     Start-CodexWithRtlDebug -AppExe $Inspection.AppExe -Port $Port
-    return 'restarted'
+    return 'started'
 }
 
 function Test-CodexDevToolsTarget {
