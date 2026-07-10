@@ -64,13 +64,29 @@ function Get-CodexSidebarPagingPayload {
     }
   }
 
-  function ensureSidebarPager(sectionList, sectionKey) {
-    let pagerRow = sectionList.querySelector('[' + PAGER_ATTR + '="' + sectionKey + '"]');
-    if (!pagerRow) {
-      pagerRow = sectionList.ownerDocument.createElement('div');
-      pagerRow.setAttribute('role', 'listitem');
-      pagerRow.setAttribute(PAGER_ATTR, sectionKey);
-      pagerRow.className = 'flex gap-1 py-1 pl-2 pr-0 after:block after:h-px after:content-[\'\'] last:after:hidden';
+  function renderSidebarSection(sectionList, visibleCount, sectionKey) {
+    if (!sectionList) return;
+
+    const rows = getSidebarRows(sectionList);
+    if (rows.length === 0) return;
+
+    const visibleRows = rows.slice(0, visibleCount);
+    const hiddenRows = rows.slice(visibleCount);
+    const loaded = Math.max(0, Math.min(readLoaded(sectionList), hiddenRows.length));
+
+    for (const row of visibleRows) {
+      setVisible(row, true);
+    }
+    for (let index = 0; index < hiddenRows.length; index++) {
+      setVisible(hiddenRows[index], index < loaded);
+    }
+
+    let pager = sectionList.querySelector('[' + PAGER_ATTR + '="' + sectionKey + '"]');
+    if (!pager && hiddenRows.length > 0) {
+      pager = sectionList.ownerDocument.createElement('div');
+      pager.setAttribute('role', 'listitem');
+      pager.setAttribute(PAGER_ATTR, sectionKey);
+      pager.className = 'flex gap-1 py-1 pl-2 pr-0 after:block after:h-px after:content-[\'\'] last:after:hidden';
 
       const wrapper = sectionList.ownerDocument.createElement('div');
       wrapper.className = 'flex items-center gap-2';
@@ -80,73 +96,37 @@ function Get-CodexSidebarPagingPayload {
       button.className = BUTTON_CLASS;
       button.setAttribute(ACTION_ATTR, 'toggle');
       wrapper.appendChild(button);
-      pagerRow.appendChild(wrapper);
+
+      pager.appendChild(wrapper);
     }
 
-    if (pagerRow.dataset.codexPlusSidebarBound !== 'true') {
-      pagerRow.dataset.codexPlusSidebarBound = 'true';
-      pagerRow.addEventListener('click', (event) => {
-        const button = event.target && event.target.closest ? event.target.closest('[' + ACTION_ATTR + ']') : null;
-        if (!button) return;
-
-        const action = button.getAttribute(ACTION_ATTR);
-        const list = pagerRow.parentElement;
-        if (!list) return;
-
-        const rows = getSidebarRows(list);
-        const currentLoaded = readLoaded(list);
-        const next = action === 'more'
-          ? Math.min(rows.length - 1, currentLoaded + PAGE_SIZE || PAGE_SIZE)
-          : 0;
-
-        writeLoaded(list, next);
-        renderSidebarSection(list, sectionKey);
+    if (pager) {
+      const toggleButton = pager.querySelector('[' + ACTION_ATTR + '="toggle"]');
+      toggleButton.onclick = (event) => {
+        const current = readLoaded(sectionList);
+        const next = current > 0 ? 0 : Math.min(hiddenRows.length, PAGE_SIZE);
+        writeLoaded(sectionList, next);
+        renderSidebarSection(sectionList, visibleCount, sectionKey);
         event.preventDefault();
         event.stopPropagation();
         event.stopImmediatePropagation();
-      });
-    }
+      };
+      toggleButton.onpointerup = toggleButton.onclick;
 
-    return pagerRow;
-  }
+      const hasAny = loaded > 0;
+      const hasMore = loaded < hiddenRows.length;
+      toggleButton.textContent = hasAny ? 'Show less' : 'Show more';
+      pager.hidden = !hasMore && !hasAny;
+      pager.style.setProperty('display', pager.hidden ? 'none' : 'flex', 'important');
 
-  function renderSidebarSection(sectionList, sectionKey) {
-    if (!sectionList) return;
-
-    const rows = getSidebarRows(sectionList);
-    if (rows.length === 0) return;
-
-    const visibleRows = rows.slice(0, 3);
-    const hiddenRows = rows.slice(3);
-    const loaded = Math.max(0, Math.min(readLoaded(sectionList), hiddenRows.length));
-    const pagerRow = hiddenRows.length > 0 ? ensureSidebarPager(sectionList, sectionKey) : null;
-
-    for (const row of visibleRows) {
-      setVisible(row, true);
-    }
-    for (let index = 0; index < hiddenRows.length; index++) {
-      setVisible(hiddenRows[index], index < loaded);
-    }
-
-    if (!pagerRow) {
+      const beforeNode = hiddenRows[loaded] || null;
+      if (pager.parentElement !== sectionList || pager.nextSibling !== beforeNode) {
+        sectionList.insertBefore(pager, beforeNode);
+      }
+    } else {
+      writeLoaded(sectionList, 0);
       const existing = sectionList.querySelector('[' + PAGER_ATTR + '="' + sectionKey + '"]');
       if (existing) existing.remove();
-      writeLoaded(sectionList, 0);
-      return;
-    }
-
-    const toggleButton = pagerRow.querySelector('[' + ACTION_ATTR + '="toggle"]');
-    const hasAny = loaded > 0;
-    const hasMore = loaded < hiddenRows.length;
-    if (toggleButton) {
-      toggleButton.textContent = hasAny ? 'Show less' : 'Show more';
-    }
-    pagerRow.hidden = !hasMore && !hasAny;
-    pagerRow.style.setProperty('display', pagerRow.hidden ? 'none' : 'flex', 'important');
-
-    const beforeNode = hiddenRows[loaded] || null;
-    if (pagerRow.parentElement !== sectionList || pagerRow.nextSibling !== beforeNode) {
-      sectionList.insertBefore(pagerRow, beforeNode);
     }
   }
 
@@ -155,7 +135,10 @@ function Get-CodexSidebarPagingPayload {
       const heading = getSidebarSectionTitle(document, spec.title);
       const list = getSidebarSectionList(heading);
       if (!list) continue;
-      renderSidebarSection(list, spec.title.toLowerCase());
+
+      clearPagers(list);
+      writeLoaded(list, Math.max(0, Math.min(readLoaded(list), Math.max(0, getSidebarRows(list).length - spec.visibleCount))));
+      renderSidebarSection(list, spec.visibleCount, spec.title.toLowerCase());
     }
   }
 
