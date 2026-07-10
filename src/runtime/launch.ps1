@@ -2,6 +2,196 @@ function Get-CodexRtlDefaultPort {
     18317
 }
 
+function Get-CodexLaunchSplashIcon {
+    try {
+        Add-Type -AssemblyName System.Drawing
+
+        $installInfo = Get-CodexInstallInfo
+        $iconLocation = Get-CodexIconLocation -InstallInfo $installInfo
+        if ([string]::IsNullOrWhiteSpace($iconLocation)) {
+            return $null
+        }
+
+        $iconPath = $iconLocation
+        $iconIndex = 0
+        if ($iconLocation -match '^(.*),\s*(-?\d+)$') {
+            $iconPath = $matches[1]
+            $iconIndex = [int]$matches[2]
+        }
+        $iconPath = $iconPath.Trim().Trim('"')
+        if (-not (Test-Path -LiteralPath $iconPath)) {
+            return $null
+        }
+
+        if ([System.IO.Path]::GetExtension($iconPath).Equals('.ico', [System.StringComparison]::OrdinalIgnoreCase)) {
+            $stream = [System.IO.File]::OpenRead($iconPath)
+            try {
+                return [System.Drawing.Icon]::new($stream)
+            } finally {
+                $stream.Close()
+            }
+        }
+
+        if ($iconIndex -eq 0) {
+            $associatedIcon = [System.Drawing.Icon]::ExtractAssociatedIcon($iconPath)
+            if ($associatedIcon) {
+                return $associatedIcon
+            }
+        }
+
+        return [System.Drawing.Icon]::ExtractAssociatedIcon($iconPath)
+    } catch {
+        return $null
+    }
+}
+
+function Get-CodexLaunchSplashIconSource {
+    try {
+        Add-Type -AssemblyName PresentationCore
+        Add-Type -AssemblyName PresentationFramework
+        Add-Type -AssemblyName WindowsBase
+    } catch {
+        return $null
+    }
+
+    $icon = Get-CodexLaunchSplashIcon
+    if (-not $icon) {
+        return $null
+    }
+
+    try {
+        $bitmapSource = [System.Windows.Interop.Imaging]::CreateBitmapSourceFromHIcon(
+            $icon.Handle,
+            [System.Windows.Int32Rect]::Empty,
+            [System.Windows.Media.Imaging.BitmapSizeOptions]::FromWidthAndHeight(36, 36)
+        )
+        $formattedBitmap = [System.Windows.Media.Imaging.FormatConvertedBitmap]::new()
+        $formattedBitmap.BeginInit()
+        $formattedBitmap.Source = $bitmapSource
+        $formattedBitmap.DestinationFormat = [System.Windows.Media.PixelFormats]::Bgra32
+        $formattedBitmap.EndInit()
+
+        $width = $formattedBitmap.PixelWidth
+        $height = $formattedBitmap.PixelHeight
+        $stride = $width * 4
+        $pixels = New-Object byte[] ($stride * $height)
+        $formattedBitmap.CopyPixels($pixels, $stride, 0)
+
+        for ($i = 0; $i -lt $pixels.Length; $i += 4) {
+            $alpha = $pixels[$i + 3]
+            if ($alpha -gt 0) {
+                $pixels[$i] = 255
+                $pixels[$i + 1] = 255
+                $pixels[$i + 2] = 255
+            }
+        }
+
+        $whiteBitmap = [System.Windows.Media.Imaging.BitmapSource]::Create(
+            $width,
+            $height,
+            $formattedBitmap.DpiX,
+            $formattedBitmap.DpiY,
+            [System.Windows.Media.PixelFormats]::Bgra32,
+            $null,
+            $pixels,
+            $stride
+        )
+        $whiteBitmap.Freeze()
+        return $whiteBitmap
+    } catch {
+        return $null
+    } finally {
+        $icon.Dispose()
+    }
+}
+
+function Show-CodexLaunchSplash {
+    param(
+        [AllowEmptyString()][string]$LauncherKey,
+        [int]$TimeoutSeconds = 20
+    )
+
+    try {
+        Add-Type -AssemblyName PresentationCore
+        Add-Type -AssemblyName PresentationFramework
+        Add-Type -AssemblyName WindowsBase
+    } catch {
+        return $false
+    }
+
+    $window = [System.Windows.Window]::new()
+    $window.Title = 'Codex Plus'
+    $window.WindowStyle = [System.Windows.WindowStyle]::None
+    $window.ResizeMode = [System.Windows.ResizeMode]::NoResize
+    $window.AllowsTransparency = $true
+    $window.Background = [System.Windows.Media.Brushes]::Transparent
+    $window.ShowInTaskbar = $false
+    $window.Topmost = $true
+    $window.SizeToContent = [System.Windows.SizeToContent]::WidthAndHeight
+    $window.WindowStartupLocation = [System.Windows.WindowStartupLocation]::CenterScreen
+    $window.ShowActivated = $true
+
+    $stack = [System.Windows.Controls.StackPanel]::new()
+    $stack.Orientation = [System.Windows.Controls.Orientation]::Horizontal
+    $stack.Margin = [System.Windows.Thickness]::new(20, 18, 20, 18)
+    $stack.SnapsToDevicePixels = $true
+
+    $image = [System.Windows.Controls.Image]::new()
+    $image.Width = 36
+    $image.Height = 36
+    $image.Margin = [System.Windows.Thickness]::new(0, 0, 12, 0)
+    $image.Source = Get-CodexLaunchSplashIconSource
+
+    $text = [System.Windows.Controls.TextBlock]::new()
+    $text.Text = 'Plus'
+    $text.FontFamily = [System.Windows.Media.FontFamily]::new('Segoe UI Semibold')
+    $text.FontSize = 28
+    $text.FontWeight = [System.Windows.FontWeights]::SemiBold
+    $text.Foreground = [System.Windows.Media.Brushes]::White
+    $text.VerticalAlignment = [System.Windows.VerticalAlignment]::Center
+    $text.TextOptions_TextFormattingMode = [System.Windows.Media.TextFormattingMode]::Display
+    $text.TextOptions_TextRenderingMode = [System.Windows.Media.TextRenderingMode]::ClearType
+
+    $stack.Children.Add($image) | Out-Null
+    $stack.Children.Add($text) | Out-Null
+    $window.Content = $stack
+    $window.Show()
+    $window.Activate() | Out-Null
+
+    $dispatcherFrame = [System.Windows.Threading.DispatcherFrame]::new()
+    $deadline = [DateTime]::UtcNow.AddSeconds($TimeoutSeconds)
+    while ($window.IsVisible -and ([DateTime]::UtcNow -lt $deadline)) {
+        [System.Windows.Threading.Dispatcher]::CurrentDispatcher.Invoke(
+            [System.Windows.Threading.DispatcherPriority]::Background,
+            [action]{}
+        )
+
+        $visibleProcessCount = 0
+        try {
+            $state = Read-CodexRtlState
+            $preferredPort = if ($state -and $state.Port) { [int]$state.Port } else { 0 }
+            $port = Get-CodexRtlLaunchPort -PreferredPort $preferredPort -LauncherKey $LauncherKey
+            if ($port -gt 0) {
+                $visibleProcessCount = Get-CodexVisibleProcessCount -Port $port -LauncherKey $LauncherKey
+            }
+        } catch {
+        }
+
+        if ($visibleProcessCount -gt 0) {
+            break
+        }
+
+        Start-Sleep -Milliseconds 150
+    }
+
+    try {
+        $window.Close()
+    } catch {
+    }
+
+    return $true
+}
+
 function Test-TcpPortAvailable {
     param([Parameter(Mandatory)][int]$Port)
 

@@ -7,6 +7,7 @@
 param(
     [string]$TrustedPubKey,
     [switch]$LaunchCodexRtl,
+    [switch]$ShowLaunchSplash,
     [switch]$StartCloseWatchdog,
     [int]$WatchPort,
     [AllowEmptyString()][string]$LauncherKey,
@@ -20,7 +21,7 @@ if ($env:OS -ne 'Windows_NT') {
 }
 
 $IsAdmin = ([Security.Principal.WindowsPrincipal][Security.Principal.WindowsIdentity]::GetCurrent()).IsInRole([Security.Principal.WindowsBuiltInRole]::Administrator)
-$RequiresElevation = (-not $LaunchCodexRtl)
+$RequiresElevation = (-not ($LaunchCodexRtl -or $ShowLaunchSplash -or $StartCloseWatchdog -or $SkipMain))
 if ((-not $SkipMain) -and $RequiresElevation -and (-not $IsAdmin)) {
     Write-Host "Requesting Administrator privileges..." -ForegroundColor Yellow
     if ($PSCommandPath) {
@@ -78,6 +79,11 @@ if ($StartCloseWatchdog) {
 }
 
 $script:CodexRtlPatchScriptPath = $PSCommandPath
+
+if ($ShowLaunchSplash) {
+    Show-CodexLaunchSplash -LauncherKey $LauncherKey
+    Exit
+}
 
 if ($SkipMain) {
     return

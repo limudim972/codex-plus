@@ -100,6 +100,7 @@ try {
 $launcherScript = New-CodexRtlLauncherScriptContent -PatchScriptPath (Join-Path (Get-CodexRtlRuntimeRoot) 'patch.ps1')
 Assert-True ($launcherScript.Contains('powershell.exe')) 'VBS launcher should run PowerShell internally.'
 Assert-True ($launcherScript.Contains('-LaunchCodexRtl')) 'VBS launcher should call the explicit Codex launch entrypoint.'
+Assert-True ($launcherScript.Contains('-ShowLaunchSplash')) 'VBS launcher should start the launch splash helper before Codex appears.'
 Assert-True ($launcherScript.Contains('WScript.Arguments(0)')) 'VBS launcher should forward the shortcut-specific launcher identity.'
 Assert-True ($launcherScript.Contains('CODEX_PLUS_LAUNCHER_KEY')) 'VBS launcher should pass the launcher identity through the process environment.'
 Assert-True ($launcherScript.Contains('Scriptlet.TypeLib')) 'VBS launcher should create a fresh instance identity for each shortcut launch.'
@@ -131,6 +132,26 @@ Assert-True ($installBody.Contains('OwnedArtifacts')) 'Patch flow should persist
 Assert-True ($installBody.Contains('Codex Plus')) 'Patch flow should create sibling Codex Plus shortcuts.'
 $launchBody = (Get-Command -Name Launch-CodexRtl -CommandType Function).ScriptBlock.ToString()
 Assert-True ($launchBody.Contains('Start-CodexForRtl')) 'Codex launch should delegate to the approved-verb launch helper.'
+$splashIconBody = (Get-Command -Name Get-CodexLaunchSplashIcon -CommandType Function).ScriptBlock.ToString()
+Assert-True ($splashIconBody.Contains('Get-CodexIconLocation')) 'Launch splash should reuse the same icon source as the desktop launcher.'
+Assert-True ($splashIconBody.Contains('Add-Type -AssemblyName System.Drawing')) 'Launch splash icon loading should explicitly load System.Drawing before extracting icons.'
+$splashIconSourceBody = (Get-Command -Name Get-CodexLaunchSplashIconSource -CommandType Function).ScriptBlock.ToString()
+Assert-True ($splashIconSourceBody.Contains('CreateBitmapSourceFromHIcon')) 'Launch splash should convert the Codex icon into a clean WPF image source.'
+Assert-True ($splashIconSourceBody.Contains('FormatConvertedBitmap')) 'Launch splash should normalize the icon bitmap before recoloring it.'
+Assert-True ($splashIconSourceBody.Contains('$pixels[$i] = 255')) 'Launch splash should recolor visible icon pixels to white.'
+Assert-True ($splashIconSourceBody.Contains('$whiteBitmap.Freeze()')) 'Launch splash bitmap source should be frozen before it is handed to the WPF image control.'
+$splashBody = (Get-Command -Name Show-CodexLaunchSplash -CommandType Function).ScriptBlock.ToString()
+Assert-True ($splashBody.Contains('[System.Windows.Window]::new()')) 'Launch splash should render through WPF for cleaner transparency.'
+Assert-True ($splashBody.Contains('AllowsTransparency = $true')) 'Launch splash should use true alpha transparency instead of a color key.'
+Assert-True ($splashBody.Contains('Background = [System.Windows.Media.Brushes]::Transparent')) 'Launch splash background should stay fully transparent.'
+Assert-True ($splashBody.Contains('[System.Windows.Controls.Image]')) 'Launch splash should render the Codex icon directly.'
+Assert-True ($splashBody.Contains('Text = ''Plus''')) 'Launch splash should add a Plus wordmark next to the icon.'
+Assert-True ($splashBody.Contains('$image.Width = 36')) 'Launch splash should keep the icon at the original compact size.'
+Assert-True ($splashBody.Contains('$text.FontSize = 28')) 'Launch splash should keep the Plus label at the original compact size.'
+Assert-True (-not $splashBody.Contains('DoubleAnimation')) 'Launch splash should stay static after reverting the loading animation experiment.'
+Assert-True ($splashBody.Contains('Get-CodexVisibleProcessCount')) 'Launch splash should close itself when the real Codex window becomes visible.'
+$patchBody = Get-Content -LiteralPath $patchScript -Raw
+Assert-True ($patchBody.Contains('$RequiresElevation = (-not ($LaunchCodexRtl -or $ShowLaunchSplash -or $StartCloseWatchdog -or $SkipMain))')) 'Elevation should be skipped for launch-only helper paths such as the splash and watchdog.'
 
 $roots = @(Get-CodexShortcutSearchRoots)
 Assert-True ($roots -contains (Join-Path $env:APPDATA 'Microsoft\Windows\Start Menu\Programs')) 'Shortcut search should include user Start Menu programs.'

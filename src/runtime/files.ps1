@@ -61,6 +61,11 @@ Else
     instanceKey = ""
 End If
 command = "powershell.exe -NoProfile -ExecutionPolicy Bypass -WindowStyle Hidden -File " & Chr(34) & "$escapedPatchScriptPath" & Chr(34) & " -LaunchCodexRtl"
+launchSplashCommand = "powershell.exe -NoProfile -ExecutionPolicy Bypass -WindowStyle Hidden -File " & Chr(34) & "$escapedPatchScriptPath" & Chr(34) & " -ShowLaunchSplash"
+If instanceKey <> "" Then
+    launchSplashCommand = launchSplashCommand & " -LauncherKey " & Chr(34) & instanceKey & Chr(34)
+End If
+shell.Run launchSplashCommand, 0, False
 shell.Run command, 0, False
 watchdogCommand = "powershell.exe -NoProfile -ExecutionPolicy Bypass -WindowStyle Hidden -File " & Chr(34) & "$escapedPatchScriptPath" & Chr(34) & " -SkipMain -StartCloseWatchdog"
 If instanceKey <> "" Then
