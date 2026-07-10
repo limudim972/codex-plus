@@ -55,13 +55,16 @@ If WScript.Arguments.Count > 0 Then
     launcherKey = WScript.Arguments(0)
 End If
 If launcherKey <> "" Then
-    shell.Environment("Process")("CODEX_PLUS_LAUNCHER_KEY") = launcherKey
+    instanceKey = launcherKey & "-" & Replace(Replace(CreateObject("Scriptlet.TypeLib").Guid, "{", ""), "}", "")
+    shell.Environment("Process")("CODEX_PLUS_LAUNCHER_KEY") = instanceKey
+Else
+    instanceKey = ""
 End If
 command = "powershell.exe -NoProfile -ExecutionPolicy Bypass -WindowStyle Hidden -File " & Chr(34) & "$escapedPatchScriptPath" & Chr(34) & " -LaunchCodexRtl"
 shell.Run command, 0, False
 watchdogCommand = "powershell.exe -NoProfile -ExecutionPolicy Bypass -WindowStyle Hidden -File " & Chr(34) & "$escapedPatchScriptPath" & Chr(34) & " -SkipMain -StartCloseWatchdog"
-If launcherKey <> "" Then
-    watchdogCommand = watchdogCommand & " -LauncherKey " & Chr(34) & launcherKey & Chr(34)
+If instanceKey <> "" Then
+    watchdogCommand = watchdogCommand & " -LauncherKey " & Chr(34) & instanceKey & Chr(34)
 End If
 shell.Run watchdogCommand, 0, False
 "@

@@ -148,7 +148,7 @@ function Launch-CodexRtl {
         $state.UpdatedAt = [DateTimeOffset]::Now.ToString('o')
         Save-CodexRtlState -State $state
     }
-    Start-CodexForRtl -Inspection $installInfo -Port $port -AllowRestart -LauncherKey $LauncherKey | Out-Null
+    Start-CodexForRtl -Inspection $installInfo -Port $port -LauncherKey $LauncherKey | Out-Null
     Start-CodexCloseWatchdog -Port $port -LauncherKey $LauncherKey
     Invoke-CodexRtlInjection -Port $port | Out-Null
 }

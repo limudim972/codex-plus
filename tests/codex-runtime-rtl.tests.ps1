@@ -102,6 +102,8 @@ Assert-True ($launcherScript.Contains('powershell.exe')) 'VBS launcher should ru
 Assert-True ($launcherScript.Contains('-LaunchCodexRtl')) 'VBS launcher should call the explicit Codex launch entrypoint.'
 Assert-True ($launcherScript.Contains('WScript.Arguments(0)')) 'VBS launcher should forward the shortcut-specific launcher identity.'
 Assert-True ($launcherScript.Contains('CODEX_PLUS_LAUNCHER_KEY')) 'VBS launcher should pass the launcher identity through the process environment.'
+Assert-True ($launcherScript.Contains('Scriptlet.TypeLib')) 'VBS launcher should create a fresh instance identity for each shortcut launch.'
+Assert-True ($launcherScript.Contains('instanceKey = launcherKey & "-"')) 'VBS launcher should derive each instance identity from the shortcut identity.'
 Assert-True ($launcherScript.Contains('Chr(34)')) 'VBS launcher should build the quoted patch path using Chr(34).'
 Assert-True ($launcherScript -match 'command = "powershell\.exe .* -File " & Chr\(34\) & ".*" & Chr\(34\) & " -LaunchCodexRtl"') 'VBS launcher should concatenate the quoted patch path safely.'
 Assert-True ($launcherScript.Contains(', 0, False')) 'VBS launcher should hide the window and not wait.'
@@ -606,14 +608,12 @@ try {
         }
     }
 
-    Assert-Equal 18420 (Get-CodexRtlLaunchPort -PreferredPort 18317 -LauncherKey $launcherKeyA) 'Launcher-specific launch should detect the matching current session port before relaunching.'
+    Assert-Equal 18420 (Get-CodexRtlLaunchPort -PreferredPort 18317 -LauncherKey $launcherKeyA) 'Launcher-specific launch should detect the matching current session port.'
     Launch-CodexRtl -LauncherKey $launcherKeyA
 
-    Assert-Equal 1 @($script:StartedProcesses).Count 'Launcher-specific relaunch should start a single Codex session.'
-    Assert-Equal $mockAppExe $script:StartedProcesses[0].AppExe 'Launcher-specific relaunch should use the configured Codex executable.'
-    Assert-Equal 18420 $script:StartedProcesses[0].Port 'Launcher-specific relaunch should reuse the matching session port.'
-    Assert-Equal $launcherKeyA $script:StartedProcesses[0].LauncherKey 'Launcher-specific relaunch should keep the launching shortcut identity.'
-    Assert-Equal 18420 @($script:InjectedPorts)[0] 'Launcher-specific relaunch should inject into the restarted matching session port.'
+    Assert-Equal 0 @($script:StartedProcesses).Count 'Launcher-specific launch should not restart an already-running matching session.'
+    Assert-Equal 0 @($script:StoppedProcesses).Count 'Launcher-specific launch should leave the already-running matching session open.'
+    Assert-Equal 18420 @($script:InjectedPorts)[0] 'Launcher-specific launch should inject into the matching session port.'
 } finally {
     $env:LOCALAPPDATA = $oldLocalAppDataForScopedLaunch
     if (Test-Path -LiteralPath $tmpScopedLaunchRoot) {
