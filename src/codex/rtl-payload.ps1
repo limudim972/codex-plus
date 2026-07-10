@@ -348,6 +348,7 @@ function Get-CodexRtlPayload {
 function Get-CodexPlusPayloadBundle {
     @(
         Get-CodexRtlPayload
+        Get-CodexRtlPayloadPlan
         Get-CodexContextBadgePayload
         Get-CodexSidebarPagingPayload
     ) -join "`n"

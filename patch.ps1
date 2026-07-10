@@ -43,6 +43,7 @@ foreach ($module in @(
     'src/shared/asar.ps1',
     'src/codex/detection.ps1',
     'src/codex/rtl-payload.ps1',
+    'src/codex/rtl-payload-Plan.ps1',
     'src/codex/context-badge.ps1',
     'src/codex/sidebar-paging.ps1',
     'src/runtime/state.ps1',
