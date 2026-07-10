@@ -7,6 +7,10 @@
 param(
     [string]$TrustedPubKey,
     [switch]$LaunchCodexRtl,
+    [switch]$StartCloseWatchdog,
+    [int]$WatchPort,
+    [AllowEmptyString()][string]$LauncherKey,
+    [switch]$InstallCodexPlus,
     [switch]$SkipMain
 )
 
@@ -60,10 +64,28 @@ foreach ($module in @(
     . $modulePath
 }
 
+if ($StartCloseWatchdog) {
+    if (-not $WatchPort) {
+        $state = Read-CodexRtlState
+        $preferredPort = if ($state -and $state.Port) { [int]$state.Port } else { 0 }
+        $WatchPort = Wait-CodexInstanceDebugPort -PreferredPort $preferredPort -LauncherKey $LauncherKey
+    }
+    if (-not $WatchPort) {
+        throw 'WatchPort could not be resolved for the Codex close watchdog.'
+    }
+    Watch-CodexCloseToQuit -Port $WatchPort -LauncherKey $LauncherKey
+    Exit
+}
+
 $script:CodexRtlPatchScriptPath = $PSCommandPath
 
 if ($SkipMain) {
     return
+}
+
+if ($InstallCodexPlus) {
+    Install-CodexRtlPatch
+    Exit
 }
 
 if ($LaunchCodexRtl) {

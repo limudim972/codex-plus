@@ -315,6 +315,143 @@ function Wait-CodexDevToolsTargets {
     return @()
 }
 
+function Test-CodexProcessHasVisibleWindow {
+    param([Parameter(Mandatory)]$Process)
+
+    try {
+        $liveProcess = Get-Process -Id $Process.ProcessId -ErrorAction Stop
+        return ($liveProcess.MainWindowHandle -ne 0)
+    } catch {
+        return $false
+    }
+}
+
+function Get-CodexVisibleProcessCount {
+    param(
+        [Parameter(Mandatory)][int]$Port,
+        [AllowEmptyString()][string]$LauncherKey
+    )
+
+    return @(
+        Get-CodexDesktopProcesses | Where-Object {
+            Test-CodexProcessMatchesCodexPlusInstance -Process $_ -Port $Port -LauncherKey $LauncherKey
+        } | Where-Object {
+            Test-CodexProcessHasVisibleWindow -Process $_
+        }
+    ).Count
+}
+
+function Wait-CodexInstanceDebugPort {
+    param(
+        [AllowEmptyString()][string]$LauncherKey,
+        [int]$PreferredPort = 0,
+        [int]$TimeoutSeconds = 30
+    )
+
+    $deadline = [DateTime]::UtcNow.AddSeconds($TimeoutSeconds)
+    while ([DateTime]::UtcNow -lt $deadline) {
+        $matchingProcesses = @(
+            Get-CodexDesktopProcesses | Where-Object {
+                Test-CodexProcessMatchesCodexPlusInstance -Process $_ -Port $PreferredPort -LauncherKey $LauncherKey
+            }
+        )
+        foreach ($process in $matchingProcesses) {
+            $resolvedPort = Get-CodexProcessRtlDebugPort -Process $process
+            if ($resolvedPort -gt 0) {
+                return $resolvedPort
+            }
+        }
+        Start-Sleep -Milliseconds 500
+    }
+
+    return (Get-CodexRtlLaunchPort -PreferredPort $PreferredPort -LauncherKey $LauncherKey)
+}
+
+function Start-CodexCloseWatchdog {
+    param(
+        [Parameter(Mandatory)][int]$Port,
+        [AllowEmptyString()][string]$LauncherKey
+    )
+
+    $scriptPath = Get-CodexRtlPatchScriptPath
+    if (-not (Test-Path -LiteralPath $scriptPath)) {
+        throw "Codex Plus watchdog script not found: $scriptPath"
+    }
+
+    $args = @(
+        '-NoProfile',
+        '-ExecutionPolicy', 'Bypass',
+        '-WindowStyle', 'Hidden',
+        '-File', $scriptPath,
+        '-SkipMain',
+        '-StartCloseWatchdog',
+        '-WatchPort', $Port
+    )
+    if (-not [string]::IsNullOrWhiteSpace($LauncherKey)) {
+        $args += @('-LauncherKey', $LauncherKey)
+    }
+
+    Start-Process -FilePath 'powershell.exe' -WindowStyle Hidden -ArgumentList $args | Out-Null
+}
+
+function Watch-CodexCloseToQuit {
+    param(
+        [Parameter(Mandatory)][int]$Port,
+        [AllowEmptyString()][string]$LauncherKey,
+        [int]$PollSeconds = 1,
+        [int]$GracePolls = 3,
+        [int]$StartupWaitSeconds = 30,
+        [int]$NoWindowKillAfterSeconds = 12
+    )
+
+    $startupDeadline = [DateTime]::UtcNow.AddSeconds($StartupWaitSeconds)
+    $seenMatchingProcess = $false
+    $matchingProcessSeenAt = $null
+    $seenVisibleWindow = $false
+    $missingVisibleWindowCount = 0
+    while ($true) {
+        $matchingProcesses = @(
+            Get-CodexDesktopProcesses | Where-Object {
+                Test-CodexProcessMatchesCodexPlusInstance -Process $_ -Port $Port -LauncherKey $LauncherKey
+            }
+        )
+        if ($matchingProcesses.Count -eq 0) {
+            if ((-not $seenMatchingProcess) -and ([DateTime]::UtcNow -lt $startupDeadline)) {
+                Start-Sleep -Seconds $PollSeconds
+                continue
+            }
+            return
+        }
+        if (-not $seenMatchingProcess) {
+            $seenMatchingProcess = $true
+            $matchingProcessSeenAt = [DateTime]::UtcNow
+        }
+
+        $visibleProcessCount = Get-CodexVisibleProcessCount -Port $Port -LauncherKey $LauncherKey
+        if ($visibleProcessCount -gt 0) {
+            $seenVisibleWindow = $true
+            $missingVisibleWindowCount = 0
+        } else {
+            $allowNoWindowKill = $seenVisibleWindow
+            if ((-not $allowNoWindowKill) -and $matchingProcessSeenAt) {
+                $allowNoWindowKill = ([DateTime]::UtcNow -ge $matchingProcessSeenAt.AddSeconds($NoWindowKillAfterSeconds))
+            }
+            if ($allowNoWindowKill) {
+                $missingVisibleWindowCount++
+            } else {
+                $missingVisibleWindowCount = 0
+            }
+        }
+
+        if ($missingVisibleWindowCount -ge $GracePolls) {
+            Stop-CodexDesktopProcesses -Port $Port -LauncherKey $LauncherKey -CurrentInstanceOnly
+            return
+        }
+
+        Start-Sleep -Seconds $PollSeconds
+    }
+}
+
 function New-CodexCdpCommand {
     param(
         [Parameter(Mandatory)][int]$Id,
