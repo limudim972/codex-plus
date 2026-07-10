@@ -52,6 +52,7 @@ foreach ($module in @(
     'src/codex/context-badge.ps1',
     'src/codex/sidebar-paging.ps1',
     'src/runtime/state.ps1',
+    'src/runtime/project-order.ps1',
     'src/runtime/files.ps1',
     'src/runtime/shortcuts.ps1',
     'src/runtime/launch.ps1',

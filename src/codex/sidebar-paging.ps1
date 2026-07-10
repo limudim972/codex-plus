@@ -1,4 +1,6 @@
 function Get-CodexSidebarPagingPayload {
+    $projectOrderSnapshot = @(Get-CodexProjectOrderSnapshot)
+    $projectOrderJson = @($projectOrderSnapshot | Select-Object -ExpandProperty cwd) | ConvertTo-Json -Compress
     @'
 (function () {
   const SECTION_SELECTOR = '[class*="group/nav-section-title"]';
@@ -7,6 +9,7 @@ function Get-CodexSidebarPagingPayload {
   const ACTION_ATTR = 'data-codex-plus-sidebar-action';
   const STATE_ATTR = 'data-codex-plus-sidebar-loaded';
   const BUTTON_CLASS = 'border-token-border no-drag cursor-interaction flex items-center gap-1 border whitespace-nowrap select-none focus:outline-none disabled:cursor-not-allowed disabled:opacity-40 rounded-full text-token-muted-foreground enabled:hover:bg-transparent data-[state=open]:bg-transparent hover:text-token-foreground border-transparent px-2 py-0.5 text-sm leading-[18px] text-token-description-foreground hover:text-token-foreground -ml-[9px]';
+  const PROJECT_ORDER = __CODEX_PLUS_PROJECT_ORDER__;
 
   const SECTION_SPECS = [
     { title: 'Projects', visibleCount: 3 },
@@ -40,6 +43,42 @@ function Get-CodexSidebarPagingPayload {
 
   function getSidebarRows(sectionList) {
     return Array.from(sectionList?.children || []).filter((row) => row.getAttribute('role') === 'listitem' && !row.hasAttribute(PAGER_ATTR));
+  }
+
+  function normalizeProjectId(value) {
+    return String(value || '').trim().replace(/\//g, '\\').replace(/\\+$/g, '').toLowerCase();
+  }
+
+  function getProjectIdForRow(row) {
+    if (!row) return '';
+    const direct = row.getAttribute('data-app-action-sidebar-project-id');
+    if (direct) return direct;
+    const nested = row.querySelector('[data-app-action-sidebar-project-id]');
+    return nested ? nested.getAttribute('data-app-action-sidebar-project-id') : '';
+  }
+
+  function sortProjectRows(sectionList, sectionKey) {
+    if (sectionKey !== 'projects' || !Array.isArray(PROJECT_ORDER) || PROJECT_ORDER.length === 0) {
+      return;
+    }
+
+    const orderMap = new Map(PROJECT_ORDER.map((id, index) => [normalizeProjectId(id), index]));
+    const rows = getSidebarRows(sectionList).map((row, index) => ({
+      row,
+      index,
+      rank: orderMap.has(normalizeProjectId(getProjectIdForRow(row)))
+        ? orderMap.get(normalizeProjectId(getProjectIdForRow(row)))
+        : Number.MAX_SAFE_INTEGER
+    }));
+
+    rows.sort((left, right) => {
+      if (left.rank !== right.rank) return left.rank - right.rank;
+      return left.index - right.index;
+    });
+
+    for (const entry of rows) {
+      sectionList.appendChild(entry.row);
+    }
   }
 
   function readLoaded(list) {
@@ -137,6 +176,7 @@ function Get-CodexSidebarPagingPayload {
       if (!list) continue;
 
       clearPagers(list);
+      sortProjectRows(list, spec.title.toLowerCase());
       writeLoaded(list, Math.max(0, Math.min(readLoaded(list), Math.max(0, getSidebarRows(list).length - spec.visibleCount))));
       renderSidebarSection(list, spec.visibleCount, spec.title.toLowerCase());
     }
@@ -175,5 +215,5 @@ function Get-CodexSidebarPagingPayload {
     start();
   }
 })();
-'@
+'@.Replace('__CODEX_PLUS_PROJECT_ORDER__', $projectOrderJson)
 }
