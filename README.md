@@ -82,6 +82,7 @@ Codex Desktop: Found
 ## Using It
 
 - Launch Codex through a `Codex Plus` shortcut when you want the enhanced runtime.
+- Launch the same `Codex Plus` shortcut again to restart only that shortcut's own session; other Codex sessions stay open.
 - Launch Codex through the normal Codex shortcut when you want the unpatched app.
 - If Codex is already open during patch or restore, the tool may restart it so the runtime state is consistent.
 

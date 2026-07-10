@@ -97,14 +97,19 @@ function Get-CodexIconLocation {
 }
 
 function New-CodexLauncherShortcutSpec {
-    param($InstallInfo = $null)
+    param(
+        [Parameter(Mandatory)][string]$ShortcutPath,
+        $InstallInfo = $null
+    )
 
+    $launcherKey = Get-CodexLauncherIdentity -ShortcutPath $ShortcutPath
     $launcherScript = Get-CodexPlusLauncherScriptPath
     [pscustomobject]@{
         TargetPath = "$env:SystemRoot\System32\wscript.exe"
-        Arguments = "`"$launcherScript`""
+        Arguments = "`"$launcherScript`" `"$launcherKey`""
         WorkingDirectory = Get-CodexRtlWorkingDirectory
         IconLocation = Get-CodexIconLocation -InstallInfo $InstallInfo
+        LauncherKey = $launcherKey
     }
 }
 

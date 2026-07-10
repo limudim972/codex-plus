@@ -13,7 +13,6 @@ function Install-CodexRtlPatch {
     $port = Get-CodexRtlLaunchPort -PreferredPort $preferredPort
     Install-CodexRtlLauncherScript -PatchScriptPath $runtimePatchScript | Out-Null
     Remove-CodexRtlOwnedShortcut -ShortcutPath (Get-CodexRtlShortcutPath) | Out-Null
-    $shortcutSpec = New-CodexLauncherShortcutSpec -InstallInfo $installInfo
 
     $ownedArtifacts = @()
     $shortcutInventory = @(Get-CodexShortcutInventory)
@@ -26,6 +25,7 @@ function Install-CodexRtlPatch {
     $createdOrRefreshedCount = 0
     foreach ($shortcut in $seedableShortcuts) {
         try {
+            $shortcutSpec = New-CodexLauncherShortcutSpec -ShortcutPath $shortcut.Path -InstallInfo $installInfo
             if (Install-CodexParallelRtlShortcutIfPossible -SourceShortcut $shortcut -Spec $shortcutSpec) {
                 $ownedArtifacts += Get-CodexSiblingRtlShortcutPath -ShortcutPath $shortcut.Path
                 $createdOrRefreshedCount++
@@ -39,7 +39,8 @@ function Install-CodexRtlPatch {
     }
 
     try {
-        if (Install-CodexStartMenuRtlShortcut -Spec $shortcutSpec) {
+        $startMenuShortcutSpec = New-CodexLauncherShortcutSpec -ShortcutPath (Get-CodexRtlShortcutPath) -InstallInfo $installInfo
+        if (Install-CodexStartMenuRtlShortcut -Spec $startMenuShortcutSpec) {
             $ownedArtifacts += Get-CodexRtlShortcutPath
             $createdOrRefreshedCount++
         }
@@ -129,19 +130,24 @@ function Restore-CodexRtlPatch {
 }
 
 function Launch-CodexRtl {
+    param([AllowEmptyString()][string]$LauncherKey)
+
     $installInfo = Get-CodexInstallInfo
     if (-not $installInfo.PackageFound -or -not $installInfo.AppExe -or -not (Test-Path -LiteralPath $installInfo.AppExe)) {
         throw 'Codex Desktop was not found.'
     }
 
+    if ([string]::IsNullOrWhiteSpace($LauncherKey)) {
+        $LauncherKey = $env:CODEX_PLUS_LAUNCHER_KEY
+    }
     $state = Read-CodexRtlState
     $preferredPort = if ($state -and $state.Port) { [int]$state.Port } else { 0 }
-    $port = Get-CodexRtlLaunchPort -PreferredPort $preferredPort
-    if ($state -and $state.Port -ne $port) {
+    $port = Get-CodexRtlLaunchPort -PreferredPort $preferredPort -LauncherKey $LauncherKey
+    if (([string]::IsNullOrWhiteSpace($LauncherKey)) -and $state -and $state.Port -ne $port) {
         $state.Port = $port
         $state.UpdatedAt = [DateTimeOffset]::Now.ToString('o')
         Save-CodexRtlState -State $state
     }
-    Start-CodexForRtl -Inspection $installInfo -Port $port -AllowRestart
+    Start-CodexForRtl -Inspection $installInfo -Port $port -AllowRestart -LauncherKey $LauncherKey
     Invoke-CodexRtlInjection -Port $port | Out-Null
 }

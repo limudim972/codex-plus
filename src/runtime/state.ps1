@@ -18,8 +18,34 @@ function Get-CodexRtlWorkingDirectory {
     return $root
 }
 
+function Get-CodexLauncherIdentity {
+    param([Parameter(Mandatory)][string]$ShortcutPath)
+
+    $normalizedPath = $ShortcutPath.Trim().Trim('"')
+    try {
+        $normalizedPath = [System.IO.Path]::GetFullPath($normalizedPath)
+    } catch {
+    }
+    $normalizedPath = $normalizedPath.Replace('\\', '\').TrimEnd('\').ToLowerInvariant()
+
+    $sha256 = [System.Security.Cryptography.SHA256]::Create()
+    try {
+        $hashBytes = $sha256.ComputeHash([System.Text.Encoding]::UTF8.GetBytes($normalizedPath))
+        return ([BitConverter]::ToString($hashBytes)).Replace('-', '').ToLowerInvariant()
+    } finally {
+        $sha256.Dispose()
+    }
+}
+
 function Get-CodexPlusUserDataDirectory {
-    $profilePath = Join-Path (Get-CodexRtlStateRoot) 'profile'
+    param([AllowEmptyString()][string]$LauncherKey)
+
+    $profileRoot = Join-Path (Get-CodexRtlStateRoot) 'profile'
+    $profilePath = if ([string]::IsNullOrWhiteSpace($LauncherKey)) {
+        $profileRoot
+    } else {
+        Join-Path $profileRoot $LauncherKey
+    }
     if (-not (Test-Path -LiteralPath $profilePath)) {
         New-Item -ItemType Directory -Force -Path $profilePath | Out-Null
     }

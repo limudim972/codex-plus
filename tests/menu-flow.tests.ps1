@@ -75,7 +75,7 @@ Invoke-SelectedAppAction -ActionId 'Patch'
 Assert-Equal 1 @($script:Calls | Where-Object { $_ -eq 'Install-CodexRtlPatch' }).Count 'Codex patch should dispatch runtime RTL patch.'
 Assert-True (($script:Prompts | Where-Object { $_ -match '\(y/n\)' }).Count -eq 1) 'Codex patch confirmation should use lowercase y/n wording.'
 Assert-True (($script:Output | Where-Object { $_ -match 'Patch will close and relaunch Codex if it is open' }).Count -eq 1) 'Codex patch warning should clearly state that open Codex sessions will be relaunched.'
-Assert-True (($script:Output | Where-Object { $_ -match 'Launch Codex using the Codex RTL shortcuts after patching' }).Count -eq 1) 'Codex patch warning should explain how to use the patched launcher.'
+Assert-True (($script:Output | Where-Object { $_ -match 'Launch Codex using the Codex Plus shortcuts after patching' }).Count -eq 1) 'Codex patch warning should explain how to use the patched launcher.'
 
 Reset-TestState
 function Read-Host {

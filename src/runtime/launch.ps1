@@ -28,13 +28,16 @@ function Get-CodexRtlAvailablePort {
 }
 
 function New-CodexRtlLaunchArguments {
-    param([Parameter(Mandatory)][int]$Port)
+    param(
+        [Parameter(Mandatory)][int]$Port,
+        [AllowEmptyString()][string]$LauncherKey
+    )
 
     $args = @(
         "--remote-debugging-port=$Port",
         '--remote-debugging-address=127.0.0.1'
     )
-    $userDataDir = Get-CodexPlusUserDataDirectory
+    $userDataDir = Get-CodexPlusUserDataDirectory -LauncherKey $LauncherKey
     if ($userDataDir) {
         $args += "--user-data-dir=$userDataDir"
     }
@@ -63,6 +66,16 @@ function Test-CodexProcessHasRtlDebugPort {
 
     return [bool]($Process.CommandLine -match [regex]::Escape("--remote-debugging-port=$Port") -and
         $Process.CommandLine -match [regex]::Escape('--remote-debugging-address=127.0.0.1'))
+}
+
+function Get-CodexProcessRtlDebugPort {
+    param([Parameter(Mandatory)]$Process)
+
+    $match = [regex]::Match([string]$Process.CommandLine, '--remote-debugging-port=(\d+)')
+    if ($match.Success) {
+        return [int]$match.Groups[1].Value
+    }
+    return 0
 }
 
 function Test-CodexProcessIsBrowserProcess {
@@ -102,14 +115,15 @@ function Get-CodexProcessUserDataDirectory {
 function Test-CodexProcessMatchesCodexPlusInstance {
     param(
         [Parameter(Mandatory)]$Process,
-        [Parameter(Mandatory)][int]$Port
+        [Parameter(Mandatory)][int]$Port,
+        [AllowEmptyString()][string]$LauncherKey
     )
 
     if (-not (Test-CodexProcessIsBrowserProcess -Process $Process)) {
         return $false
     }
 
-    $expectedUserDataDir = Normalize-CodexRtlMatchPath -Path (Get-CodexPlusUserDataDirectory)
+    $expectedUserDataDir = Normalize-CodexRtlMatchPath -Path (Get-CodexPlusUserDataDirectory -LauncherKey $LauncherKey)
     if ($expectedUserDataDir) {
         return (Get-CodexProcessUserDataDirectory -Process $Process) -eq $expectedUserDataDir
     }
@@ -135,15 +149,24 @@ function Get-CodexDesktopProcesses {
 }
 
 function Get-CodexRtlLaunchPort {
-    param([int]$PreferredPort = 0)
+    param(
+        [int]$PreferredPort = 0,
+        [AllowEmptyString()][string]$LauncherKey
+    )
 
     $port = if ($PreferredPort -gt 0) { $PreferredPort } else { Get-CodexRtlDefaultPort }
     $matchingProcesses = @(
         Get-CodexDesktopProcesses | Where-Object {
-            Test-CodexProcessMatchesCodexPlusInstance -Process $_ -Port $port
+            Test-CodexProcessMatchesCodexPlusInstance -Process $_ -Port $port -LauncherKey $LauncherKey
         }
     )
-    if ($matchingProcesses.Count -gt 0) { return $port }
+    if ($matchingProcesses.Count -gt 0) {
+        $matchingPort = Get-CodexProcessRtlDebugPort -Process ($matchingProcesses | Select-Object -First 1)
+        if ($matchingPort -gt 0) {
+            return $matchingPort
+        }
+        return $port
+    }
     if (Test-TcpPortAvailable -Port $port) { return $port }
     return (Get-CodexRtlAvailablePort -StartPort ($port + 1))
 }
@@ -151,6 +174,7 @@ function Get-CodexRtlLaunchPort {
 function Stop-CodexDesktopProcesses {
     param(
         [int]$Port = 0,
+        [AllowEmptyString()][string]$LauncherKey,
         [switch]$CurrentInstanceOnly
     )
 
@@ -159,7 +183,7 @@ function Stop-CodexDesktopProcesses {
             continue
         }
         if ($CurrentInstanceOnly) {
-            if (-not (Test-CodexProcessMatchesCodexPlusInstance -Process $process -Port $Port)) {
+            if (-not (Test-CodexProcessMatchesCodexPlusInstance -Process $process -Port $Port -LauncherKey $LauncherKey)) {
                 continue
             }
         } elseif ($Port -gt 0 -and (-not (Test-CodexProcessHasRtlDebugPort -Process $process -Port $Port))) {
@@ -176,16 +200,17 @@ function Stop-CodexDesktopProcesses {
 function Start-CodexWithRtlDebug {
     param(
         [Parameter(Mandatory)][string]$AppExe,
-        [Parameter(Mandatory)][int]$Port
+        [Parameter(Mandatory)][int]$Port,
+        [AllowEmptyString()][string]$LauncherKey
     )
 
     $startInfo = [System.Diagnostics.ProcessStartInfo]::new()
     $startInfo.FileName = $AppExe
-    $startInfo.Arguments = Join-CodexRtlProcessArguments -Arguments (New-CodexRtlLaunchArguments -Port $Port)
+    $startInfo.Arguments = Join-CodexRtlProcessArguments -Arguments (New-CodexRtlLaunchArguments -Port $Port -LauncherKey $LauncherKey)
     $startInfo.WorkingDirectory = Get-CodexRtlWorkingDirectory
     $startInfo.UseShellExecute = $false
 
-    $userDataDir = Get-CodexPlusUserDataDirectory
+    $userDataDir = Get-CodexPlusUserDataDirectory -LauncherKey $LauncherKey
     if ($userDataDir) {
         $startInfo.EnvironmentVariables['CODEX_ELECTRON_USER_DATA_PATH'] = $userDataDir
     }
@@ -205,11 +230,32 @@ function Start-CodexForRtl {
     param(
         [Parameter(Mandatory)]$Inspection,
         [Parameter(Mandatory)][int]$Port,
+        [AllowEmptyString()][string]$LauncherKey,
         [switch]$AllowRestart
     )
 
     $processes = @(Get-CodexDesktopProcesses)
     $browserProcesses = @($processes | Where-Object { Test-CodexProcessIsBrowserProcess -Process $_ })
+    $scopedLaunch = -not [string]::IsNullOrWhiteSpace($LauncherKey)
+
+    if ($scopedLaunch) {
+        $matchingProcesses = @($browserProcesses | Where-Object { Test-CodexProcessMatchesCodexPlusInstance -Process $_ -Port $Port -LauncherKey $LauncherKey })
+
+        if ($matchingProcesses.Count -gt 0) {
+            if ($AllowRestart) {
+                Write-Host 'Restarting Codex with local RTL injection support...' -ForegroundColor Yellow
+                Stop-CodexDesktopProcesses -Port $Port -LauncherKey $LauncherKey -CurrentInstanceOnly
+                Start-Sleep -Milliseconds 700
+                Start-CodexWithRtlDebug -AppExe $Inspection.AppExe -Port $Port -LauncherKey $LauncherKey
+                return 'restarted'
+            }
+            return 'already-running'
+        }
+
+        Start-CodexWithRtlDebug -AppExe $Inspection.AppExe -Port $Port -LauncherKey $LauncherKey
+        return 'started'
+    }
+
     $matchingProcesses = @($browserProcesses | Where-Object { Test-CodexProcessMatchesCodexPlusInstance -Process $_ -Port $Port })
 
     if ($matchingProcesses.Count -gt 0) {

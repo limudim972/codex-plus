@@ -50,6 +50,13 @@ function New-CodexRtlLauncherScriptContent {
     $escapedPatchScriptPath = $PatchScriptPath.Replace('"', '""')
 @"
 Set shell = CreateObject("WScript.Shell")
+launcherKey = ""
+If WScript.Arguments.Count > 0 Then
+    launcherKey = WScript.Arguments(0)
+End If
+If launcherKey <> "" Then
+    shell.Environment("Process")("CODEX_PLUS_LAUNCHER_KEY") = launcherKey
+End If
 command = "powershell.exe -NoProfile -ExecutionPolicy Bypass -WindowStyle Hidden -File " & Chr(34) & "$escapedPatchScriptPath" & Chr(34) & " -LaunchCodexRtl"
 shell.Run command, 0, False
 "@
