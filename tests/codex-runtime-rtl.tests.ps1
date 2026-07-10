@@ -279,6 +279,7 @@ try {
     function Get-CodexShortcutInventory { @() }
     function Read-CodexRtlState { $null }
     function Save-CodexRtlState { param($State) $script:SavedState = $State }
+    function Wait-CodexWindowTitleSync { param([int]$Port, [string]$LauncherKey, [int]$TimeoutSeconds = 15) $true }
     function Start-CodexForRtl {
         param($Inspection, [int]$Port, [switch]$AllowRestart)
         $script:StartedProcesses += 'rtl'
@@ -492,6 +493,8 @@ try {
 $args = New-CodexRtlLaunchArguments -Port 18317
 Assert-True ($args -contains '--remote-debugging-port=18317') 'Launch args should enable CDP on the chosen port.'
 Assert-True ($args -contains '--remote-debugging-address=127.0.0.1') 'Launch args should bind CDP to loopback only.'
+$argsWithOrdinal = New-CodexRtlLaunchArguments -Port 18317 -WindowTitleOrdinal 2
+Assert-True ($argsWithOrdinal -contains '--codex-plus-window-title-ordinal=2') 'Launch args should carry the taskbar title ordinal when one is assigned.'
 
 $tmpScopedArgsRoot = Join-Path ([System.IO.Path]::GetTempPath()) ("codex-launch-args-test-{0}" -f ([guid]::NewGuid()))
 $oldLocalAppDataForLaunchArgs = $env:LOCALAPPDATA
@@ -506,6 +509,30 @@ try {
         Remove-Item -LiteralPath $tmpScopedArgsRoot -Recurse -Force
     }
 }
+
+$managedProfileRoot = Normalize-CodexRtlMatchPath -Path (Join-Path (Get-CodexRtlStateRoot) 'profile')
+$windowOrdinalProcess = [pscustomobject]@{
+    ProcessId = 700
+    CommandLine = ('"C:\Fake\Codex.exe" --user-data-dir="{0}\instance-a" --codex-plus-window-title-ordinal=3' -f $managedProfileRoot)
+}
+Assert-Equal 3 (Get-CodexProcessWindowTitleOrdinal -Process $windowOrdinalProcess) 'Managed process metadata should surface the assigned taskbar title ordinal.'
+Assert-True (Test-CodexProcessIsCodexPlusManaged -Process $windowOrdinalProcess) 'Managed Codex Plus processes should be recognized from the profile root.'
+Assert-Equal '1.Codex' (Get-CodexDesiredWindowTitle -Ordinal 1) 'Desired taskbar titles should prefix Codex with the ordinal.'
+
+$script:MockCodexProcesses = @(
+    [pscustomobject]@{
+        ProcessId = 701
+        ExecutablePath = 'C:\Program Files\WindowsApps\OpenAI.Codex_fake\app\Codex.exe'
+        CommandLine = ('"C:\Fake\Codex.exe" --user-data-dir="{0}\instance-a" --codex-plus-window-title-ordinal=1' -f $managedProfileRoot)
+    },
+    [pscustomobject]@{
+        ProcessId = 702
+        ExecutablePath = 'C:\Program Files\WindowsApps\OpenAI.Codex_fake\app\Codex.exe'
+        CommandLine = ('"C:\Fake\Codex.exe" --user-data-dir="{0}\instance-b" --codex-plus-window-title-ordinal=4' -f $managedProfileRoot)
+    }
+)
+function Get-CodexDesktopProcesses { @($script:MockCodexProcesses) }
+Assert-Equal 5 (Get-CodexNextWindowTitleOrdinal) 'Next taskbar title ordinal should advance past the highest live managed ordinal.'
 
 $script:DirectStartProcessCalls = @()
 function Start-Process {
@@ -586,13 +613,15 @@ try {
         param(
             [string]$AppExe,
             [int]$Port,
-            [string]$LauncherKey
+            [string]$LauncherKey,
+            [int]$WindowTitleOrdinal = 0
         )
 
         $script:StartedProcesses += [pscustomobject]@{
             AppExe = $AppExe
             Port = $Port
             LauncherKey = $LauncherKey
+            WindowTitleOrdinal = $WindowTitleOrdinal
         }
     }
 
@@ -608,9 +637,13 @@ try {
         }
     }
 
+    function Wait-CodexWindowTitleSync {
+        param([int]$Port, [string]$LauncherKey, [int]$TimeoutSeconds = 15)
+        $true
+    }
+
     Assert-Equal 18420 (Get-CodexRtlLaunchPort -PreferredPort 18317 -LauncherKey $launcherKeyA) 'Launcher-specific launch should detect the matching current session port.'
     Launch-CodexRtl -LauncherKey $launcherKeyA
-
     Assert-Equal 0 @($script:StartedProcesses).Count 'Launcher-specific launch should not restart an already-running matching session.'
     Assert-Equal 0 @($script:StoppedProcesses).Count 'Launcher-specific launch should leave the already-running matching session open.'
     Assert-Equal 18420 @($script:InjectedPorts)[0] 'Launcher-specific launch should inject into the matching session port.'
@@ -692,6 +725,9 @@ $textSelectorsOnly = ($payload -split 'const SKIP_SELECTOR')[0]
 Assert-True (-not $textSelectorsOnly.Contains("'td'")) 'Payload text block targeting should not include table cells.'
 Assert-True (-not $textSelectorsOnly.Contains("'th'")) 'Payload text block targeting should not include table headers.'
 Assert-True ($payload.Contains('MutationObserver')) 'Payload should reapply after React DOM changes.'
+
+$payloadBundle = Get-CodexPlusPayloadBundle
+Assert-True (-not ($payloadBundle.Contains('__CODEX_PLUS_WINDOW_TITLE'))) 'Injected payload bundle should not rewrite the webview title for taskbar labeling.'
 
 $nodeCommand = Get-Command -Name node -ErrorAction SilentlyContinue
 if ($nodeCommand) {

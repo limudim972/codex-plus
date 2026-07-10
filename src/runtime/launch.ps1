@@ -30,7 +30,8 @@ function Get-CodexRtlAvailablePort {
 function New-CodexRtlLaunchArguments {
     param(
         [Parameter(Mandatory)][int]$Port,
-        [AllowEmptyString()][string]$LauncherKey
+        [AllowEmptyString()][string]$LauncherKey,
+        [int]$WindowTitleOrdinal = 0
     )
 
     $args = @(
@@ -40,6 +41,9 @@ function New-CodexRtlLaunchArguments {
     $userDataDir = Get-CodexPlusUserDataDirectory -LauncherKey $LauncherKey
     if ($userDataDir) {
         $args += "--user-data-dir=$userDataDir"
+    }
+    if ($WindowTitleOrdinal -gt 0) {
+        $args += "--codex-plus-window-title-ordinal=$WindowTitleOrdinal"
     }
     return $args
 }
@@ -110,6 +114,169 @@ function Get-CodexProcessUserDataDirectory {
         $match.Groups[3].Value
     }
     return (Normalize-CodexRtlMatchPath -Path $value)
+}
+
+function Get-CodexProcessWindowTitleOrdinal {
+    param([Parameter(Mandatory)]$Process)
+
+    $match = [regex]::Match([string]$Process.CommandLine, '--codex-plus-window-title-ordinal=(\d+)')
+    if ($match.Success) {
+        return [int]$match.Groups[1].Value
+    }
+    return 0
+}
+
+function Test-CodexProcessIsCodexPlusManaged {
+    param([Parameter(Mandatory)]$Process)
+
+    $profileRoot = Normalize-CodexRtlMatchPath -Path (Join-Path (Get-CodexRtlStateRoot) 'profile')
+    $processUserDataDir = Get-CodexProcessUserDataDirectory -Process $Process
+    if (-not $profileRoot -or -not $processUserDataDir) {
+        return $false
+    }
+
+    return ($processUserDataDir -eq $profileRoot -or $processUserDataDir.StartsWith("$profileRoot\", [System.StringComparison]::OrdinalIgnoreCase))
+}
+
+function Get-CodexNextWindowTitleOrdinal {
+    $managedBrowserProcesses = @(
+        Get-CodexDesktopProcesses | Where-Object {
+            (Test-CodexProcessIsBrowserProcess -Process $_) -and
+            (Test-CodexProcessIsCodexPlusManaged -Process $_)
+        }
+    )
+    if ($managedBrowserProcesses.Count -eq 0) {
+        return 1
+    }
+
+    $maxOrdinal = 0
+    foreach ($process in $managedBrowserProcesses) {
+        $ordinal = Get-CodexProcessWindowTitleOrdinal -Process $process
+        if ($ordinal -gt $maxOrdinal) {
+            $maxOrdinal = $ordinal
+        }
+    }
+
+    return [Math]::Max($managedBrowserProcesses.Count, $maxOrdinal) + 1
+}
+
+function Get-CodexDesiredWindowTitle {
+    param([int]$Ordinal = 0)
+
+    if ($Ordinal -gt 0) {
+        return "$Ordinal.Codex"
+    }
+
+    return 'Codex'
+}
+
+function Set-CodexNativeWindowTitle {
+    param(
+        [Parameter(Mandatory)][IntPtr]$WindowHandle,
+        [Parameter(Mandatory)][string]$Title
+    )
+
+    if ($WindowHandle -eq [IntPtr]::Zero -or [string]::IsNullOrWhiteSpace($Title)) {
+        return $false
+    }
+
+    if (-not ('CodexPlusNativeWindowTitle' -as [type])) {
+        Add-Type @'
+using System;
+using System.Runtime.InteropServices;
+
+public static class CodexPlusNativeWindowTitle {
+    [DllImport("user32.dll", CharSet = CharSet.Unicode, SetLastError = true)]
+    public static extern bool SetWindowText(IntPtr hWnd, string lpString);
+}
+'@
+    }
+
+    return [CodexPlusNativeWindowTitle]::SetWindowText($WindowHandle, $Title)
+}
+
+function Update-CodexWindowTitles {
+    param(
+        [Parameter(Mandatory)][int]$Port,
+        [AllowEmptyString()][string]$LauncherKey
+    )
+
+    $matchingProcesses = @(
+        Get-CodexDesktopProcesses | Where-Object {
+            Test-CodexProcessMatchesCodexPlusInstance -Process $_ -Port $Port -LauncherKey $LauncherKey
+        }
+    )
+    if ($matchingProcesses.Count -eq 0) {
+        return $false
+    }
+
+    $updated = $false
+    foreach ($process in $matchingProcesses) {
+        $processOrdinal = Get-CodexProcessWindowTitleOrdinal -Process $process
+        try {
+            $liveProcess = Get-Process -Id $process.ProcessId -ErrorAction Stop
+            if ($liveProcess.MainWindowHandle -eq 0) {
+                continue
+            }
+
+            $desiredTitle = Get-CodexDesiredWindowTitle -Ordinal $processOrdinal
+            if ([string]$liveProcess.MainWindowTitle -eq $desiredTitle) {
+                continue
+            }
+            if (Set-CodexNativeWindowTitle -WindowHandle $liveProcess.MainWindowHandle -Title $desiredTitle) {
+                $updated = $true
+            }
+        } catch {
+        }
+    }
+
+    return $updated
+}
+
+function Wait-CodexWindowTitleSync {
+    param(
+        [Parameter(Mandatory)][int]$Port,
+        [AllowEmptyString()][string]$LauncherKey,
+        [int]$TimeoutSeconds = 15
+    )
+
+    $deadline = [DateTime]::UtcNow.AddSeconds($TimeoutSeconds)
+    while ([DateTime]::UtcNow -lt $deadline) {
+        $matchingProcesses = @(
+            Get-CodexDesktopProcesses | Where-Object {
+                Test-CodexProcessMatchesCodexPlusInstance -Process $_ -Port $Port -LauncherKey $LauncherKey
+            }
+        )
+        if ($matchingProcesses.Count -gt 0) {
+            $allVisibleTitlesMatch = $true
+            $visibleProcessCount = 0
+            foreach ($process in $matchingProcesses) {
+                $processOrdinal = Get-CodexProcessWindowTitleOrdinal -Process $process
+                try {
+                    $liveProcess = Get-Process -Id $process.ProcessId -ErrorAction Stop
+                    if ($liveProcess.MainWindowHandle -ne 0) {
+                        $visibleProcessCount += 1
+                        $desiredTitle = Get-CodexDesiredWindowTitle -Ordinal $processOrdinal
+                        if ([string]$liveProcess.MainWindowTitle -ne $desiredTitle) {
+                            $allVisibleTitlesMatch = $false
+                        }
+                    }
+                } catch {
+                }
+            }
+
+            if ($visibleProcessCount -gt 0) {
+                Update-CodexWindowTitles -Port $Port -LauncherKey $LauncherKey | Out-Null
+                if ($allVisibleTitlesMatch) {
+                    return $true
+                }
+            }
+        }
+
+        Start-Sleep -Milliseconds 300
+    }
+
+    return $false
 }
 
 function Test-CodexProcessMatchesCodexPlusInstance {
@@ -201,12 +368,13 @@ function Start-CodexWithRtlDebug {
     param(
         [Parameter(Mandatory)][string]$AppExe,
         [Parameter(Mandatory)][int]$Port,
-        [AllowEmptyString()][string]$LauncherKey
+        [AllowEmptyString()][string]$LauncherKey,
+        [int]$WindowTitleOrdinal = 0
     )
 
     $startInfo = [System.Diagnostics.ProcessStartInfo]::new()
     $startInfo.FileName = $AppExe
-    $startInfo.Arguments = Join-CodexRtlProcessArguments -Arguments (New-CodexRtlLaunchArguments -Port $Port -LauncherKey $LauncherKey)
+    $startInfo.Arguments = Join-CodexRtlProcessArguments -Arguments (New-CodexRtlLaunchArguments -Port $Port -LauncherKey $LauncherKey -WindowTitleOrdinal $WindowTitleOrdinal)
     $startInfo.WorkingDirectory = Get-CodexRtlWorkingDirectory
     $startInfo.UseShellExecute = $false
 
@@ -243,16 +411,18 @@ function Start-CodexForRtl {
 
         if ($matchingProcesses.Count -gt 0) {
             if ($AllowRestart) {
+                $windowTitleOrdinal = Get-CodexNextWindowTitleOrdinal
                 Write-Host 'Restarting Codex with local RTL injection support...' -ForegroundColor Yellow
                 Stop-CodexDesktopProcesses -Port $Port -LauncherKey $LauncherKey -CurrentInstanceOnly
                 Start-Sleep -Milliseconds 700
-                Start-CodexWithRtlDebug -AppExe $Inspection.AppExe -Port $Port -LauncherKey $LauncherKey
+                Start-CodexWithRtlDebug -AppExe $Inspection.AppExe -Port $Port -LauncherKey $LauncherKey -WindowTitleOrdinal $windowTitleOrdinal
                 return 'restarted'
             }
             return 'already-running'
         }
 
-        Start-CodexWithRtlDebug -AppExe $Inspection.AppExe -Port $Port -LauncherKey $LauncherKey
+        $windowTitleOrdinal = Get-CodexNextWindowTitleOrdinal
+        Start-CodexWithRtlDebug -AppExe $Inspection.AppExe -Port $Port -LauncherKey $LauncherKey -WindowTitleOrdinal $windowTitleOrdinal
         return 'started'
     }
 
@@ -264,16 +434,18 @@ function Start-CodexForRtl {
 
     if ($browserProcesses.Count -gt 0) {
         if ($AllowRestart) {
+            $windowTitleOrdinal = Get-CodexNextWindowTitleOrdinal
             Write-Host 'Restarting Codex with local RTL injection support...' -ForegroundColor Yellow
             Stop-CodexDesktopProcesses
             Start-Sleep -Milliseconds 700
-            Start-CodexWithRtlDebug -AppExe $Inspection.AppExe -Port $Port
+            Start-CodexWithRtlDebug -AppExe $Inspection.AppExe -Port $Port -WindowTitleOrdinal $windowTitleOrdinal
             return 'restarted'
         }
         return 'running-without-debug-port'
     }
 
-    Start-CodexWithRtlDebug -AppExe $Inspection.AppExe -Port $Port
+    $windowTitleOrdinal = Get-CodexNextWindowTitleOrdinal
+    Start-CodexWithRtlDebug -AppExe $Inspection.AppExe -Port $Port -WindowTitleOrdinal $windowTitleOrdinal
     return 'started'
 }
 
@@ -431,6 +603,7 @@ function Watch-CodexCloseToQuit {
         if ($visibleProcessCount -gt 0) {
             $seenVisibleWindow = $true
             $missingVisibleWindowCount = 0
+            Update-CodexWindowTitles -Port $Port -LauncherKey $LauncherKey | Out-Null
         } else {
             $allowNoWindowKill = $seenVisibleWindow
             if ((-not $allowNoWindowKill) -and $matchingProcessSeenAt) {
@@ -551,5 +724,6 @@ function Invoke-CodexRtlInjection {
             Write-Warn "Codex Plus injection failed for target '$($target.title)': $($_.Exception.Message)"
         }
     }
+    Update-CodexWindowTitles -Port $Port | Out-Null
     return $true
 }

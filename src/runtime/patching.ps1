@@ -57,6 +57,7 @@ function Install-CodexRtlPatch {
 
     Start-CodexForRtl -Inspection $installInfo -Port $port -AllowRestart | Out-Null
     Invoke-CodexRtlInjection -Port $port | Out-Null
+    Wait-CodexWindowTitleSync -Port $port | Out-Null
 
     Write-Host "Codex Plus launcher installed." -ForegroundColor Green
     Write-Host "Created or refreshed $createdOrRefreshedCount Codex Plus shortcut(s)." -ForegroundColor Green
@@ -151,4 +152,5 @@ function Launch-CodexRtl {
     Start-CodexForRtl -Inspection $installInfo -Port $port -LauncherKey $LauncherKey | Out-Null
     Start-CodexCloseWatchdog -Port $port -LauncherKey $LauncherKey
     Invoke-CodexRtlInjection -Port $port | Out-Null
+    Wait-CodexWindowTitleSync -Port $port -LauncherKey $LauncherKey | Out-Null
 }
