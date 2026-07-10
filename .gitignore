@@ -19,3 +19,6 @@ ehthumbs.db
 # Pester / test output
 TestResults/
 *.xml
+
+# Temporary scratch space
+scratch/

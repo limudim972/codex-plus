@@ -1,0 +1,20 @@
+$ws = 'ws://127.0.0.1:18318/devtools/page/D5EECAEF70B6E9F29267F6652949995F'
+$client = [System.Net.WebSockets.ClientWebSocket]::new()
+$client.ConnectAsync([Uri]$ws, [Threading.CancellationToken]::None).GetAwaiter().GetResult()
+$expr = 'JSON.stringify({ plus: !!window.__CODEX_PLUS_SIDEBAR_PAGING, badge: !!window.__CODEX_PLUS_CONTEXT_BADGE, pagerCount: document.querySelectorAll(''[data-codex-plus-sidebar-pager]'').length, chatsLoaded: Array.from(document.querySelectorAll(''[role="list"]'')).find(el => (el.getAttribute(''aria-label'') || '''').trim() === ''Chats'')?.getAttribute(''data-codex-plus-sidebar-loaded'') || null })'
+$cmd = @{ id = 1; method = 'Runtime.evaluate'; params = @{ expression = $expr; awaitPromise = $true; returnByValue = $true } }
+$json = $cmd | ConvertTo-Json -Depth 20 -Compress
+$bytes = [Text.Encoding]::UTF8.GetBytes($json)
+$client.SendAsync([ArraySegment[byte]]::new($bytes), [System.Net.WebSockets.WebSocketMessageType]::Text, $true, [Threading.CancellationToken]::None).GetAwaiter().GetResult()
+$buf = New-Object byte[] 16384
+$recv = [ArraySegment[byte]]::new($buf)
+$msg = New-Object System.Collections.Generic.List[byte]
+$res = $client.ReceiveAsync($recv, [Threading.CancellationToken]::None).GetAwaiter().GetResult()
+if($res.Count -gt 0){ $msg.AddRange([byte[]]$buf[0..($res.Count-1)]) }
+while(-not $res.EndOfMessage){
+  $res = $client.ReceiveAsync($recv, [Threading.CancellationToken]::None).GetAwaiter().GetResult()
+  if($res.Count -gt 0){ $msg.AddRange([byte[]]$buf[0..($res.Count-1)]) }
+}
+$client.CloseAsync([System.Net.WebSockets.WebSocketCloseStatus]::NormalClosure,'done',[Threading.CancellationToken]::None).GetAwaiter().GetResult()
+$client.Dispose()
+[Text.Encoding]::UTF8.GetString($msg.ToArray())
