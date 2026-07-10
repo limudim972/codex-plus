@@ -66,7 +66,7 @@ function Test-CodexShortcutCandidate {
 
     if (-not $Shortcut.IsLink) { return $false }
     $haystack = @($Shortcut.Name, $Shortcut.TargetPath, $Shortcut.Arguments) -join "`n"
-    return [bool]($haystack -match 'OpenAI\.Codex|\\Codex\.exe|(^|[^A-Za-z])Codex([^A-Za-z]|$)')
+    return [bool]($haystack -match 'OpenAI\.Codex|\\(?:Codex|ChatGPT)\.exe|(^|[^A-Za-z])(?:Codex|ChatGPT)([^A-Za-z]|$)')
 }
 
 function Test-CodexShortcutSeedable {
