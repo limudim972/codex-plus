@@ -9,7 +9,8 @@ function Install-CodexRtlPatch {
     $runtimePatchScript = Join-Path $runtimeRoot 'patch.ps1'
 
     $existingState = Read-CodexRtlState
-    $port = if ($existingState -and $existingState.Port) { [int]$existingState.Port } else { Get-CodexRtlAvailablePort }
+    $preferredPort = if ($existingState -and $existingState.Port) { [int]$existingState.Port } else { 0 }
+    $port = Get-CodexRtlLaunchPort -PreferredPort $preferredPort
     Install-CodexRtlLauncherScript -PatchScriptPath $runtimePatchScript | Out-Null
     Remove-CodexRtlOwnedShortcut -ShortcutPath (Get-CodexRtlShortcutPath) | Out-Null
     $shortcutSpec = New-CodexLauncherShortcutSpec -InstallInfo $installInfo
@@ -134,7 +135,13 @@ function Launch-CodexRtl {
     }
 
     $state = Read-CodexRtlState
-    $port = if ($state -and $state.Port) { [int]$state.Port } else { Get-CodexRtlDefaultPort }
+    $preferredPort = if ($state -and $state.Port) { [int]$state.Port } else { 0 }
+    $port = Get-CodexRtlLaunchPort -PreferredPort $preferredPort
+    if ($state -and $state.Port -ne $port) {
+        $state.Port = $port
+        $state.UpdatedAt = [DateTimeOffset]::Now.ToString('o')
+        Save-CodexRtlState -State $state
+    }
     Start-CodexForRtl -Inspection $installInfo -Port $port -AllowRestart
     Invoke-CodexRtlInjection -Port $port | Out-Null
 }

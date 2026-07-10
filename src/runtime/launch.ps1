@@ -18,7 +18,9 @@ function Test-TcpPortAvailable {
 }
 
 function Get-CodexRtlAvailablePort {
-    $start = Get-CodexRtlDefaultPort
+    param([int]$StartPort = 0)
+
+    $start = if ($StartPort -gt 0) { $StartPort } else { Get-CodexRtlDefaultPort }
     for ($port = $start; $port -lt ($start + 50); $port++) {
         if (Test-TcpPortAvailable -Port $port) { return $port }
     }
@@ -28,10 +30,29 @@ function Get-CodexRtlAvailablePort {
 function New-CodexRtlLaunchArguments {
     param([Parameter(Mandatory)][int]$Port)
 
-    @(
+    $args = @(
         "--remote-debugging-port=$Port",
         '--remote-debugging-address=127.0.0.1'
     )
+    $userDataDir = Get-CodexPlusUserDataDirectory
+    if ($userDataDir) {
+        $args += "--user-data-dir=$userDataDir"
+    }
+    return $args
+}
+
+function Join-CodexRtlProcessArguments {
+    param([string[]]$Arguments)
+
+    $quoted = @()
+    foreach ($argument in @($Arguments)) {
+        if ($argument -match '[\s"]') {
+            $quoted += ('"{0}"' -f $argument.Replace('"', '\"'))
+        } else {
+            $quoted += $argument
+        }
+    }
+    return ($quoted -join ' ')
 }
 
 function Test-CodexProcessHasRtlDebugPort {
@@ -44,13 +65,94 @@ function Test-CodexProcessHasRtlDebugPort {
         $Process.CommandLine -match [regex]::Escape('--remote-debugging-address=127.0.0.1'))
 }
 
+function Test-CodexProcessIsBrowserProcess {
+    param([Parameter(Mandatory)]$Process)
+
+    return -not ([string]$Process.CommandLine -match '(^|\s)--type=')
+}
+
+function Normalize-CodexRtlMatchPath {
+    param([AllowEmptyString()][string]$Path)
+
+    if ([string]::IsNullOrWhiteSpace($Path)) { return '' }
+    $normalized = $Path.Trim().Trim('"').Replace('\\', '\')
+    try {
+        return [System.IO.Path]::GetFullPath($normalized).TrimEnd('\').ToLowerInvariant()
+    } catch {
+        return $normalized.TrimEnd('\').ToLowerInvariant()
+    }
+}
+
+function Get-CodexProcessUserDataDirectory {
+    param([Parameter(Mandatory)]$Process)
+
+    $commandLine = [string]$Process.CommandLine
+    $match = [regex]::Match($commandLine, '(?:"--user-data-dir=([^"]+)"|--user-data-dir=(?:"([^"]+)"|([^\s]+)))')
+    if (-not $match.Success) { return '' }
+    $value = if ($match.Groups[1].Success) {
+        $match.Groups[1].Value
+    } elseif ($match.Groups[2].Success) {
+        $match.Groups[2].Value
+    } else {
+        $match.Groups[3].Value
+    }
+    return (Normalize-CodexRtlMatchPath -Path $value)
+}
+
+function Test-CodexProcessMatchesCodexPlusInstance {
+    param(
+        [Parameter(Mandatory)]$Process,
+        [Parameter(Mandatory)][int]$Port
+    )
+
+    if (-not (Test-CodexProcessIsBrowserProcess -Process $Process)) {
+        return $false
+    }
+
+    $expectedUserDataDir = Normalize-CodexRtlMatchPath -Path (Get-CodexPlusUserDataDirectory)
+    if ($expectedUserDataDir) {
+        return (Get-CodexProcessUserDataDirectory -Process $Process) -eq $expectedUserDataDir
+    }
+
+    return Test-CodexProcessHasRtlDebugPort -Process $Process -Port $Port
+}
+
 function Get-CodexDesktopProcesses {
     Get-CimInstance Win32_Process -Filter "Name = 'Codex.exe'" -ErrorAction SilentlyContinue |
-        Where-Object { $_.ExecutablePath -and $_.ExecutablePath -like '*\WindowsApps\OpenAI.Codex_*' }
+        Where-Object { $_.ExecutablePath -and $_.ExecutablePath -like '*\WindowsApps\OpenAI.Codex_*\app\Codex.exe' }
+}
+
+function Get-CodexRtlLaunchPort {
+    param([int]$PreferredPort = 0)
+
+    $port = if ($PreferredPort -gt 0) { $PreferredPort } else { Get-CodexRtlDefaultPort }
+    $matchingProcesses = @(
+        Get-CodexDesktopProcesses | Where-Object {
+            Test-CodexProcessMatchesCodexPlusInstance -Process $_ -Port $port
+        }
+    )
+    if ($matchingProcesses.Count -gt 0) { return $port }
+    if (Test-TcpPortAvailable -Port $port) { return $port }
+    return (Get-CodexRtlAvailablePort -StartPort ($port + 1))
 }
 
 function Stop-CodexDesktopProcesses {
+    param(
+        [int]$Port = 0,
+        [switch]$CurrentInstanceOnly
+    )
+
     foreach ($process in @(Get-CodexDesktopProcesses)) {
+        if (-not (Test-CodexProcessIsBrowserProcess -Process $process)) {
+            continue
+        }
+        if ($CurrentInstanceOnly) {
+            if (-not (Test-CodexProcessMatchesCodexPlusInstance -Process $process -Port $Port)) {
+                continue
+            }
+        } elseif ($Port -gt 0 -and (-not (Test-CodexProcessHasRtlDebugPort -Process $process -Port $Port))) {
+            continue
+        }
         try {
             Stop-Process -Id $process.ProcessId -Force -ErrorAction SilentlyContinue
         } catch {
@@ -65,10 +167,18 @@ function Start-CodexWithRtlDebug {
         [Parameter(Mandatory)][int]$Port
     )
 
-    Start-Process `
-        -FilePath $AppExe `
-        -ArgumentList (New-CodexRtlLaunchArguments -Port $Port) `
-        -WorkingDirectory (Get-CodexRtlWorkingDirectory) | Out-Null
+    $startInfo = [System.Diagnostics.ProcessStartInfo]::new()
+    $startInfo.FileName = $AppExe
+    $startInfo.Arguments = Join-CodexRtlProcessArguments -Arguments (New-CodexRtlLaunchArguments -Port $Port)
+    $startInfo.WorkingDirectory = Get-CodexRtlWorkingDirectory
+    $startInfo.UseShellExecute = $false
+
+    $userDataDir = Get-CodexPlusUserDataDirectory
+    if ($userDataDir) {
+        $startInfo.EnvironmentVariables['CODEX_ELECTRON_USER_DATA_PATH'] = $userDataDir
+    }
+
+    [System.Diagnostics.Process]::Start($startInfo) | Out-Null
 }
 
 function Start-CodexNormally {
@@ -87,24 +197,21 @@ function Start-CodexForRtl {
     )
 
     $processes = @(Get-CodexDesktopProcesses)
-    if ($processes.Count -eq 0) {
+    $matchingProcesses = @($processes | Where-Object { Test-CodexProcessMatchesCodexPlusInstance -Process $_ -Port $Port })
+    if ($matchingProcesses.Count -eq 0) {
         Start-CodexWithRtlDebug -AppExe $Inspection.AppExe -Port $Port
         return 'started'
     }
 
-    if (@($processes | Where-Object { Test-CodexProcessHasRtlDebugPort -Process $_ -Port $Port }).Count -gt 0) {
+    if (-not $AllowRestart) {
         return 'already-running'
     }
 
-    if ($AllowRestart) {
-        Write-Host 'Restarting Codex with local RTL injection support...' -ForegroundColor Yellow
-        Stop-CodexDesktopProcesses
-        Start-Sleep -Milliseconds 700
-        Start-CodexWithRtlDebug -AppExe $Inspection.AppExe -Port $Port
-        return 'restarted'
-    }
-
-    return 'running-without-debug-port'
+    Write-Host 'Restarting Codex with local RTL injection support...' -ForegroundColor Yellow
+    Stop-CodexDesktopProcesses -Port $Port -CurrentInstanceOnly
+    Start-Sleep -Milliseconds 700
+    Start-CodexWithRtlDebug -AppExe $Inspection.AppExe -Port $Port
+    return 'restarted'
 }
 
 function Test-CodexDevToolsTarget {
@@ -120,18 +227,20 @@ function Test-CodexDevToolsTarget {
 function Get-CodexDevToolsTargets {
     param([Parameter(Mandatory)][int]$Port)
 
-    $uri = "http://127.0.0.1:$Port/json/list"
-    try {
-        return @(Invoke-RestMethod -Uri $uri -UseBasicParsing -TimeoutSec 2)
-    } catch {
-        return @()
+    foreach ($base in @("http://127.0.0.1:$Port", "http://[::1]:$Port")) {
+        try {
+            return @(Invoke-RestMethod -Uri "$base/json/list" -UseBasicParsing -TimeoutSec 2)
+        } catch {
+            continue
+        }
     }
+    return @()
 }
 
 function Wait-CodexDevToolsTargets {
     param(
         [Parameter(Mandatory)][int]$Port,
-        [int]$TimeoutSeconds = 20
+        [int]$TimeoutSeconds = 60
     )
 
     $deadline = [DateTime]::UtcNow.AddSeconds($TimeoutSeconds)
@@ -224,8 +333,12 @@ function Invoke-CodexRtlInjectionForTarget {
 function Invoke-CodexRtlInjection {
     param([Parameter(Mandatory)][int]$Port)
 
-    $payload = Get-CodexRtlPayload
+    $payload = Get-CodexPlusPayloadBundle
     $targets = @(Wait-CodexDevToolsTargets -Port $Port)
+    if ($targets.Count -eq 0) {
+        Start-Sleep -Seconds 5
+        $targets = @(Wait-CodexDevToolsTargets -Port $Port -TimeoutSeconds 20)
+    }
     if ($targets.Count -eq 0) {
         Write-Warn "Codex DevTools target was not found on port $Port."
         return $false

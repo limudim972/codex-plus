@@ -344,3 +344,11 @@ function Get-CodexRtlPayload {
 })();
 '@
 }
+
+function Get-CodexPlusPayloadBundle {
+    @(
+        Get-CodexRtlPayload
+        Get-CodexContextBadgePayload
+        Get-CodexSidebarPagingPayload
+    ) -join "`n"
+}

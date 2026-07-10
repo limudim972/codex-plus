@@ -18,6 +18,14 @@ function Get-CodexRtlWorkingDirectory {
     return $root
 }
 
+function Get-CodexPlusUserDataDirectory {
+    $profilePath = Join-Path (Get-CodexRtlStateRoot) 'profile'
+    if (-not (Test-Path -LiteralPath $profilePath)) {
+        New-Item -ItemType Directory -Force -Path $profilePath | Out-Null
+    }
+    return $profilePath
+}
+
 function Read-CodexRtlState {
     $path = Get-CodexRtlStatePath
     if (-not (Test-Path -LiteralPath $path)) { return $null }

@@ -24,6 +24,8 @@ $ModuleFiles = @(
     'src/shared/asar.ps1',
     'src/codex/detection.ps1',
     'src/codex/rtl-payload.ps1',
+    'src/codex/context-badge.ps1',
+    'src/codex/sidebar-paging.ps1',
     'src/runtime/state.ps1',
     'src/runtime/files.ps1',
     'src/runtime/shortcuts.ps1',
