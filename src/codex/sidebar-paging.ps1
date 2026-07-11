@@ -14,6 +14,7 @@ function Get-CodexSidebarPagingPayload {
   const PAGER_ATTR = 'data-codex-plus-sidebar-pager';
   const ACTION_ATTR = 'data-codex-plus-sidebar-action';
   const STATE_ATTR = 'data-codex-plus-sidebar-loaded';
+  const COLLAPSED_ATTR = 'data-codex-plus-sidebar-collapsed';
   const THREAD_UPDATED_ATTR = 'data-codex-plus-thread-updated-ms';
   const BUTTON_CLASS = 'border-token-border no-drag cursor-interaction flex items-center gap-1 border whitespace-nowrap select-none focus:outline-none disabled:cursor-not-allowed disabled:opacity-40 rounded-full text-token-muted-foreground enabled:hover:bg-transparent data-[state=open]:bg-transparent hover:text-token-foreground border-transparent px-2 py-0.5 text-sm leading-[18px] text-token-description-foreground hover:text-token-foreground -ml-[9px]';
   const RECENT_THREADS = __CODEX_PLUS_RECENT_THREADS__;
@@ -119,6 +120,33 @@ function Get-CodexSidebarPagingPayload {
 
   function getThreadTitleElement(row) {
     return row?.querySelector('[data-thread-title="true"], [data-app-action-sidebar-thread-title], [data-app-action-sidebar-project-label]') || null;
+  }
+
+  function styleThreadTitleElement(element) {
+    if (!element) return;
+    element.classList.remove('text-token-description-foreground');
+    element.classList.add('text-token-foreground');
+  }
+
+  function syncThreadToggleButton(button, collapsed) {
+    if (!button) return;
+    button.setAttribute(ACTION_ATTR, 'collapse-list');
+    button.setAttribute('aria-label', collapsed ? 'Show Threads list' : 'Hide Threads list');
+    button.setAttribute('aria-expanded', collapsed ? 'false' : 'true');
+    button.removeAttribute('data-app-action-sidebar-section-toggle');
+    button.removeAttribute('aria-describedby');
+    button.removeAttribute('aria-disabled');
+    button.removeAttribute('aria-roledescription');
+    button.removeAttribute('data-state');
+    const labelSpan = button.querySelector('span');
+    if (labelSpan) {
+      labelSpan.textContent = 'Threads';
+    }
+    const icon = button.querySelector('svg');
+    if (icon) {
+      icon.classList.toggle('-rotate-90', collapsed);
+      icon.classList.add('opacity-100');
+    }
   }
 
   function getRowTextSignature(row) {
@@ -239,10 +267,12 @@ function Get-CodexSidebarPagingPayload {
     if (!row || !label) return;
     const titleElement = getThreadTitleElement(row);
     if (titleElement) {
+      styleThreadTitleElement(titleElement);
       titleElement.textContent = label;
       return;
     }
     const fallbackLabel = row.querySelector('[aria-label]') || row.firstElementChild || row;
+    styleThreadTitleElement(fallbackLabel);
     fallbackLabel.textContent = label;
   }
 
@@ -380,7 +410,7 @@ function Get-CodexSidebarPagingPayload {
 
     const title = document.createElement('span');
     title.setAttribute('data-thread-title', 'true');
-    title.className = 'min-w-0 select-none text-fade-truncate flex-1';
+    title.className = 'min-w-0 select-none text-fade-truncate flex-1 text-token-foreground';
     title.textContent = label;
 
     inner.appendChild(title);
@@ -425,7 +455,7 @@ function Get-CodexSidebarPagingPayload {
     const projectsHeading = getSidebarSectionTitle(document, 'Projects');
     const projectsShell = getSectionShellFromTitle(projectsHeading);
 
-    if (!projectsShell) {
+    if (!projectsShell || !projectsHeading) {
       removeSyntheticSection('threads');
       return null;
     }
@@ -456,36 +486,64 @@ function Get-CodexSidebarPagingPayload {
     if (!shell) {
       shell = document.createElement('div');
       shell.setAttribute(SYNTHETIC_SECTION_ATTR, 'threads');
-
-      const title = document.createElement('div');
-      title.className = projectsHeading.className;
-      title.textContent = 'Threads';
-      shell.appendChild(title);
-
-      const sectionContainer = document.createElement('div');
-      const scroller = document.createElement('div');
-      const list = document.createElement('div');
-      list.setAttribute('role', 'list');
-      list.setAttribute('aria-label', 'Threads');
-      list.setAttribute(SYNTHETIC_LIST_ATTR, 'threads');
-      scroller.appendChild(list);
-      sectionContainer.appendChild(scroller);
-      shell.appendChild(sectionContainer);
     }
 
-    const list = shell.querySelector('[role="list"]');
-    clearPagers(list);
-    writeLoaded(list, Math.max(0, readLoaded(list)));
-    list.innerHTML = '';
+    shell.innerHTML = '';
+
+    const header = projectsHeading.cloneNode(true);
+    const headerButton = header.querySelector('button[data-app-action-sidebar-section-toggle]') || header.querySelector('button');
+    if (headerButton) {
+      syncThreadToggleButton(headerButton, false);
+    }
+    while (header.children.length > 1) {
+      header.lastElementChild.remove();
+    }
+    if (headerButton) {
+      syncThreadToggleButton(headerButton, false);
+    }
+
+    shell.appendChild(header);
+
+    const sectionContainer = document.createElement('div');
+    const scroller = document.createElement('div');
+    const list = document.createElement('div');
+    list.setAttribute('role', 'list');
+    list.setAttribute('aria-label', 'Threads');
+    list.setAttribute(SYNTHETIC_LIST_ATTR, 'threads');
+    scroller.appendChild(list);
+    sectionContainer.appendChild(scroller);
+    sectionContainer.hidden = shell.getAttribute(COLLAPSED_ATTR) === 'true';
+    shell.appendChild(sectionContainer);
+
+    const listElement = shell.querySelector('[role="list"]');
+    clearPagers(listElement);
+    writeLoaded(listElement, Math.max(0, readLoaded(listElement)));
+    listElement.innerHTML = '';
     for (const entry of threadRows) {
-      list.appendChild(entry.row);
+      listElement.appendChild(entry.row);
+    }
+
+    const collapseButton = shell.querySelector('[' + ACTION_ATTR + '="collapse-list"]');
+    if (collapseButton && sectionContainer) {
+      const collapsed = sectionContainer.hidden || shell.getAttribute(COLLAPSED_ATTR) === 'true';
+      syncThreadToggleButton(collapseButton, collapsed);
+      collapseButton.onclick = (event) => {
+        const nextCollapsed = !sectionContainer.hidden;
+        sectionContainer.hidden = nextCollapsed;
+        shell.setAttribute(COLLAPSED_ATTR, nextCollapsed ? 'true' : 'false');
+        syncThreadToggleButton(collapseButton, nextCollapsed);
+        event.preventDefault();
+        event.stopPropagation();
+        event.stopImmediatePropagation();
+      };
+      collapseButton.onpointerup = collapseButton.onclick;
     }
 
     if (shell.parentElement !== projectsShell.parentElement || shell.nextSibling !== projectsShell) {
       projectsShell.parentElement.insertBefore(shell, projectsShell);
     }
 
-    return list;
+    return listElement;
   }
 
   function renderSidebarSection(sectionList, visibleCount, sectionKey) {
