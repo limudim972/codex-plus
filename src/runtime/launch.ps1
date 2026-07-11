@@ -488,21 +488,58 @@ function Test-CodexProcessMatchesCodexPlusInstance {
     return Test-CodexProcessHasRtlDebugPort -Process $Process -Port $Port
 }
 
+function Get-CodexDesktopProcessNames {
+    param([AllowEmptyString()][string]$PreferredExeName)
+
+    $allowedNames = @('ChatGPT.exe', 'Codex.exe')
+    if (-not [string]::IsNullOrWhiteSpace($PreferredExeName) -and ($allowedNames -notcontains $PreferredExeName)) {
+        $allowedNames = @($PreferredExeName) + $allowedNames
+    }
+
+    return @(
+        $allowedNames |
+            Where-Object { -not [string]::IsNullOrWhiteSpace([string]$_) } |
+            Select-Object -Unique
+    )
+}
+
+function Get-CodexDesktopProcessNameFilter {
+    param([string[]]$Names)
+
+    $normalizedNames = @(
+        @($Names) |
+            Where-Object { -not [string]::IsNullOrWhiteSpace([string]$_) } |
+            Select-Object -Unique
+    )
+    $clauses = foreach ($name in $normalizedNames) {
+        "Name = '$($name.Replace("'", "''"))'"
+    }
+
+    return (@($clauses) -join ' OR ')
+}
+
 function Get-CodexDesktopProcesses {
     $installInfo = Get-CodexInstallInfo
     $preferredExeName = if ($installInfo.AppExe) { [System.IO.Path]::GetFileName($installInfo.AppExe) } else { $null }
-    $allowedNames = @('ChatGPT.exe', 'Codex.exe')
-    if ($preferredExeName -and ($allowedNames -notcontains $preferredExeName)) {
-        $allowedNames = @($preferredExeName) + $allowedNames
+    $processNames = Get-CodexDesktopProcessNames -PreferredExeName $preferredExeName
+    $nameFilter = Get-CodexDesktopProcessNameFilter -Names $processNames
+    if ([string]::IsNullOrWhiteSpace($nameFilter)) {
+        return @()
     }
 
-    Get-CimInstance Win32_Process -ErrorAction SilentlyContinue |
-        Where-Object {
-            $_.ExecutablePath -and
-            $_.ExecutablePath -like '*\WindowsApps\OpenAI.Codex_*\app\*.exe' -and
-            $_.ExecutablePath -notlike '*\WindowsApps\OpenAI.Codex_*\app\resources\*' -and
-            ($allowedNames -contains [System.IO.Path]::GetFileName($_.ExecutablePath))
-        }
+    try {
+        return @(
+            Get-CimInstance Win32_Process -Filter $nameFilter -OperationTimeoutSec 3 -ErrorAction Stop |
+                Where-Object {
+                    $_.ExecutablePath -and
+                    $_.ExecutablePath -like '*\WindowsApps\OpenAI.Codex_*\app\*.exe' -and
+                    $_.ExecutablePath -notlike '*\WindowsApps\OpenAI.Codex_*\app\resources\*' -and
+                    ($processNames -contains [System.IO.Path]::GetFileName($_.ExecutablePath))
+                }
+        )
+    } catch {
+        return @()
+    }
 }
 
 function Get-CodexRtlLaunchPort {
