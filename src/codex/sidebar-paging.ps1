@@ -1,6 +1,4 @@
 function Get-CodexSidebarPagingPayload {
-    $projectOrderSnapshot = @(Get-CodexProjectOrderSnapshot)
-    $projectOrderJson = @($projectOrderSnapshot) | ConvertTo-Json -Compress
     $recentThreadSnapshot = @(Get-CodexRecentThreadSnapshot)
     $recentThreadJson = @($recentThreadSnapshot) | ConvertTo-Json -Compress
     @'
@@ -16,10 +14,8 @@ function Get-CodexSidebarPagingPayload {
   const PAGER_ATTR = 'data-codex-plus-sidebar-pager';
   const ACTION_ATTR = 'data-codex-plus-sidebar-action';
   const STATE_ATTR = 'data-codex-plus-sidebar-loaded';
-  const ORDER_ATTR = 'data-codex-plus-project-order';
   const THREAD_UPDATED_ATTR = 'data-codex-plus-thread-updated-ms';
   const BUTTON_CLASS = 'border-token-border no-drag cursor-interaction flex items-center gap-1 border whitespace-nowrap select-none focus:outline-none disabled:cursor-not-allowed disabled:opacity-40 rounded-full text-token-muted-foreground enabled:hover:bg-transparent data-[state=open]:bg-transparent hover:text-token-foreground border-transparent px-2 py-0.5 text-sm leading-[18px] text-token-description-foreground hover:text-token-foreground -ml-[9px]';
-  const PROJECT_ORDER = __CODEX_PLUS_PROJECT_ORDER__;
   const RECENT_THREADS = __CODEX_PLUS_RECENT_THREADS__;
 
   const SECTION_SPECS = [
@@ -111,37 +107,6 @@ function Get-CodexSidebarPagingPayload {
     if (direct) return direct;
     const nested = row.querySelector('[data-app-action-sidebar-project-id]');
     return nested ? nested.getAttribute('data-app-action-sidebar-project-id') : '';
-  }
-
-  function sortProjectRows(sectionList, sectionKey) {
-    if (sectionKey !== 'projects' || !Array.isArray(PROJECT_ORDER) || PROJECT_ORDER.length === 0) {
-      return;
-    }
-
-    const orderMap = new Map(PROJECT_ORDER.map((entry, index) => [normalizeProjectId(entry?.cwd), index]));
-    const rows = getSidebarRows(sectionList).map((row, index) => ({
-      row,
-      index,
-      rank: orderMap.has(normalizeProjectId(getProjectIdForRow(row)))
-        ? orderMap.get(normalizeProjectId(getProjectIdForRow(row)))
-        : Number.MAX_SAFE_INTEGER
-    }));
-
-    rows.sort((left, right) => {
-      if (left.rank !== right.rank) return left.rank - right.rank;
-      return left.index - right.index;
-    });
-
-    const signature = rows.map((entry) => normalizeProjectId(getProjectIdForRow(entry.row)) || ('index:' + entry.index)).join('|');
-    if (sectionList.getAttribute(ORDER_ATTR) === signature) {
-      return;
-    }
-
-    for (const entry of rows) {
-      sectionList.appendChild(entry.row);
-    }
-
-    sectionList.setAttribute(ORDER_ATTR, signature);
   }
 
   function getThreadIdForRow(row) {
@@ -316,14 +281,6 @@ function Get-CodexSidebarPagingPayload {
   function getVisibleCount(rows, spec) {
     const minimum = Math.max(0, Number(spec.minVisibleCount) || 0);
     if (!rows.length) return minimum;
-
-    if (spec.key === 'projects') {
-      const projectTimes = new Map((Array.isArray(PROJECT_ORDER) ? PROJECT_ORDER : []).map((entry) => [
-        normalizeProjectId(entry?.cwd),
-        Number(entry?.last_modified_ms || 0)
-      ]));
-      return Math.max(minimum, countRecentRows(rows, (row) => projectTimes.get(normalizeProjectId(getProjectIdForRow(row)))));
-    }
 
     if (spec.key === 'tasks') {
       return Math.max(minimum, countRecentRows(rows, (row) => getThreadTimestampMsForRow(row)));
@@ -622,7 +579,6 @@ function Get-CodexSidebarPagingPayload {
       if (!list) continue;
 
       clearPagers(list);
-      sortProjectRows(list, spec.key);
       const rows = getSidebarRows(list);
       const visibleCount = Math.min(rows.length, getVisibleCount(rows, spec));
       writeLoaded(list, Math.max(0, Math.min(readLoaded(list), Math.max(0, rows.length - visibleCount))));
@@ -676,5 +632,5 @@ function Get-CodexSidebarPagingPayload {
     start();
   }
 })();
-'@.Replace('__CODEX_PLUS_PROJECT_ORDER__', $projectOrderJson).Replace('__CODEX_PLUS_RECENT_THREADS__', $recentThreadJson)
+'@.Replace('__CODEX_PLUS_RECENT_THREADS__', $recentThreadJson)
 }

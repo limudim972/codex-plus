@@ -79,6 +79,28 @@ When the port is unknown:
 4. If the DOM is insufficient, inspect client-side state or global stores next.
 5. Only after that should you decide whether launcher/runtime changes are needed.
 
+### Verification method
+
+Use a consistent live-verification loop when checking UI behavior:
+
+1. Verify in the repo first when a local automated test exists.
+2. Launch or attach to the real desktop surface that users run.
+3. Resolve the live debug port from the running process command line, not from an assumed default.
+4. Inspect the exact DOM node or state source that drives the behavior before interacting with it.
+5. Record the initial state using stable facts such as attributes, visibility, text, counts, or computed styles.
+6. Trigger the real interaction on the exact control you inspected.
+7. Record the resulting state using the same measurements so the before and after comparison is explicit.
+8. If runtime-installed files are involved, restart the desktop app and repeat the live check on the fresh instance.
+
+When writing down verification results, prefer concrete observations over impressions:
+
+- which process and debug port were used
+- which surface or list was inspected
+- what the initial state was
+- what interaction was triggered
+- what changed afterward
+- whether the result still held after restart
+
 ## Practical Rules
 
 - Prefer live debugger verification over restarting Codex when possible.
