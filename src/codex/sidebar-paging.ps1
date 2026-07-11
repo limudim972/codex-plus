@@ -232,7 +232,7 @@ function Get-CodexSidebarPagingPayload {
     const normalizedThreadId = normalizeThreadId(threadId);
     if (!normalizedThreadId) return null;
 
-    return getSidebarSectionLists(document, () => true)
+    return getSidebarSectionLists(document, (label, list) => !list.hasAttribute(SYNTHETIC_LIST_ATTR))
       .flatMap((list) => getSidebarRows(list))
       .find((row) => normalizeThreadId(getThreadIdForRow(row)) === normalizedThreadId) || null;
   }
@@ -246,8 +246,11 @@ function Get-CodexSidebarPagingPayload {
     row.setAttribute(SOURCE_TEXT_ATTR, sourceRowText);
 
     const invokeSourceRow = (event) => {
-      const sourceRow = findRowByThreadId(row.getAttribute('data-codex-plus-thread-id'));
-      if (!sourceRow) return;
+      const sourceRow = findSourceRow(row.getAttribute(SOURCE_LIST_ATTR), row.getAttribute(SOURCE_TEXT_ATTR))
+        || findRowByThreadId(row.getAttribute('data-codex-plus-thread-id'));
+      if (!sourceRow || sourceRow.hidden || sourceRow.getClientRects().length === 0) {
+        return;
+      }
       event.preventDefault();
       event.stopPropagation();
       event.stopImmediatePropagation();
@@ -496,6 +499,9 @@ function Get-CodexSidebarPagingPayload {
         setThreadLabel(row, getThreadTitleForRow(entry.row));
         row.setAttribute(THREAD_UPDATED_ATTR, String(entry.timestampMs || 0));
         row.setAttribute(SYNTHETIC_ROW_ATTR, 'threads');
+      }
+      if (threadId) {
+        row.setAttribute('data-app-action-sidebar-thread-id', threadId);
       }
       wireSyntheticThreadRow(row, entry.row.getAttribute(SOURCE_LIST_ATTR) || 'Tasks', entry.row.getAttribute(SOURCE_TEXT_ATTR) || getThreadTitleForRow(entry.row));
       orderedRows.push(row);
