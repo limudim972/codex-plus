@@ -1,7 +1,7 @@
 $ws = 'ws://127.0.0.1:18318/devtools/page/D5EECAEF70B6E9F29267F6652949995F'
 $client = [System.Net.WebSockets.ClientWebSocket]::new()
 $client.ConnectAsync([Uri]$ws, [Threading.CancellationToken]::None).GetAwaiter().GetResult()
-$expr = 'JSON.stringify({ plus: !!window.__CODEX_PLUS_SIDEBAR_PAGING, badge: !!window.__CODEX_PLUS_CONTEXT_BADGE, pagerCount: document.querySelectorAll(''[data-codex-plus-sidebar-pager]'').length, chatsLoaded: Array.from(document.querySelectorAll(''[role="list"]'')).find(el => (el.getAttribute(''aria-label'') || '''').trim() === ''Chats'')?.getAttribute(''data-codex-plus-sidebar-loaded'') || null })'
+$expr = 'JSON.stringify({ plus: !!window.__CODEX_PLUS_SIDEBAR_PAGING, badge: !!window.__CODEX_PLUS_CONTEXT_BADGE, pagerCount: document.querySelectorAll(''[data-codex-plus-sidebar-pager]'').length, tasksLoaded: Array.from(document.querySelectorAll(''[role="list"]'')).find(el => { const label = (el.getAttribute(''aria-label'') || '''').trim(); return label === ''Tasks'' || label === ''Chats''; })?.getAttribute(''data-codex-plus-sidebar-loaded'') || null })'
 $cmd = @{ id = 1; method = 'Runtime.evaluate'; params = @{ expression = $expr; awaitPromise = $true; returnByValue = $true } }
 $json = $cmd | ConvertTo-Json -Depth 20 -Compress
 $bytes = [Text.Encoding]::UTF8.GetBytes($json)

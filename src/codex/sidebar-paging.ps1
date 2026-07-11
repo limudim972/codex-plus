@@ -8,12 +8,13 @@ function Get-CodexSidebarPagingPayload {
   const PAGER_ATTR = 'data-codex-plus-sidebar-pager';
   const ACTION_ATTR = 'data-codex-plus-sidebar-action';
   const STATE_ATTR = 'data-codex-plus-sidebar-loaded';
+  const ORDER_ATTR = 'data-codex-plus-project-order';
   const BUTTON_CLASS = 'border-token-border no-drag cursor-interaction flex items-center gap-1 border whitespace-nowrap select-none focus:outline-none disabled:cursor-not-allowed disabled:opacity-40 rounded-full text-token-muted-foreground enabled:hover:bg-transparent data-[state=open]:bg-transparent hover:text-token-foreground border-transparent px-2 py-0.5 text-sm leading-[18px] text-token-description-foreground hover:text-token-foreground -ml-[9px]';
   const PROJECT_ORDER = __CODEX_PLUS_PROJECT_ORDER__;
 
   const SECTION_SPECS = [
-    { title: 'Projects', visibleCount: 3 },
-    { title: 'Chats', visibleCount: 2 }
+    { key: 'projects', title: 'Projects', visibleCount: 3 },
+    { key: 'tasks', labels: ['Tasks', 'Chats'], visibleCount: 2 }
   ];
 
   function normalizeText(text) {
@@ -28,6 +29,16 @@ function Get-CodexSidebarPagingPayload {
     return Array.from(scopeDoc.querySelectorAll(SECTION_SELECTOR)).find((title) => textOf(title) === label) || null;
   }
 
+  function getSidebarSectionListByLabel(scopeDoc, labels) {
+    const normalizedLabels = (Array.isArray(labels) ? labels : [labels]).map((label) => normalizeText(label)).filter(Boolean);
+    if (normalizedLabels.length === 0) return null;
+
+    return Array.from(scopeDoc.querySelectorAll('[role="list"]')).find((list) => {
+      const ariaLabel = normalizeText(list.getAttribute('aria-label'));
+      return ariaLabel && normalizedLabels.includes(ariaLabel);
+    }) || null;
+  }
+
   function getSidebarSectionList(title) {
     const sectionContainer = title?.parentElement?.children?.[1];
     if (!sectionContainer) return null;
@@ -39,6 +50,15 @@ function Get-CodexSidebarPagingPayload {
 
     const fallbackList = sectionContainer.querySelector('[role="list"]');
     return fallbackList && fallbackList.getAttribute('role') === 'list' ? fallbackList : null;
+  }
+
+  function resolveSidebarSectionList(spec) {
+    const directList = getSidebarSectionListByLabel(document, spec.labels);
+    if (directList) return directList;
+
+    if (!spec.title) return null;
+    const heading = getSidebarSectionTitle(document, spec.title);
+    return getSidebarSectionList(heading);
   }
 
   function getSidebarRows(sectionList) {
@@ -76,9 +96,16 @@ function Get-CodexSidebarPagingPayload {
       return left.index - right.index;
     });
 
+    const signature = rows.map((entry) => normalizeProjectId(getProjectIdForRow(entry.row)) || ('index:' + entry.index)).join('|');
+    if (sectionList.getAttribute(ORDER_ATTR) === signature) {
+      return;
+    }
+
     for (const entry of rows) {
       sectionList.appendChild(entry.row);
     }
+
+    sectionList.setAttribute(ORDER_ATTR, signature);
   }
 
   function readLoaded(list) {
@@ -171,18 +198,32 @@ function Get-CodexSidebarPagingPayload {
 
   function apply() {
     for (const spec of SECTION_SPECS) {
-      const heading = getSidebarSectionTitle(document, spec.title);
-      const list = getSidebarSectionList(heading);
+      const list = resolveSidebarSectionList(spec);
       if (!list) continue;
 
       clearPagers(list);
-      sortProjectRows(list, spec.title.toLowerCase());
+      sortProjectRows(list, spec.key);
       writeLoaded(list, Math.max(0, Math.min(readLoaded(list), Math.max(0, getSidebarRows(list).length - spec.visibleCount))));
-      renderSidebarSection(list, spec.visibleCount, spec.title.toLowerCase());
+      renderSidebarSection(list, spec.visibleCount, spec.key);
     }
   }
 
   let pending = false;
+  let observing = false;
+  const observe = () => {
+    if (observing || !document.documentElement) return;
+    observer.observe(document.documentElement, {
+      attributes: true,
+      childList: true,
+      subtree: true
+    });
+    observing = true;
+  };
+  const disconnect = () => {
+    if (!observing) return;
+    observer.disconnect();
+    observing = false;
+  };
   const schedule = () => {
     if (pending) return;
     pending = true;
@@ -194,13 +235,11 @@ function Get-CodexSidebarPagingPayload {
 
   const observer = new MutationObserver(schedule);
   const start = () => {
-    apply();
-    if (document.documentElement) {
-      observer.observe(document.documentElement, {
-        attributes: true,
-        childList: true,
-        subtree: true
-      });
+    disconnect();
+    try {
+      apply();
+    } finally {
+      observe();
     }
   };
 
