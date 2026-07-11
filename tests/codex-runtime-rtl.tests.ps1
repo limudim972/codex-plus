@@ -165,6 +165,13 @@ Assert-True ($desktopProcessBody.Contains('catch')) 'Desktop process lookup shou
 $patchBody = Get-Content -LiteralPath $patchScript -Raw
 Assert-True ($patchBody.Contains('$RequiresElevation = (-not ($LaunchCodexRtl -or $ShowLaunchSplash -or $StartCloseWatchdog -or $SkipMain))')) 'Elevation should be skipped for launch-only helper paths such as the splash and watchdog.'
 
+$sidebarPayload = Get-CodexSidebarPagingPayload
+Assert-True ($sidebarPayload.Contains('appendThreadTimestampToLabel')) 'Sidebar payload should keep the modified-time suffix helper centralized.'
+Assert-True ($sidebarPayload.Contains("dateStyle: 'short'")) 'Sidebar payload should format modified times with a concise locale-aware date.'
+Assert-True ($sidebarPayload.Contains('THREAD_BASE_LABEL_ATTR')) 'Sidebar payload should preserve the original row label before appending modified time.'
+Assert-True ($sidebarPayload.Contains('pointer-events-none select-none whitespace-nowrap text-token-description-foreground')) 'Sidebar payload should render the timestamp suffix as non-interactive text.'
+Assert-True ($sidebarPayload.Contains('data-codex-plus-thread-timestamp-suffix')) 'Sidebar payload should tag the timestamp suffix for targeted styling.'
+
 $roots = @(Get-CodexShortcutSearchRoots)
 Assert-True ($roots -contains (Join-Path $env:APPDATA 'Microsoft\Windows\Start Menu\Programs')) 'Shortcut search should include user Start Menu programs.'
 Assert-True ($roots -contains (Join-Path $env:ProgramData 'Microsoft\Windows\Start Menu\Programs')) 'Shortcut search should include all-users Start Menu programs.'

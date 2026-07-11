@@ -15,6 +15,8 @@ function Get-CodexSidebarPagingPayload {
   const ACTION_ATTR = 'data-codex-plus-sidebar-action';
   const STATE_ATTR = 'data-codex-plus-sidebar-loaded';
   const COLLAPSED_ATTR = 'data-codex-plus-sidebar-collapsed';
+  const THREAD_BASE_LABEL_ATTR = 'data-codex-plus-thread-base-label';
+  const THREAD_TIMESTAMP_ATTR = 'data-codex-plus-thread-timestamp-label';
   const THREAD_UPDATED_ATTR = 'data-codex-plus-thread-updated-ms';
   const THREADS_HEADER_ATTR = 'data-codex-plus-sidebar-threads-header';
   const THREADS_CONTAINER_ATTR = 'data-codex-plus-sidebar-threads-container';
@@ -121,7 +123,46 @@ function Get-CodexSidebarPagingPayload {
   }
 
   function getThreadTitleElement(row) {
-    return row?.querySelector('[data-thread-title="true"], [data-app-action-sidebar-thread-title], [data-app-action-sidebar-project-label]') || null;
+    if (!row) return null;
+    return row.querySelector('[data-thread-title="true"], [data-app-action-sidebar-thread-title], [data-app-action-sidebar-project-label]') || null;
+  }
+
+  function stripThreadTimestampSuffix(label) {
+    return normalizeText(label).replace(/\s+\[[^\]]+\]$/, '').trim();
+  }
+
+  function formatThreadModifiedTime(updatedMs) {
+    const timestampMs = Number(updatedMs || 0);
+    if (timestampMs <= 0) return '';
+
+    try {
+      return new Intl.DateTimeFormat(undefined, {
+        dateStyle: 'short',
+        timeStyle: 'short'
+      }).format(new Date(timestampMs));
+    } catch {
+      return '';
+    }
+  }
+
+  function getThreadBaseLabel(row) {
+    if (!row) return '';
+
+    const explicit = normalizeText(row.getAttribute(THREAD_BASE_LABEL_ATTR));
+    if (explicit) return explicit;
+
+    const current = normalizeText(textOf(getThreadTitleElement(row)) || textOf(row));
+    const baseLabel = stripThreadTimestampSuffix(current);
+    if (baseLabel) {
+      row.setAttribute(THREAD_BASE_LABEL_ATTR, baseLabel);
+    }
+    return baseLabel;
+  }
+
+  function appendThreadTimestampToLabel(label, updatedMs) {
+    const baseLabel = stripThreadTimestampSuffix(label);
+    const timestampLabel = formatThreadModifiedTime(updatedMs);
+    return timestampLabel ? (baseLabel + ' [' + timestampLabel + ']') : baseLabel;
   }
 
   function styleThreadTitleElement(element) {
@@ -174,7 +215,7 @@ function Get-CodexSidebarPagingPayload {
   }
 
   function getRowTextSignature(row) {
-    return normalizeText(row?.innerText || '');
+    return stripThreadTimestampSuffix(normalizeText(row?.innerText || ''));
   }
 
   function getClickableElement(row) {
@@ -290,8 +331,11 @@ function Get-CodexSidebarPagingPayload {
   }
 
   function getProjectLabelForRow(row) {
+    const directLabel = normalizeText(row?.getAttribute('data-app-action-sidebar-project-label'));
+    if (directLabel) return stripThreadTimestampSuffix(directLabel);
+
     const explicitLabel = row?.querySelector('[data-app-action-sidebar-project-label]');
-    const explicitText = textOf(explicitLabel);
+    const explicitText = stripThreadTimestampSuffix(normalizeText(textOf(explicitLabel)));
     if (explicitText) return explicitText;
 
     const projectId = getProjectIdForRow(row);
@@ -301,14 +345,9 @@ function Get-CodexSidebarPagingPayload {
     return parts.length > 0 ? parts[parts.length - 1] : normalized;
   }
 
-  function formatThreadLabel(row, kind, projectTitle) {
-    const title = getThreadTitleForRow(row);
-    if (!title) return '';
-    if (kind === 'project') {
-      const projectLabel = projectTitle || getProjectLabelForRow(row);
-      return projectLabel ? (title + ' (' + projectLabel + ')') : title;
-    }
-    return /\s+\([^)]+\)$/.test(title) ? title : (title + ' (task)');
+  function formatThreadLabel(row, kind, projectTitle, updatedMs) {
+    const title = getThreadBaseLabel(row);
+    return title || '';
   }
 
   function formatThreadLabelFromSnapshot(entry) {
@@ -317,20 +356,70 @@ function Get-CodexSidebarPagingPayload {
     return title;
   }
 
-  function setThreadLabel(row, label) {
+  function setThreadLabel(row, label, baseLabel, updatedMs) {
     if (!row || !label) return;
     const titleElement = getThreadTitleElement(row);
     const nextLabel = normalizeText(label);
     const currentLabel = normalizeText(textOf(titleElement) || textOf(row));
-    if (currentLabel === nextLabel) return;
+    const nextTimestampLabel = formatThreadModifiedTime(updatedMs ?? getThreadTimestampMsForRow(row));
+    const nextTimestampText = nextTimestampLabel ? (' [' + nextTimestampLabel + ']') : '';
+    if (!row.hasAttribute(THREAD_BASE_LABEL_ATTR)) {
+      const nextBaseLabel = normalizeText(baseLabel || stripThreadTimestampSuffix(currentLabel || nextLabel));
+      if (nextBaseLabel) {
+        row.setAttribute(THREAD_BASE_LABEL_ATTR, nextBaseLabel);
+      }
+    }
+    if (row.getAttribute(THREAD_TIMESTAMP_ATTR) !== nextTimestampLabel) {
+      row.setAttribute(THREAD_TIMESTAMP_ATTR, nextTimestampLabel);
+    }
+    const currentBaseLabel = normalizeText(row.getAttribute(THREAD_BASE_LABEL_ATTR) || '');
+    if (currentLabel === (nextLabel + nextTimestampText) && currentBaseLabel === normalizeText(baseLabel || stripThreadTimestampSuffix(nextLabel))) return;
     if (titleElement) {
       styleThreadTitleElement(titleElement);
-      titleElement.textContent = nextLabel;
+      if (titleElement.childElementCount === 0) {
+        titleElement.replaceChildren();
+        titleElement.appendChild(document.createTextNode(nextLabel));
+        if (nextTimestampText) {
+          const timestampSpan = document.createElement('span');
+          timestampSpan.setAttribute('aria-hidden', 'true');
+          timestampSpan.setAttribute('data-codex-plus-thread-timestamp-suffix', 'true');
+          timestampSpan.className = 'pointer-events-none select-none whitespace-nowrap text-token-description-foreground';
+          timestampSpan.textContent = nextTimestampText;
+          titleElement.appendChild(timestampSpan);
+        }
+        return;
+      }
+      const timestampSpan = titleElement.querySelector('[data-codex-plus-thread-timestamp-suffix]');
+      if (timestampSpan) {
+        timestampSpan.textContent = nextTimestampText;
+        const leadingText = Array.from(titleElement.childNodes).find((node) => node.nodeType === Node.TEXT_NODE);
+        if (leadingText && leadingText.nodeValue !== nextLabel) {
+          leadingText.nodeValue = nextLabel;
+        }
+        return;
+      }
+      titleElement.textContent = nextLabel + nextTimestampText;
+      return;
+    }
+    const directTextNode = Array.from(row.childNodes).find((node) => node.nodeType === Node.TEXT_NODE && normalizeText(node.nodeValue));
+    if (directTextNode) {
+      directTextNode.nodeValue = nextLabel;
+      let timestampSpan = row.querySelector('[data-codex-plus-thread-timestamp-suffix]');
+      if (!timestampSpan && nextTimestampText) {
+        timestampSpan = document.createElement('span');
+        timestampSpan.setAttribute('aria-hidden', 'true');
+        timestampSpan.setAttribute('data-codex-plus-thread-timestamp-suffix', 'true');
+        timestampSpan.className = 'pointer-events-none select-none whitespace-nowrap text-token-description-foreground';
+        row.appendChild(timestampSpan);
+      }
+      if (timestampSpan) {
+        timestampSpan.textContent = nextTimestampText;
+      }
       return;
     }
     const fallbackLabel = row.querySelector('[aria-label]') || row.firstElementChild || row;
     styleThreadTitleElement(fallbackLabel);
-    fallbackLabel.textContent = nextLabel;
+    fallbackLabel.textContent = nextLabel + nextTimestampText;
   }
 
   function parseThreadTimestampMs(threadId) {
@@ -432,7 +521,7 @@ function Get-CodexSidebarPagingPayload {
     const projectsList = resolveSidebarSectionList({ key: 'projects', title: 'Projects' });
     for (const row of getSidebarRows(projectsList)) {
       const projectId = normalizeProjectId(getProjectIdForRow(row));
-      const projectTitle = getProjectLabelForRow(row) || textOf(row);
+      const projectTitle = getProjectLabelForRow(row) || stripThreadTimestampSuffix(textOf(row));
       if (projectId && projectTitle) {
         map.set(projectId, projectTitle);
       }
@@ -469,7 +558,7 @@ function Get-CodexSidebarPagingPayload {
         selected.removeAttribute('aria-current');
         selected.removeAttribute('aria-selected');
       }
-      setThreadLabel(row, label);
+      setThreadLabel(row, label, stripThreadTimestampSuffix(label), updatedMs);
       return row;
     }
 
@@ -498,6 +587,8 @@ function Get-CodexSidebarPagingPayload {
     outer.appendChild(inner);
     button.appendChild(outer);
     row.appendChild(button);
+    row.setAttribute(THREAD_BASE_LABEL_ATTR, stripThreadTimestampSuffix(label));
+    row.setAttribute(THREAD_TIMESTAMP_ATTR, formatThreadModifiedTime(updatedMs) || '');
     return row;
   }
 
@@ -519,7 +610,8 @@ function Get-CodexSidebarPagingPayload {
       if (!row) {
         row = entry.row;
       } else {
-        setThreadLabel(row, getThreadTitleForRow(entry.row));
+        const nextLabel = entry.label || getThreadTitleForRow(entry.row);
+        setThreadLabel(row, nextLabel, stripThreadTimestampSuffix(nextLabel), entry.timestampMs);
         row.setAttribute(THREAD_UPDATED_ATTR, String(entry.timestampMs || 0));
         row.setAttribute(SYNTHETIC_ROW_ATTR, 'threads');
       }
@@ -592,15 +684,17 @@ function Get-CodexSidebarPagingPayload {
       const signature = [entry.id || '', entry.cwd || '', entry.title, entry.kind].join('|').toLowerCase();
       if (seen.has(signature)) continue;
       seen.add(signature);
-      const clone = createSyntheticThreadRow(formatThreadLabelFromSnapshot(entry), entry.lastModifiedMs, templateRow);
+      const label = formatThreadLabelFromSnapshot(entry);
+      const clone = createSyntheticThreadRow(label, entry.lastModifiedMs, templateRow);
       clone.setAttribute('data-codex-plus-thread-id', entry.id);
       clone.setAttribute(SYNTHETIC_ROW_ATTR, 'threads');
       clone.setAttribute(THREAD_UPDATED_ATTR, String(entry.lastModifiedMs));
-      setThreadLabel(clone, formatThreadLabelFromSnapshot(entry));
+      setThreadLabel(clone, label, stripThreadTimestampSuffix(label), entry.lastModifiedMs);
       wireSyntheticThreadRow(clone, entry.sourceListLabel || 'Tasks', entry.displayTitle || entry.title);
       threadRows.push({
         row: clone,
-        timestampMs: entry.lastModifiedMs
+        timestampMs: entry.lastModifiedMs,
+        label
       });
     }
 
@@ -679,6 +773,12 @@ function Get-CodexSidebarPagingPayload {
 
     const rows = getSidebarRows(sectionList);
     if (rows.length === 0) return;
+
+    for (const row of rows) {
+      const nextLabel = formatThreadLabel(row, sectionKey, null, getThreadTimestampMsForRow(row));
+      const baseLabel = nextLabel;
+      setThreadLabel(row, nextLabel, baseLabel, getThreadTimestampMsForRow(row));
+    }
 
     const visibleRows = rows.slice(0, visibleCount);
     const hiddenRows = rows.slice(visibleCount);
