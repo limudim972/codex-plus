@@ -20,6 +20,7 @@ This repo-local copy includes a Codex Plus method for attaching to an already-ru
    - The launcher sets up the scoped profile, debug port, splash helper, and watchdog flow used by Codex Plus.
    - Before launching, record the existing Codex Plus `--remote-debugging-port` and `--user-data-dir` pairs.
    - After launching, attach only to the newly appeared port/profile pair, not to any pre-existing Codex window.
+   - If you updated the local Plus runtime or checked-in payload files, do not inject the script into an already-open page; launch a fresh Plus window and verify the change there.
 3. Resolve the active debug port for the running Codex instance.
    - Check the running `ChatGPT.exe` command line for `--remote-debugging-port=...`.
    - If working in Codex Plus, prefer the launcher-scoped port for the instance you are inspecting.
@@ -91,6 +92,7 @@ Use a consistent live-verification loop when checking UI behavior:
 6. Trigger the real interaction on the exact control you inspected.
 7. Record the resulting state using the same measurements so the before and after comparison is explicit.
 8. If runtime-installed files are involved, restart the desktop app and repeat the live check on the fresh instance.
+   - Prefer a fresh launcher-scoped Plus copy over hot script injection whenever you need to verify a local runtime change.
 
 When writing down verification results, prefer concrete observations over impressions:
 

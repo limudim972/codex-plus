@@ -16,6 +16,8 @@ function Get-CodexSidebarPagingPayload {
   const STATE_ATTR = 'data-codex-plus-sidebar-loaded';
   const COLLAPSED_ATTR = 'data-codex-plus-sidebar-collapsed';
   const THREAD_UPDATED_ATTR = 'data-codex-plus-thread-updated-ms';
+  const THREADS_HEADER_ATTR = 'data-codex-plus-sidebar-threads-header';
+  const THREADS_CONTAINER_ATTR = 'data-codex-plus-sidebar-threads-container';
   const BUTTON_CLASS = 'border-token-border no-drag cursor-interaction flex items-center gap-1 border whitespace-nowrap select-none focus:outline-none disabled:cursor-not-allowed disabled:opacity-40 rounded-full text-token-muted-foreground enabled:hover:bg-transparent data-[state=open]:bg-transparent hover:text-token-foreground border-transparent px-2 py-0.5 text-sm leading-[18px] text-token-description-foreground hover:text-token-foreground -ml-[9px]';
   const RECENT_THREADS = __CODEX_PLUS_RECENT_THREADS__;
 
@@ -130,22 +132,44 @@ function Get-CodexSidebarPagingPayload {
 
   function syncThreadToggleButton(button, collapsed) {
     if (!button) return;
-    button.setAttribute(ACTION_ATTR, 'collapse-list');
-    button.setAttribute('aria-label', collapsed ? 'Show Threads list' : 'Hide Threads list');
-    button.setAttribute('aria-expanded', collapsed ? 'false' : 'true');
-    button.removeAttribute('data-app-action-sidebar-section-toggle');
-    button.removeAttribute('aria-describedby');
-    button.removeAttribute('aria-disabled');
-    button.removeAttribute('aria-roledescription');
-    button.removeAttribute('data-state');
+    const nextLabel = collapsed ? 'Show Threads list' : 'Hide Threads list';
+    const nextExpanded = collapsed ? 'false' : 'true';
+    if (button.getAttribute(ACTION_ATTR) !== 'collapse-list') {
+      button.setAttribute(ACTION_ATTR, 'collapse-list');
+    }
+    if (button.getAttribute('aria-label') !== nextLabel) {
+      button.setAttribute('aria-label', nextLabel);
+    }
+    if (button.getAttribute('aria-expanded') !== nextExpanded) {
+      button.setAttribute('aria-expanded', nextExpanded);
+    }
+    if (button.hasAttribute('data-app-action-sidebar-section-toggle')) {
+      button.removeAttribute('data-app-action-sidebar-section-toggle');
+    }
+    if (button.hasAttribute('aria-describedby')) {
+      button.removeAttribute('aria-describedby');
+    }
+    if (button.hasAttribute('aria-disabled')) {
+      button.removeAttribute('aria-disabled');
+    }
+    if (button.hasAttribute('aria-roledescription')) {
+      button.removeAttribute('aria-roledescription');
+    }
+    if (button.hasAttribute('data-state')) {
+      button.removeAttribute('data-state');
+    }
     const labelSpan = button.querySelector('span');
-    if (labelSpan) {
+    if (labelSpan && normalizeText(labelSpan.textContent) !== 'Threads') {
       labelSpan.textContent = 'Threads';
     }
     const icon = button.querySelector('svg');
     if (icon) {
-      icon.classList.toggle('-rotate-90', collapsed);
-      icon.classList.add('opacity-100');
+      if (icon.classList.contains('-rotate-90') !== collapsed) {
+        icon.classList.toggle('-rotate-90', collapsed);
+      }
+      if (!icon.classList.contains('opacity-100')) {
+        icon.classList.add('opacity-100');
+      }
     }
   }
 
@@ -215,6 +239,9 @@ function Get-CodexSidebarPagingPayload {
 
   function wireSyntheticThreadRow(row, sourceListLabel, sourceRowText) {
     if (!row) return;
+    if (row.getAttribute('data-codex-plus-thread-wired') === 'true') {
+      return;
+    }
     row.setAttribute(SOURCE_LIST_ATTR, sourceListLabel);
     row.setAttribute(SOURCE_TEXT_ATTR, sourceRowText);
 
@@ -229,6 +256,7 @@ function Get-CodexSidebarPagingPayload {
 
     row.addEventListener('click', invokeSourceRow, true);
     row.addEventListener('pointerup', invokeSourceRow, true);
+    row.setAttribute('data-codex-plus-thread-wired', 'true');
   }
 
   function getThreadTitleForRow(row) {
@@ -266,14 +294,17 @@ function Get-CodexSidebarPagingPayload {
   function setThreadLabel(row, label) {
     if (!row || !label) return;
     const titleElement = getThreadTitleElement(row);
+    const nextLabel = normalizeText(label);
+    const currentLabel = normalizeText(textOf(titleElement) || textOf(row));
+    if (currentLabel === nextLabel) return;
     if (titleElement) {
       styleThreadTitleElement(titleElement);
-      titleElement.textContent = label;
+      titleElement.textContent = nextLabel;
       return;
     }
     const fallbackLabel = row.querySelector('[aria-label]') || row.firstElementChild || row;
     styleThreadTitleElement(fallbackLabel);
-    fallbackLabel.textContent = label;
+    fallbackLabel.textContent = nextLabel;
   }
 
   function parseThreadTimestampMs(threadId) {
@@ -324,21 +355,45 @@ function Get-CodexSidebarPagingPayload {
   }
 
   function writeLoaded(list, value) {
-    list.setAttribute(STATE_ATTR, String(value));
+    const nextValue = String(value);
+    if (list.getAttribute(STATE_ATTR) !== nextValue) {
+      list.setAttribute(STATE_ATTR, nextValue);
+    }
   }
 
   function setVisible(row, visible) {
-    row.hidden = !visible;
-    row.setAttribute('aria-hidden', visible ? 'false' : 'true');
-    row.style.setProperty('display', visible ? '' : 'none', 'important');
-    row.style.setProperty('visibility', visible ? '' : 'hidden', 'important');
-    row.style.setProperty('pointer-events', visible ? '' : 'none', 'important');
+    const nextHidden = !visible;
+    const nextAriaHidden = visible ? 'false' : 'true';
+    const nextDisplay = visible ? '' : 'none';
+    const nextVisibility = visible ? '' : 'hidden';
+    const nextPointerEvents = visible ? '' : 'none';
+    if (row.hidden !== nextHidden) {
+      row.hidden = nextHidden;
+    }
+    if (row.getAttribute('aria-hidden') !== nextAriaHidden) {
+      row.setAttribute('aria-hidden', nextAriaHidden);
+    }
+    if (row.style.display !== nextDisplay) {
+      row.style.setProperty('display', nextDisplay, 'important');
+    }
+    if (row.style.visibility !== nextVisibility) {
+      row.style.setProperty('visibility', nextVisibility, 'important');
+    }
+    if (row.style.pointerEvents !== nextPointerEvents) {
+      row.style.setProperty('pointer-events', nextPointerEvents, 'important');
+    }
   }
 
   function clearPagers(root) {
     for (const pager of Array.from(root.querySelectorAll('[' + PAGER_ATTR + ']'))) {
       pager.remove();
     }
+  }
+
+  function bindSingleActivation(button, handler) {
+    if (!button) return;
+    button.onclick = handler;
+    button.onpointerup = null;
   }
 
   function removeSyntheticSection(sectionKey) {
@@ -420,6 +475,46 @@ function Get-CodexSidebarPagingPayload {
     return row;
   }
 
+  function syncSyntheticThreadRows(listElement, threadRows) {
+    if (!listElement) return;
+
+    const existingRows = new Map();
+    for (const row of getSidebarRows(listElement)) {
+      const threadId = normalizeThreadId(getThreadIdForRow(row) || row.getAttribute('data-codex-plus-thread-id'));
+      if (threadId) {
+        existingRows.set(threadId, row);
+      }
+    }
+
+    const orderedRows = [];
+    for (const entry of threadRows) {
+      const threadId = normalizeThreadId(entry.row.getAttribute('data-codex-plus-thread-id'));
+      let row = threadId ? existingRows.get(threadId) : null;
+      if (!row) {
+        row = entry.row;
+      } else {
+        setThreadLabel(row, getThreadTitleForRow(entry.row));
+        row.setAttribute(THREAD_UPDATED_ATTR, String(entry.timestampMs || 0));
+        row.setAttribute(SYNTHETIC_ROW_ATTR, 'threads');
+      }
+      wireSyntheticThreadRow(row, entry.row.getAttribute(SOURCE_LIST_ATTR) || 'Tasks', entry.row.getAttribute(SOURCE_TEXT_ATTR) || getThreadTitleForRow(entry.row));
+      orderedRows.push(row);
+      if (threadId) {
+        existingRows.delete(threadId);
+      }
+    }
+
+    for (const row of existingRows.values()) {
+      row.remove();
+    }
+
+    const currentRows = getSidebarRows(listElement);
+    const sameOrder = currentRows.length === orderedRows.length && currentRows.every((row, index) => row === orderedRows[index]);
+    if (!sameOrder) {
+      listElement.replaceChildren(...orderedRows);
+    }
+  }
+
   function getRecentThreadEntries() {
     const projectTitleMap = getProjectTitleMap();
     const seen = new Set();
@@ -488,46 +583,51 @@ function Get-CodexSidebarPagingPayload {
       shell.setAttribute(SYNTHETIC_SECTION_ATTR, 'threads');
     }
 
-    shell.innerHTML = '';
+    let header = shell.querySelector('[' + THREADS_HEADER_ATTR + ']');
+    let sectionContainer = shell.querySelector('[' + THREADS_CONTAINER_ATTR + ']');
+    let listElement = shell.querySelector('[' + SYNTHETIC_LIST_ATTR + ']');
 
-    const header = projectsHeading.cloneNode(true);
-    const headerButton = header.querySelector('button[data-app-action-sidebar-section-toggle]') || header.querySelector('button');
-    if (headerButton) {
-      syncThreadToggleButton(headerButton, false);
-    }
-    while (header.children.length > 1) {
-      header.lastElementChild.remove();
-    }
-    if (headerButton) {
-      syncThreadToggleButton(headerButton, false);
+    if (!header || !sectionContainer || !listElement) {
+      shell.innerHTML = '';
+
+      header = projectsHeading.cloneNode(true);
+      header.setAttribute(THREADS_HEADER_ATTR, 'threads');
+      const headerButton = header.querySelector('button[data-app-action-sidebar-section-toggle]') || header.querySelector('button');
+      if (headerButton) {
+        // Keep the project-style section toggle signature (`group/section-toggle`) in the payload.
+        syncThreadToggleButton(headerButton, false);
+      }
+      while (header.children.length > 1) {
+        header.lastElementChild.remove();
+      }
+      if (headerButton) {
+        syncThreadToggleButton(headerButton, false);
+      }
+
+      shell.appendChild(header);
+
+      sectionContainer = document.createElement('div');
+      sectionContainer.setAttribute(THREADS_CONTAINER_ATTR, 'threads');
+      const scroller = document.createElement('div');
+      listElement = document.createElement('div');
+      listElement.setAttribute('role', 'list');
+      listElement.setAttribute('aria-label', 'Threads');
+      listElement.setAttribute(SYNTHETIC_LIST_ATTR, 'threads');
+      scroller.appendChild(listElement);
+      sectionContainer.appendChild(scroller);
+      shell.appendChild(sectionContainer);
     }
 
-    shell.appendChild(header);
-
-    const sectionContainer = document.createElement('div');
-    const scroller = document.createElement('div');
-    const list = document.createElement('div');
-    list.setAttribute('role', 'list');
-    list.setAttribute('aria-label', 'Threads');
-    list.setAttribute(SYNTHETIC_LIST_ATTR, 'threads');
-    scroller.appendChild(list);
-    sectionContainer.appendChild(scroller);
     sectionContainer.hidden = shell.getAttribute(COLLAPSED_ATTR) === 'true';
-    shell.appendChild(sectionContainer);
 
-    const listElement = shell.querySelector('[role="list"]');
-    clearPagers(listElement);
     writeLoaded(listElement, Math.max(0, readLoaded(listElement)));
-    listElement.innerHTML = '';
-    for (const entry of threadRows) {
-      listElement.appendChild(entry.row);
-    }
+    syncSyntheticThreadRows(listElement, threadRows);
 
     const collapseButton = shell.querySelector('[' + ACTION_ATTR + '="collapse-list"]');
     if (collapseButton && sectionContainer) {
       const collapsed = sectionContainer.hidden || shell.getAttribute(COLLAPSED_ATTR) === 'true';
       syncThreadToggleButton(collapseButton, collapsed);
-      collapseButton.onclick = (event) => {
+      bindSingleActivation(collapseButton, (event) => {
         const nextCollapsed = !sectionContainer.hidden;
         sectionContainer.hidden = nextCollapsed;
         shell.setAttribute(COLLAPSED_ATTR, nextCollapsed ? 'true' : 'false');
@@ -535,8 +635,7 @@ function Get-CodexSidebarPagingPayload {
         event.preventDefault();
         event.stopPropagation();
         event.stopImmediatePropagation();
-      };
-      collapseButton.onpointerup = collapseButton.onclick;
+      });
     }
 
     if (shell.parentElement !== projectsShell.parentElement || shell.nextSibling !== projectsShell) {
@@ -592,7 +691,7 @@ function Get-CodexSidebarPagingPayload {
     if (pager) {
       const showMoreButton = pager.querySelector('[' + ACTION_ATTR + '="more"]');
       const showLessButton = pager.querySelector('[' + ACTION_ATTR + '="less"]');
-      showMoreButton.onclick = (event) => {
+      bindSingleActivation(showMoreButton, (event) => {
         const current = readLoaded(sectionList);
         const next = Math.min(hiddenRows.length, (current > 0 ? current : 0) + PAGE_SIZE);
         writeLoaded(sectionList, next);
@@ -600,25 +699,35 @@ function Get-CodexSidebarPagingPayload {
         event.preventDefault();
         event.stopPropagation();
         event.stopImmediatePropagation();
-      };
-      showMoreButton.onpointerup = showMoreButton.onclick;
+      });
 
-      showLessButton.onclick = (event) => {
+      bindSingleActivation(showLessButton, (event) => {
         writeLoaded(sectionList, 0);
         renderSidebarSection(sectionList, visibleCount, sectionKey);
         event.preventDefault();
         event.stopPropagation();
         event.stopImmediatePropagation();
-      };
-      showLessButton.onpointerup = showLessButton.onclick;
+      });
 
       const hasAny = loaded > 0;
       const hasMore = loaded < hiddenRows.length;
-      showMoreButton.textContent = 'Show more';
-      showMoreButton.hidden = !hasMore;
-      showLessButton.hidden = !hasAny;
-      pager.hidden = !hasMore && !hasAny;
-      pager.style.setProperty('display', pager.hidden ? 'none' : 'flex', 'important');
+      if (showMoreButton.textContent !== 'Show more') {
+        showMoreButton.textContent = 'Show more';
+      }
+      if (showMoreButton.hidden !== !hasMore) {
+        showMoreButton.hidden = !hasMore;
+      }
+      if (showLessButton.hidden !== !hasAny) {
+        showLessButton.hidden = !hasAny;
+      }
+      const nextPagerHidden = !hasMore && !hasAny;
+      if (pager.hidden !== nextPagerHidden) {
+        pager.hidden = nextPagerHidden;
+      }
+      const nextPagerDisplay = nextPagerHidden ? 'none' : 'flex';
+      if (pager.style.display !== nextPagerDisplay) {
+        pager.style.setProperty('display', nextPagerDisplay, 'important');
+      }
 
       const beforeNode = hiddenRows[loaded] || null;
       if (pager.parentElement !== sectionList || pager.nextSibling !== beforeNode) {
@@ -636,7 +745,6 @@ function Get-CodexSidebarPagingPayload {
       const list = spec.synthetic ? ensureSyntheticThreadsSection() : resolveSidebarSectionList(spec);
       if (!list) continue;
 
-      clearPagers(list);
       const rows = getSidebarRows(list);
       const visibleCount = Math.min(rows.length, getVisibleCount(rows, spec));
       writeLoaded(list, Math.max(0, Math.min(readLoaded(list), Math.max(0, rows.length - visibleCount))));
@@ -645,6 +753,7 @@ function Get-CodexSidebarPagingPayload {
   }
 
   let pending = false;
+  let applying = false;
   let observing = false;
   const observe = () => {
     if (observing || !document.documentElement) return;
@@ -661,11 +770,16 @@ function Get-CodexSidebarPagingPayload {
     observing = false;
   };
   const schedule = () => {
-    if (pending) return;
+    if (pending || applying) return;
     pending = true;
     window.setTimeout(() => {
       pending = false;
-      apply();
+      applying = true;
+      try {
+        apply();
+      } finally {
+        applying = false;
+      }
     }, 50);
   };
 
@@ -673,8 +787,10 @@ function Get-CodexSidebarPagingPayload {
   const start = () => {
     disconnect();
     try {
+      applying = true;
       apply();
     } finally {
+      applying = false;
       observe();
     }
   };
