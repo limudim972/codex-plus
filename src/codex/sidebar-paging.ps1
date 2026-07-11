@@ -1,10 +1,11 @@
 function Get-CodexSidebarPagingPayload {
     $projectOrderSnapshot = @(Get-CodexProjectOrderSnapshot)
-    $projectOrderJson = @($projectOrderSnapshot | Select-Object -ExpandProperty cwd) | ConvertTo-Json -Compress
+    $projectOrderJson = @($projectOrderSnapshot) | ConvertTo-Json -Compress
     @'
 (function () {
   const SECTION_SELECTOR = '[class*="group/nav-section-title"]';
-  const PAGE_SIZE = 5;
+  const PAGE_SIZE = 3;
+  const RECENT_WINDOW_MS = 24 * 60 * 60 * 1000;
   const PAGER_ATTR = 'data-codex-plus-sidebar-pager';
   const ACTION_ATTR = 'data-codex-plus-sidebar-action';
   const STATE_ATTR = 'data-codex-plus-sidebar-loaded';
@@ -13,8 +14,8 @@ function Get-CodexSidebarPagingPayload {
   const PROJECT_ORDER = __CODEX_PLUS_PROJECT_ORDER__;
 
   const SECTION_SPECS = [
-    { key: 'projects', title: 'Projects', visibleCount: 3 },
-    { key: 'tasks', labels: ['Tasks', 'Chats'], visibleCount: 2 }
+    { key: 'projects', title: 'Projects', minVisibleCount: 2 },
+    { key: 'tasks', labels: ['Tasks', 'Chats'], minVisibleCount: 0 }
   ];
 
   function normalizeText(text) {
@@ -69,6 +70,10 @@ function Get-CodexSidebarPagingPayload {
     return String(value || '').trim().replace(/\//g, '\\').replace(/\\+$/g, '').toLowerCase();
   }
 
+  function normalizeThreadId(value) {
+    return String(value || '').trim().toLowerCase();
+  }
+
   function getProjectIdForRow(row) {
     if (!row) return '';
     const direct = row.getAttribute('data-app-action-sidebar-project-id');
@@ -82,7 +87,7 @@ function Get-CodexSidebarPagingPayload {
       return;
     }
 
-    const orderMap = new Map(PROJECT_ORDER.map((id, index) => [normalizeProjectId(id), index]));
+    const orderMap = new Map(PROJECT_ORDER.map((entry, index) => [normalizeProjectId(entry?.cwd), index]));
     const rows = getSidebarRows(sectionList).map((row, index) => ({
       row,
       index,
@@ -106,6 +111,59 @@ function Get-CodexSidebarPagingPayload {
     }
 
     sectionList.setAttribute(ORDER_ATTR, signature);
+  }
+
+  function getThreadIdForRow(row) {
+    if (!row) return '';
+    const direct = row.getAttribute('data-app-action-sidebar-thread-id');
+    if (direct) return direct;
+    const nested = row.querySelector('[data-app-action-sidebar-thread-id]');
+    return nested ? nested.getAttribute('data-app-action-sidebar-thread-id') : '';
+  }
+
+  function parseThreadTimestampMs(threadId) {
+    const value = normalizeThreadId(threadId);
+    const uuidPart = value.includes(':') ? value.split(':').pop() : value;
+    const hex = uuidPart.replace(/-/g, '');
+    if (hex.length < 12 || !/^[0-9a-f]+$/i.test(hex)) return 0;
+
+    try {
+      return Number(BigInt('0x' + hex.slice(0, 12)));
+    } catch {
+      return 0;
+    }
+  }
+
+  function countRecentRows(rows, getTimestampMs) {
+    const cutoffMs = Date.now() - RECENT_WINDOW_MS;
+    let count = 0;
+    for (const row of rows) {
+      const timestampMs = Number(getTimestampMs(row) || 0);
+      if (timestampMs < cutoffMs) {
+        break;
+      }
+      count += 1;
+    }
+    return count;
+  }
+
+  function getVisibleCount(rows, spec) {
+    const minimum = Math.max(0, Number(spec.minVisibleCount) || 0);
+    if (!rows.length) return minimum;
+
+    if (spec.key === 'projects') {
+      const projectTimes = new Map((Array.isArray(PROJECT_ORDER) ? PROJECT_ORDER : []).map((entry) => [
+        normalizeProjectId(entry?.cwd),
+        Number(entry?.last_modified_ms || 0)
+      ]));
+      return Math.max(minimum, countRecentRows(rows, (row) => projectTimes.get(normalizeProjectId(getProjectIdForRow(row)))));
+    }
+
+    if (spec.key === 'tasks') {
+      return Math.max(minimum, countRecentRows(rows, (row) => parseThreadTimestampMs(getThreadIdForRow(row))));
+    }
+
+    return minimum;
   }
 
   function readLoaded(list) {
@@ -203,8 +261,10 @@ function Get-CodexSidebarPagingPayload {
 
       clearPagers(list);
       sortProjectRows(list, spec.key);
-      writeLoaded(list, Math.max(0, Math.min(readLoaded(list), Math.max(0, getSidebarRows(list).length - spec.visibleCount))));
-      renderSidebarSection(list, spec.visibleCount, spec.key);
+      const rows = getSidebarRows(list);
+      const visibleCount = Math.min(rows.length, getVisibleCount(rows, spec));
+      writeLoaded(list, Math.max(0, Math.min(readLoaded(list), Math.max(0, rows.length - visibleCount))));
+      renderSidebarSection(list, visibleCount, spec.key);
     }
   }
 
