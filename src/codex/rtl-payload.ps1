@@ -215,7 +215,12 @@ function Get-CodexRtlPayload {
     for (const title of document.querySelectorAll(TITLE_SELECTOR)) {
       const text = getMeaningfulText(title);
       if (!text.trim()) continue;
-      applyBlockDirection(title, classifyDirection(text));
+      const direction = classifyDirection(text);
+      cleanupOwnedDirection(title);
+      title.setAttribute('dir', direction);
+      title.setAttribute('data-codex-rtl-fix', direction);
+      title.style.textAlign = 'start';
+      title.style.unicodeBidi = 'isolate';
     }
   }
 

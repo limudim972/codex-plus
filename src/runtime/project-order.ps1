@@ -2,6 +2,10 @@ function Get-CodexStateSqlitePath {
     Join-Path $env:USERPROFILE '.codex\state_5.sqlite'
 }
 
+function Get-CodexDevSqlitePath {
+    Join-Path $env:USERPROFILE '.codex\sqlite\codex-dev.db'
+}
+
 function Get-CodexProjectOrderSnapshot {
     $dbPath = Get-CodexStateSqlitePath
     if (-not (Test-Path -LiteralPath $dbPath)) {
@@ -65,7 +69,7 @@ print(json.dumps([
 }
 
 function Get-CodexRecentThreadSnapshot {
-    $dbPath = Get-CodexStateSqlitePath
+    $dbPath = Get-CodexDevSqlitePath
     if (-not (Test-Path -LiteralPath $dbPath)) {
         return @()
     }
@@ -87,19 +91,22 @@ cur = conn.cursor()
 rows = cur.execute(
     """
     SELECT
-        id,
-        title,
+        thread_id,
+        display_title,
         cwd,
+        source_kind,
+        source_detail,
         CASE
-            WHEN updated_at_ms IS NOT NULL AND updated_at_ms > 0 THEN updated_at_ms
-            WHEN updated_at IS NOT NULL AND updated_at > 0 THEN updated_at * 1000
+            WHEN source_updated_at IS NOT NULL AND source_updated_at > 0 THEN CAST(source_updated_at * 1000 AS INTEGER)
+            WHEN source_created_at IS NOT NULL AND source_created_at > 0 THEN CAST(source_created_at * 1000 AS INTEGER)
             ELSE 0
         END AS last_modified_ms
-    FROM threads
-    WHERE archived = 0
-      AND title IS NOT NULL
-      AND TRIM(title) != ''
-    ORDER BY last_modified_ms DESC, title ASC
+    FROM local_thread_catalog
+    WHERE host_id = 'local'
+      AND missing_candidate = 0
+      AND display_title IS NOT NULL
+      AND TRIM(display_title) != ''
+    ORDER BY last_modified_ms DESC, observation_sequence DESC, display_title ASC
     LIMIT 12
     """
 ).fetchall()
@@ -114,11 +121,14 @@ def normalize_cwd(value):
 print(json.dumps([
     {
         "id": thread_id,
-        "title": title,
+        "title": display_title,
+        "display_title": display_title,
         "cwd": normalize_cwd(cwd),
+        "source_kind": source_kind,
+        "source_detail": source_detail,
         "last_modified_ms": last_modified_ms,
     }
-    for thread_id, title, cwd, last_modified_ms in rows
+    for thread_id, display_title, cwd, source_kind, source_detail, last_modified_ms in rows
 ], ensure_ascii=True))
 '@
 

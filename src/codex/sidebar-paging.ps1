@@ -153,7 +153,7 @@ function Get-CodexSidebarPagingPayload {
   }
 
   function getThreadTitleElement(row) {
-    return row?.querySelector('[data-thread-title="true"]') || null;
+    return row?.querySelector('[data-thread-title="true"], [data-app-action-sidebar-thread-title], [data-app-action-sidebar-project-label]') || null;
   }
 
   function getRowTextSignature(row) {
@@ -211,13 +211,22 @@ function Get-CodexSidebarPagingPayload {
     return getSidebarRows(list).find((row) => getRowTextSignature(row) === normalizedRowText) || null;
   }
 
+  function findRowByThreadId(threadId) {
+    const normalizedThreadId = normalizeThreadId(threadId);
+    if (!normalizedThreadId) return null;
+
+    return getSidebarSectionLists(document, () => true)
+      .flatMap((list) => getSidebarRows(list))
+      .find((row) => normalizeThreadId(getThreadIdForRow(row)) === normalizedThreadId) || null;
+  }
+
   function wireSyntheticThreadRow(row, sourceListLabel, sourceRowText) {
     if (!row) return;
     row.setAttribute(SOURCE_LIST_ATTR, sourceListLabel);
     row.setAttribute(SOURCE_TEXT_ATTR, sourceRowText);
 
     const invokeSourceRow = (event) => {
-      const sourceRow = findSourceRow(sourceListLabel, sourceRowText);
+      const sourceRow = findRowByThreadId(row.getAttribute('data-codex-plus-thread-id'));
       if (!sourceRow) return;
       event.preventDefault();
       event.stopPropagation();
@@ -256,10 +265,9 @@ function Get-CodexSidebarPagingPayload {
   }
 
   function formatThreadLabelFromSnapshot(entry) {
-    const title = normalizeText(entry?.title);
+    const title = normalizeText(entry?.display_title || entry?.title);
     if (!title) return '';
-    const projectTitle = normalizeText(entry?.projectTitle);
-    return projectTitle ? (title + ' (' + projectTitle + ')') : (title + ' (task)');
+    return title;
   }
 
   function setThreadLabel(row, label) {
@@ -433,12 +441,13 @@ function Get-CodexSidebarPagingPayload {
       const cwd = normalizeProjectId(entry?.cwd);
       const projectTitle = projectTitleMap.get(cwd) || '';
       const kind = projectTitle ? 'project' : 'task';
-      const title = normalizeText(entry?.title);
+      const title = normalizeText(entry?.display_title || entry?.title);
       const lastModifiedMs = Number(entry?.last_modified_ms || 0);
       const id = normalizeThreadId(entry?.id);
       return {
         id,
         title,
+        displayTitle: title,
         cwd,
         projectTitle,
         kind,
@@ -472,16 +481,12 @@ function Get-CodexSidebarPagingPayload {
       const signature = [entry.id || '', entry.cwd || '', entry.title, entry.kind].join('|').toLowerCase();
       if (seen.has(signature)) continue;
       seen.add(signature);
-      const sourceRow = findSourceRow(entry.sourceListLabel, entry.sourceRowText);
-      const clone = sourceRow
-        ? sourceRow.cloneNode(true)
-        : createSyntheticThreadRow(formatThreadLabelFromSnapshot(entry), entry.lastModifiedMs, templateRow);
+      const clone = createSyntheticThreadRow(formatThreadLabelFromSnapshot(entry), entry.lastModifiedMs, templateRow);
+      clone.setAttribute('data-codex-plus-thread-id', entry.id);
       clone.setAttribute(SYNTHETIC_ROW_ATTR, 'threads');
       clone.setAttribute(THREAD_UPDATED_ATTR, String(entry.lastModifiedMs));
       setThreadLabel(clone, formatThreadLabelFromSnapshot(entry));
-      if (sourceRow) {
-        wireSyntheticThreadRow(clone, entry.sourceListLabel, entry.sourceRowText);
-      }
+      wireSyntheticThreadRow(clone, entry.sourceListLabel || 'Tasks', entry.displayTitle || entry.title);
       threadRows.push({
         row: clone,
         timestampMs: entry.lastModifiedMs

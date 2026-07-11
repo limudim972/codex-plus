@@ -763,10 +763,16 @@ $sidebarPagingPayload = Get-CodexSidebarPagingPayload
 Assert-True ($sidebarPagingPayload.Contains("key: 'threads'")) 'Sidebar paging should define the synthetic Threads section.'
 Assert-True ($sidebarPagingPayload.Contains("title: 'Threads'")) 'Sidebar paging should render a Threads heading.'
 Assert-True ($sidebarPagingPayload.Contains("minVisibleCount: 3")) 'Sidebar paging should keep at least three thread rows visible by default.'
-Assert-True ($sidebarPagingPayload.Contains("(task)")) 'Synthetic Threads labels should suffix task threads explicitly.'
+Assert-True ($sidebarPagingPayload.Contains('display_title')) 'Synthetic Threads labels should come from the catalog display title.'
+Assert-True ($sidebarPagingPayload.Contains('data-codex-plus-thread-id')) 'Synthetic Threads rows should retain the source thread id for click proxying.'
+Assert-True ($sidebarPagingPayload.Contains('data-app-action-sidebar-thread-title')) 'Synthetic Threads should target the live Codex thread title element.'
 Assert-True ($sidebarPagingPayload.Contains("data-codex-plus-sidebar-synthetic-section")) 'Sidebar paging should mark synthetic sections explicitly.'
 Assert-True ($sidebarPagingPayload.Contains("data-codex-plus-sidebar-synthetic-list")) 'Synthetic Threads should mark their list so source lookups can skip it.'
 Assert-True ($sidebarPagingPayload.Contains("data-codex-plus-source-list-label")) 'Synthetic Threads rows should preserve their source list label for click proxying.'
+
+$projectOrderSource = Get-Content -LiteralPath (Join-Path $repoRoot 'src/runtime/project-order.ps1') -Raw
+Assert-True ($projectOrderSource.Contains('local_thread_catalog')) 'Recent thread snapshots should read from the local thread catalog.'
+Assert-True ($projectOrderSource.Contains('display_title')) 'Recent thread snapshots should use the catalog display title.'
 
 $payloadBundle = Get-CodexPlusPayloadBundle
 Assert-True (-not ($payloadBundle.Contains('__CODEX_PLUS_WINDOW_TITLE'))) 'Injected payload bundle should not rewrite the webview title for taskbar labeling.'
