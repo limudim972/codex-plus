@@ -14,33 +14,33 @@ This repo-local copy includes a Codex Plus method for attaching to an already-ru
 ## Workflow
 
 1. Inspect the running Codex target before restarting anything.
-2. If a live UI change is requested, fix the running surface first, verify it in the live UI, and only then change the persisted script or launcher.
-3. Launch Codex Plus through the installed launcher path when you need a fresh Plus window.
+2. Launch Codex Plus through the installed launcher path when you need a fresh Plus window.
    - Prefer `C:\Users\Noam\AppData\Local\Codex Plus\runtime\launch-codex-plus.vbs` or an installed `Codex Plus.lnk`.
    - Do not launch raw `ChatGPT.exe` when the goal is to reproduce Codex Plus runtime behavior.
    - The launcher sets up the scoped profile, debug port, splash helper, and watchdog flow used by Codex Plus.
    - Before launching, record the existing Codex Plus `--remote-debugging-port` and `--user-data-dir` pairs.
    - After launching, attach only to the newly appeared port/profile pair, not to any pre-existing Codex window.
-4. Resolve the active debug port for the running Codex instance.
+3. Resolve the active debug port for the running Codex instance.
    - Check the running `ChatGPT.exe` command line for `--remote-debugging-port=...`.
    - If working in Codex Plus, prefer the launcher-scoped port for the instance you are inspecting.
    - Pair the port with the matching `--user-data-dir` so you stay attached to the intended window.
    - If you just launched a fresh window, restrict attachment to the port/profile pair that did not exist before launch.
    - Do not assume `18317` or the saved state port; use the actual live port when one is already running.
-5. Open the debugger list from `http://127.0.0.1:<port>/json/list` or the IPv6 loopback equivalent when needed.
-6. Identify the active surface:
+4. Open the debugger list from `http://127.0.0.1:<port>/json/list` or the IPv6 loopback equivalent when needed.
+5. Identify the active surface:
    - main chat surface
    - tabpanel or other app panel
    - browser/resource panel
    - separate frame or target, if present
-7. Verify the exact node or state source before changing behavior.
+6. Verify the exact node or state source before changing behavior.
    - Use stable selectors for the relevant surface.
    - Do not assume a browser-like panel is an iframe or webview.
-8. Verify live results in DevTools.
+   - Do not trust a window title, launcher result, or saved state file by itself; verify the fresh session by matching the live process, debug port, user-data-dir, and visible window title together before you inspect the DOM.
+7. Verify live results in DevTools.
    - Check computed `direction`, `text-align`, and `unicode-bidi` when relevant.
    - Confirm the target surface exists and is the one you expect.
-9. If the UI does not visibly expose the data you need, inspect client-side state separately from the rendered DOM.
-10. Use the live probe script or the PowerShell helper for a quick read-only check of the current debugger target.
+8. If the UI does not visibly expose the data you need, inspect client-side state separately from the rendered DOM.
+9. Use the live probe script or the PowerShell helper for a quick read-only check of the current debugger target.
 
 ## Codex Plus Method
 
@@ -122,6 +122,11 @@ When writing down verification results, prefer concrete observations over impres
   - duplicate lists or duplicate pager rows
   - hidden buttons with the same text
   - stale state attributes that never change after the interaction
+- For open/close controls, verify both directions explicitly:
+  - capture the expanded state and visible list before clicking
+  - click the exact control you inspected
+  - confirm `aria-expanded`, hidden state, and list visibility after collapse
+  - click again and confirm the state returns to the original open form
 - When validating data-bearing surfaces:
   - do not assume visible text is the full source of truth
   - confirm whether the required value lives in attributes, adjacent nodes, or client state
@@ -129,6 +134,5 @@ When writing down verification results, prefer concrete observations over impres
 
 ## References
 
-- See [Live Debugging](references/live-debugging.md) for debugger notes and verification checks.
 - See [Probe Script](scripts/codex_live_probe.js) for the read-only debugger probe.
 - See `tools/invoke-codex-devtools.ps1` for the Codex Plus live DevTools helper.
