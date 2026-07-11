@@ -150,6 +150,18 @@ Assert-True ($splashBody.Contains('$image.Width = 36')) 'Launch splash should ke
 Assert-True ($splashBody.Contains('$text.FontSize = 28')) 'Launch splash should keep the Plus label at the original compact size.'
 Assert-True (-not $splashBody.Contains('DoubleAnimation')) 'Launch splash should stay static after reverting the loading animation experiment.'
 Assert-True ($splashBody.Contains('Get-CodexVisibleProcessCount')) 'Launch splash should close itself when the real Codex window becomes visible.'
+$desktopProcessNames = @(Get-CodexDesktopProcessNames)
+Assert-Equal 2 @($desktopProcessNames).Count 'Desktop process lookup should include the two supported Codex executable names by default.'
+Assert-Equal 'ChatGPT.exe' $desktopProcessNames[0] 'Desktop process lookup should prefer ChatGPT.exe first by default.'
+Assert-Equal 'Codex.exe' $desktopProcessNames[1] 'Desktop process lookup should keep Codex.exe as a fallback process name.'
+$scopedDesktopProcessNames = @(Get-CodexDesktopProcessNames -PreferredExeName 'CustomCodex.exe')
+Assert-Equal 3 @($scopedDesktopProcessNames).Count 'Desktop process lookup should prepend a custom installed executable name without dropping the defaults.'
+Assert-Equal 'CustomCodex.exe' $scopedDesktopProcessNames[0] 'Desktop process lookup should query the installed executable name first when it differs from the defaults.'
+Assert-Equal "Name = 'ChatGPT.exe' OR Name = 'Codex.exe'" (Get-CodexDesktopProcessNameFilter -Names @('ChatGPT.exe', 'Codex.exe')) 'Desktop process lookup should build a WMI filter that only asks for the supported process names.'
+$desktopProcessBody = (Get-Command -Name Get-CodexDesktopProcesses -CommandType Function).ScriptBlock.ToString()
+Assert-True ($desktopProcessBody.Contains('-Filter $nameFilter')) 'Desktop process lookup should narrow the WMI query to the expected process names.'
+Assert-True ($desktopProcessBody.Contains('-OperationTimeoutSec 3')) 'Desktop process lookup should bound the WMI query so splash helpers cannot hang indefinitely.'
+Assert-True ($desktopProcessBody.Contains('catch')) 'Desktop process lookup should fail closed when the WMI query stalls or errors.'
 $patchBody = Get-Content -LiteralPath $patchScript -Raw
 Assert-True ($patchBody.Contains('$RequiresElevation = (-not ($LaunchCodexRtl -or $ShowLaunchSplash -or $StartCloseWatchdog -or $SkipMain))')) 'Elevation should be skipped for launch-only helper paths such as the splash and watchdog.'
 
@@ -753,6 +765,8 @@ Assert-True ($sidebarPagingPayload.Contains("title: 'Threads'")) 'Sidebar paging
 Assert-True ($sidebarPagingPayload.Contains("minVisibleCount: 3")) 'Sidebar paging should keep at least three thread rows visible by default.'
 Assert-True ($sidebarPagingPayload.Contains("(task)")) 'Synthetic Threads labels should suffix task threads explicitly.'
 Assert-True ($sidebarPagingPayload.Contains("data-codex-plus-sidebar-synthetic-section")) 'Sidebar paging should mark synthetic sections explicitly.'
+Assert-True ($sidebarPagingPayload.Contains("data-codex-plus-sidebar-synthetic-list")) 'Synthetic Threads should mark their list so source lookups can skip it.'
+Assert-True ($sidebarPagingPayload.Contains("data-codex-plus-source-list-label")) 'Synthetic Threads rows should preserve their source list label for click proxying.'
 
 $payloadBundle = Get-CodexPlusPayloadBundle
 Assert-True (-not ($payloadBundle.Contains('__CODEX_PLUS_WINDOW_TITLE'))) 'Injected payload bundle should not rewrite the webview title for taskbar labeling.'

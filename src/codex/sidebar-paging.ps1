@@ -1,19 +1,26 @@
 function Get-CodexSidebarPagingPayload {
     $projectOrderSnapshot = @(Get-CodexProjectOrderSnapshot)
     $projectOrderJson = @($projectOrderSnapshot) | ConvertTo-Json -Compress
+    $recentThreadSnapshot = @(Get-CodexRecentThreadSnapshot)
+    $recentThreadJson = @($recentThreadSnapshot) | ConvertTo-Json -Compress
     @'
 (function () {
   const SECTION_SELECTOR = '[class*="group/nav-section-title"]';
   const PAGE_SIZE = 3;
   const RECENT_WINDOW_MS = 24 * 60 * 60 * 1000;
   const SYNTHETIC_SECTION_ATTR = 'data-codex-plus-sidebar-synthetic-section';
+  const SYNTHETIC_LIST_ATTR = 'data-codex-plus-sidebar-synthetic-list';
   const SYNTHETIC_ROW_ATTR = 'data-codex-plus-sidebar-synthetic-row';
+  const SOURCE_LIST_ATTR = 'data-codex-plus-source-list-label';
+  const SOURCE_TEXT_ATTR = 'data-codex-plus-source-row-text';
   const PAGER_ATTR = 'data-codex-plus-sidebar-pager';
   const ACTION_ATTR = 'data-codex-plus-sidebar-action';
   const STATE_ATTR = 'data-codex-plus-sidebar-loaded';
   const ORDER_ATTR = 'data-codex-plus-project-order';
+  const THREAD_UPDATED_ATTR = 'data-codex-plus-thread-updated-ms';
   const BUTTON_CLASS = 'border-token-border no-drag cursor-interaction flex items-center gap-1 border whitespace-nowrap select-none focus:outline-none disabled:cursor-not-allowed disabled:opacity-40 rounded-full text-token-muted-foreground enabled:hover:bg-transparent data-[state=open]:bg-transparent hover:text-token-foreground border-transparent px-2 py-0.5 text-sm leading-[18px] text-token-description-foreground hover:text-token-foreground -ml-[9px]';
   const PROJECT_ORDER = __CODEX_PLUS_PROJECT_ORDER__;
+  const RECENT_THREADS = __CODEX_PLUS_RECENT_THREADS__;
 
   const SECTION_SPECS = [
     { key: 'threads', title: 'Threads', minVisibleCount: 3, synthetic: true },
@@ -40,6 +47,16 @@ function Get-CodexSidebarPagingPayload {
     return Array.from(scopeDoc.querySelectorAll('[role="list"]')).find((list) => {
       const ariaLabel = normalizeText(list.getAttribute('aria-label'));
       return ariaLabel && normalizedLabels.includes(ariaLabel);
+    }) || null;
+  }
+
+  function getNonSyntheticSidebarSectionListByLabel(scopeDoc, labels) {
+    const normalizedLabels = (Array.isArray(labels) ? labels : [labels]).map((label) => normalizeText(label)).filter(Boolean);
+    if (normalizedLabels.length === 0) return null;
+
+    return Array.from(scopeDoc.querySelectorAll('[role="list"]')).find((list) => {
+      const ariaLabel = normalizeText(list.getAttribute('aria-label'));
+      return ariaLabel && normalizedLabels.includes(ariaLabel) && !list.hasAttribute(SYNTHETIC_LIST_ATTR);
     }) || null;
   }
 
@@ -139,32 +156,77 @@ function Get-CodexSidebarPagingPayload {
     return row?.querySelector('[data-thread-title="true"]') || null;
   }
 
-  function getAllSidebarThreadRows() {
-    const rows = [];
-    const seen = new Set();
+  function getRowTextSignature(row) {
+    return normalizeText(row?.innerText || '');
+  }
 
-    const appendRow = (row, kind, projectTitle) => {
-      if (!row || row.hasAttribute(PAGER_ATTR) || row.hasAttribute(SYNTHETIC_ROW_ATTR)) return;
-      const text = textOf(row);
-      const key = [kind, projectTitle || '', text].join('|').toLowerCase();
-      if (!text || seen.has(key)) return;
-      seen.add(key);
-      rows.push({ row, kind, projectTitle: projectTitle || '' });
+  function getClickableElement(row) {
+    if (!row) return null;
+    const candidates = Array.from(row.querySelectorAll('button, a, [role="button"]'));
+    const preferred = candidates.find((candidate) => {
+      const role = normalizeText(candidate.getAttribute('role'));
+      const ariaLabel = normalizeText(candidate.getAttribute('aria-label'));
+      const className = String(candidate.className || '');
+      if (ariaLabel) return false;
+      if (className.includes('cursor-grab')) return false;
+      return role === 'button' || candidate.tagName === 'BUTTON' || candidate.tagName === 'A';
+    });
+    return preferred || candidates.find((candidate) => !String(candidate.className || '').includes('cursor-grab')) || row;
+  }
+
+  function dispatchRowClick(row) {
+    const target = getClickableElement(row);
+    if (!target) return false;
+    if (typeof target.focus === 'function') {
+      try { target.focus(); } catch {}
+    }
+    if (typeof target.click === 'function') {
+      target.click();
+      return true;
+    }
+    for (const eventName of ['pointerdown', 'mousedown', 'pointerup', 'mouseup', 'click']) {
+      target.dispatchEvent(new MouseEvent(eventName, {
+        bubbles: true,
+        cancelable: true,
+        view: window
+      }));
+    }
+    return true;
+  }
+
+  function findSourceRow(listLabel, rowText) {
+    const normalizedListLabel = normalizeText(listLabel);
+    const normalizedRowText = normalizeText(rowText);
+    if (!normalizedListLabel || !normalizedRowText) return null;
+
+    const candidateLabels = normalizedListLabel === 'Tasks'
+      ? ['Tasks', 'Threads', 'Chats']
+      : [normalizedListLabel];
+
+    const list = candidateLabels
+      .map((label) => getNonSyntheticSidebarSectionListByLabel(document, label))
+      .find(Boolean);
+    if (!list) return null;
+
+    return getSidebarRows(list).find((row) => getRowTextSignature(row) === normalizedRowText) || null;
+  }
+
+  function wireSyntheticThreadRow(row, sourceListLabel, sourceRowText) {
+    if (!row) return;
+    row.setAttribute(SOURCE_LIST_ATTR, sourceListLabel);
+    row.setAttribute(SOURCE_TEXT_ATTR, sourceRowText);
+
+    const invokeSourceRow = (event) => {
+      const sourceRow = findSourceRow(sourceListLabel, sourceRowText);
+      if (!sourceRow) return;
+      event.preventDefault();
+      event.stopPropagation();
+      event.stopImmediatePropagation();
+      dispatchRowClick(sourceRow);
     };
 
-    const threadList = getSidebarSectionListByLabel(document, 'Threads');
-    for (const row of getSidebarRows(threadList)) {
-      appendRow(row, 'task', '');
-    }
-
-    for (const list of getSidebarSectionLists(document, (label) => label.startsWith('Scheduled tasks in '))) {
-      const projectTitle = normalizeText(list.getAttribute('aria-label')).replace(/^Scheduled tasks in\s+/i, '');
-      for (const row of getSidebarRows(list)) {
-        appendRow(row, 'project', projectTitle);
-      }
-    }
-
-    return rows;
+    row.addEventListener('click', invokeSourceRow, true);
+    row.addEventListener('pointerup', invokeSourceRow, true);
   }
 
   function getThreadTitleForRow(row) {
@@ -193,6 +255,13 @@ function Get-CodexSidebarPagingPayload {
     return /\s+\([^)]+\)$/.test(title) ? title : (title + ' (task)');
   }
 
+  function formatThreadLabelFromSnapshot(entry) {
+    const title = normalizeText(entry?.title);
+    if (!title) return '';
+    const projectTitle = normalizeText(entry?.projectTitle);
+    return projectTitle ? (title + ' (' + projectTitle + ')') : (title + ' (task)');
+  }
+
   function setThreadLabel(row, label) {
     if (!row || !label) return;
     const titleElement = getThreadTitleElement(row);
@@ -215,6 +284,12 @@ function Get-CodexSidebarPagingPayload {
     } catch {
       return 0;
     }
+  }
+
+  function getThreadTimestampMsForRow(row) {
+    const explicit = Number(row?.getAttribute(THREAD_UPDATED_ATTR) || '0');
+    if (explicit > 0) return explicit;
+    return parseThreadTimestampMs(getThreadIdForRow(row));
   }
 
   function countRecentRows(rows, getTimestampMs) {
@@ -242,8 +317,8 @@ function Get-CodexSidebarPagingPayload {
       return Math.max(minimum, countRecentRows(rows, (row) => projectTimes.get(normalizeProjectId(getProjectIdForRow(row)))));
     }
 
-    if (spec.key === 'tasks' || spec.key === 'threads') {
-      return Math.max(minimum, countRecentRows(rows, (row) => parseThreadTimestampMs(getThreadIdForRow(row))));
+    if (spec.key === 'tasks') {
+      return Math.max(minimum, countRecentRows(rows, (row) => getThreadTimestampMsForRow(row)));
     }
 
     return minimum;
@@ -276,6 +351,110 @@ function Get-CodexSidebarPagingPayload {
     if (shell) shell.remove();
   }
 
+  function getProjectTitleMap() {
+    const map = new Map();
+    const projectsList = resolveSidebarSectionList({ key: 'projects', title: 'Projects' });
+    for (const row of getSidebarRows(projectsList)) {
+      const projectId = normalizeProjectId(getProjectIdForRow(row));
+      const projectTitle = getProjectLabelForRow(row) || textOf(row);
+      if (projectId && projectTitle) {
+        map.set(projectId, projectTitle);
+      }
+    }
+    return map;
+  }
+
+  function getSyntheticThreadTemplateRow() {
+    const candidateLists = [
+      getNonSyntheticSidebarSectionListByLabel(document, 'Tasks'),
+      getNonSyntheticSidebarSectionListByLabel(document, 'Threads'),
+      getNonSyntheticSidebarSectionListByLabel(document, 'Chats'),
+      ...getSidebarSectionLists(document, (label) => label.startsWith('Scheduled tasks in '))
+    ].filter(Boolean);
+
+    for (const list of candidateLists) {
+      const row = getSidebarRows(list)[0];
+      if (row) return row;
+    }
+
+    return null;
+  }
+
+  function createSyntheticThreadRow(label, updatedMs, templateRow) {
+    if (templateRow) {
+      const row = templateRow.cloneNode(true);
+      row.removeAttribute('data-app-action-sidebar-thread-id');
+      row.removeAttribute('data-app-action-sidebar-project-id');
+      row.removeAttribute('aria-current');
+      row.removeAttribute('aria-selected');
+      row.setAttribute(SYNTHETIC_ROW_ATTR, 'threads');
+      row.setAttribute(THREAD_UPDATED_ATTR, String(updatedMs || 0));
+      for (const selected of Array.from(row.querySelectorAll('[aria-current], [aria-selected]'))) {
+        selected.removeAttribute('aria-current');
+        selected.removeAttribute('aria-selected');
+      }
+      setThreadLabel(row, label);
+      return row;
+    }
+
+    const row = document.createElement('div');
+    row.setAttribute('role', 'listitem');
+    row.setAttribute(SYNTHETIC_ROW_ATTR, 'threads');
+    row.setAttribute(THREAD_UPDATED_ATTR, String(updatedMs || 0));
+    row.className = 'after:block after:h-px after:content-[\'\'] last:after:hidden';
+
+    const button = document.createElement('div');
+    button.setAttribute('role', 'button');
+    button.className = 'group relative h-[var(--height-token-row)] rounded-[var(--radius-token-row)] py-row-y text-sm pr-1 pl-[var(--padding-row-cell-x,var(--padding-row-x))]';
+
+    const outer = document.createElement('div');
+    outer.className = 'flex h-full w-full items-center text-sm leading-4';
+
+    const inner = document.createElement('div');
+    inner.className = 'flex min-w-0 flex-1 self-stretch items-center gap-2 text-base leading-5 text-token-foreground';
+
+    const title = document.createElement('span');
+    title.setAttribute('data-thread-title', 'true');
+    title.className = 'min-w-0 select-none text-fade-truncate flex-1';
+    title.textContent = label;
+
+    inner.appendChild(title);
+    outer.appendChild(inner);
+    button.appendChild(outer);
+    row.appendChild(button);
+    return row;
+  }
+
+  function getRecentThreadEntries() {
+    const projectTitleMap = getProjectTitleMap();
+    const seen = new Set();
+
+    return (Array.isArray(RECENT_THREADS) ? RECENT_THREADS : []).map((entry) => {
+      const cwd = normalizeProjectId(entry?.cwd);
+      const projectTitle = projectTitleMap.get(cwd) || '';
+      const kind = projectTitle ? 'project' : 'task';
+      const title = normalizeText(entry?.title);
+      const lastModifiedMs = Number(entry?.last_modified_ms || 0);
+      const id = normalizeThreadId(entry?.id);
+      return {
+        id,
+        title,
+        cwd,
+        projectTitle,
+        kind,
+        lastModifiedMs,
+        sourceListLabel: kind === 'project' ? ('Scheduled tasks in ' + projectTitle) : 'Tasks',
+        sourceRowText: title
+      };
+    }).filter((entry) => {
+      if (!entry.title || entry.lastModifiedMs <= 0) return false;
+      const signature = [entry.id || '', entry.cwd || '', entry.title, entry.kind].join('|').toLowerCase();
+      if (seen.has(signature)) return false;
+      seen.add(signature);
+      return true;
+    }).sort((left, right) => right.lastModifiedMs - left.lastModifiedMs);
+  }
+
   function ensureSyntheticThreadsSection() {
     const projectsHeading = getSidebarSectionTitle(document, 'Projects');
     const projectsShell = getSectionShellFromTitle(projectsHeading);
@@ -285,26 +464,27 @@ function Get-CodexSidebarPagingPayload {
       return null;
     }
 
-    const sourceRows = getAllSidebarThreadRows();
+    const recentThreadEntries = getRecentThreadEntries();
+    const templateRow = getSyntheticThreadTemplateRow();
     const seen = new Set();
     const threadRows = [];
-    for (const entry of sourceRows) {
-      const row = entry.row;
-      const signature = [
-        entry.kind,
-        entry.projectTitle,
-        getThreadIdForRow(row),
-        getThreadTitleForRow(row) || textOf(row)
-      ].join('|').toLowerCase();
+    for (const entry of recentThreadEntries) {
+      const signature = [entry.id || '', entry.cwd || '', entry.title, entry.kind].join('|').toLowerCase();
       if (seen.has(signature)) continue;
       seen.add(signature);
-
-      const clone = row.cloneNode(true);
+      const sourceRow = findSourceRow(entry.sourceListLabel, entry.sourceRowText);
+      const clone = sourceRow
+        ? sourceRow.cloneNode(true)
+        : createSyntheticThreadRow(formatThreadLabelFromSnapshot(entry), entry.lastModifiedMs, templateRow);
       clone.setAttribute(SYNTHETIC_ROW_ATTR, 'threads');
-      setThreadLabel(clone, formatThreadLabel(row, entry.kind, entry.projectTitle));
+      clone.setAttribute(THREAD_UPDATED_ATTR, String(entry.lastModifiedMs));
+      setThreadLabel(clone, formatThreadLabelFromSnapshot(entry));
+      if (sourceRow) {
+        wireSyntheticThreadRow(clone, entry.sourceListLabel, entry.sourceRowText);
+      }
       threadRows.push({
         row: clone,
-        timestampMs: parseThreadTimestampMs(getThreadIdForRow(row))
+        timestampMs: entry.lastModifiedMs
       });
     }
 
@@ -325,6 +505,7 @@ function Get-CodexSidebarPagingPayload {
       const list = document.createElement('div');
       list.setAttribute('role', 'list');
       list.setAttribute('aria-label', 'Threads');
+      list.setAttribute(SYNTHETIC_LIST_ATTR, 'threads');
       scroller.appendChild(list);
       sectionContainer.appendChild(scroller);
       shell.appendChild(sectionContainer);
@@ -375,28 +556,47 @@ function Get-CodexSidebarPagingPayload {
       const button = sectionList.ownerDocument.createElement('button');
       button.type = 'button';
       button.className = BUTTON_CLASS;
-      button.setAttribute(ACTION_ATTR, 'toggle');
+      button.setAttribute(ACTION_ATTR, 'more');
       wrapper.appendChild(button);
+
+      const collapseButton = sectionList.ownerDocument.createElement('button');
+      collapseButton.type = 'button';
+      collapseButton.className = BUTTON_CLASS;
+      collapseButton.setAttribute(ACTION_ATTR, 'less');
+      collapseButton.textContent = 'Show less';
+      wrapper.appendChild(collapseButton);
 
       pager.appendChild(wrapper);
     }
 
     if (pager) {
-      const toggleButton = pager.querySelector('[' + ACTION_ATTR + '="toggle"]');
-      toggleButton.onclick = (event) => {
+      const showMoreButton = pager.querySelector('[' + ACTION_ATTR + '="more"]');
+      const showLessButton = pager.querySelector('[' + ACTION_ATTR + '="less"]');
+      showMoreButton.onclick = (event) => {
         const current = readLoaded(sectionList);
-        const next = current > 0 ? 0 : Math.min(hiddenRows.length, PAGE_SIZE);
+        const next = Math.min(hiddenRows.length, (current > 0 ? current : 0) + PAGE_SIZE);
         writeLoaded(sectionList, next);
         renderSidebarSection(sectionList, visibleCount, sectionKey);
         event.preventDefault();
         event.stopPropagation();
         event.stopImmediatePropagation();
       };
-      toggleButton.onpointerup = toggleButton.onclick;
+      showMoreButton.onpointerup = showMoreButton.onclick;
+
+      showLessButton.onclick = (event) => {
+        writeLoaded(sectionList, 0);
+        renderSidebarSection(sectionList, visibleCount, sectionKey);
+        event.preventDefault();
+        event.stopPropagation();
+        event.stopImmediatePropagation();
+      };
+      showLessButton.onpointerup = showLessButton.onclick;
 
       const hasAny = loaded > 0;
       const hasMore = loaded < hiddenRows.length;
-      toggleButton.textContent = hasAny ? 'Show less' : 'Show more';
+      showMoreButton.textContent = 'Show more';
+      showMoreButton.hidden = !hasMore;
+      showLessButton.hidden = !hasAny;
       pager.hidden = !hasMore && !hasAny;
       pager.style.setProperty('display', pager.hidden ? 'none' : 'flex', 'important');
 
@@ -471,5 +671,5 @@ function Get-CodexSidebarPagingPayload {
     start();
   }
 })();
-'@.Replace('__CODEX_PLUS_PROJECT_ORDER__', $projectOrderJson)
+'@.Replace('__CODEX_PLUS_PROJECT_ORDER__', $projectOrderJson).Replace('__CODEX_PLUS_RECENT_THREADS__', $recentThreadJson)
 }
