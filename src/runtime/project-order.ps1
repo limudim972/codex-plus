@@ -82,3 +82,77 @@ print(json.dumps([
         return @()
     }
 }
+
+function Get-CodexProjectTimestampSnapshot {
+    $dbPath = Get-CodexStateSqlitePath
+    if (-not (Test-Path -LiteralPath $dbPath)) {
+        return @()
+    }
+
+    $pythonCommand = Get-Command -Name python -ErrorAction SilentlyContinue
+    if (-not $pythonCommand) {
+        return @()
+    }
+
+    $script = @'
+import json
+import sqlite3
+import sys
+
+db_path = sys.argv[1]
+conn = sqlite3.connect(db_path)
+cur = conn.cursor()
+
+rows = cur.execute(
+    """
+    SELECT
+        cwd,
+        MAX(COALESCE(NULLIF(updated_at_ms, 0), NULLIF(created_at_ms, 0), 0)) AS last_modified_ms
+    FROM threads
+    WHERE archived = 0
+      AND cwd IS NOT NULL
+      AND TRIM(cwd) != ''
+    GROUP BY cwd
+    """
+).fetchall()
+
+def normalize_cwd(value):
+    if not value:
+        return ''
+    if value.startswith("\\\\?\\"):
+        value = value[4:]
+    return value.replace("/", "\\").rstrip("\\").lower()
+
+project_timestamps = {}
+for cwd, last_modified_ms in rows:
+    normalized_cwd = normalize_cwd(cwd)
+    if not normalized_cwd:
+        continue
+    timestamp_ms = int(last_modified_ms or 0)
+    if timestamp_ms <= 0:
+        continue
+    current = project_timestamps.get(normalized_cwd, 0)
+    if timestamp_ms > current:
+        project_timestamps[normalized_cwd] = timestamp_ms
+
+print(json.dumps([
+    {
+        "cwd": cwd,
+        "last_modified_ms": last_modified_ms,
+    }
+    for cwd, last_modified_ms in sorted(project_timestamps.items(), key=lambda item: (-item[1], item[0]))
+], ensure_ascii=True))
+'@
+
+    try {
+        $raw = @($script) | & $pythonCommand.Source - $dbPath
+        if (-not $raw) {
+            return @()
+        }
+
+        $parsed = $raw | ConvertFrom-Json
+        return @($parsed)
+    } catch {
+        return @()
+    }
+}

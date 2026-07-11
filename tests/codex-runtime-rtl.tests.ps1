@@ -165,12 +165,18 @@ Assert-True ($desktopProcessBody.Contains('catch')) 'Desktop process lookup shou
 $patchBody = Get-Content -LiteralPath $patchScript -Raw
 Assert-True ($patchBody.Contains('$RequiresElevation = (-not ($LaunchCodexRtl -or $ShowLaunchSplash -or $StartCloseWatchdog -or $SkipMain))')) 'Elevation should be skipped for launch-only helper paths such as the splash and watchdog.'
 
+$projectSnapshot = @(Get-CodexProjectTimestampSnapshot)
+Assert-True ($projectSnapshot.Count -gt 0) 'Project timestamp snapshot should include local project rows.'
+Assert-True (@($projectSnapshot | Where-Object { $_.cwd -and [int64]$_.last_modified_ms -gt 0 }).Count -gt 0) 'Project timestamp snapshot should include positive last-modified timestamps.'
+
 $sidebarPayload = Get-CodexSidebarPagingPayload
-Assert-True ($sidebarPayload.Contains('appendThreadTimestampToLabel')) 'Sidebar payload should keep the modified-time suffix helper centralized.'
+Assert-True ($sidebarPayload.Contains('appendThreadTimestampToLabel')) 'Sidebar payload should keep the inline modified-time formatter centralized.'
 Assert-True ($sidebarPayload.Contains("dateStyle: 'short'")) 'Sidebar payload should format modified times with a concise locale-aware date.'
 Assert-True ($sidebarPayload.Contains('THREAD_BASE_LABEL_ATTR')) 'Sidebar payload should preserve the original row label before appending modified time.'
-Assert-True ($sidebarPayload.Contains('pointer-events-none select-none whitespace-nowrap text-token-description-foreground')) 'Sidebar payload should render the timestamp suffix as non-interactive text.'
-Assert-True ($sidebarPayload.Contains('data-codex-plus-thread-timestamp-suffix')) 'Sidebar payload should tag the timestamp suffix for targeted styling.'
+Assert-True ($sidebarPayload.Contains('PROJECT_TIMESTAMPS')) 'Sidebar payload should embed project timestamps for collapsed project rows.'
+Assert-True ($sidebarPayload.Contains('getProjectTimestampMsForRow')) 'Sidebar payload should resolve project timestamps from the local state snapshot.'
+Assert-True (($sidebarPayload.Contains('titleElement.textContent = nextLabel;') -or $sidebarPayload.Contains('directTextNode.nodeValue = nextLabel;'))) 'Sidebar payload should write the inline label directly into the existing text node.'
+Assert-True (-not ($sidebarPayload.Contains('data-codex-plus-thread-timestamp-suffix'))) 'Sidebar payload should render modified times inline instead of a separate suffix span.'
 
 $roots = @(Get-CodexShortcutSearchRoots)
 Assert-True ($roots -contains (Join-Path $env:APPDATA 'Microsoft\Windows\Start Menu\Programs')) 'Shortcut search should include user Start Menu programs.'
@@ -770,6 +776,8 @@ $sidebarPagingPayload = Get-CodexSidebarPagingPayload
 Assert-True ($sidebarPagingPayload.Contains("key: 'threads'")) 'Sidebar paging should define the synthetic Threads section.'
 Assert-True ($sidebarPagingPayload.Contains("title: 'Threads'")) 'Sidebar paging should render a Threads heading.'
 Assert-True ($sidebarPagingPayload.Contains("minVisibleCount: 3")) 'Sidebar paging should keep at least three thread rows visible by default.'
+Assert-True ($sidebarPagingPayload.Contains('PROJECT_TIMESTAMPS')) 'Sidebar paging should include project timestamps for project rows.'
+Assert-True ($sidebarPagingPayload.Contains('getProjectTimestampMsForRow')) 'Sidebar paging should resolve project timestamps from the local state snapshot.'
 Assert-True ($sidebarPagingPayload.Contains('display_title')) 'Synthetic Threads labels should come from the catalog display title.'
 Assert-True ($sidebarPagingPayload.Contains('data-codex-plus-thread-id')) 'Synthetic Threads rows should retain the source thread id for click proxying.'
 Assert-True ($sidebarPagingPayload.Contains('data-app-action-sidebar-thread-title')) 'Synthetic Threads should target the live Codex thread title element.'
@@ -780,6 +788,7 @@ Assert-True ($sidebarPagingPayload.Contains('findSourceRowInList')) 'Synthetic T
 Assert-True ($sidebarPagingPayload.Contains('data-codex-plus-sidebar-action')) 'Synthetic Threads should expose a dedicated collapse action for the header toggle.'
 Assert-True ($sidebarPagingPayload.Contains('group/section-toggle')) 'Synthetic Threads should reuse the project-style section toggle button.'
 Assert-True ($sidebarPagingPayload.Contains('aria-expanded')) 'Synthetic Threads toggle should publish its open/closed state.'
+Assert-True (-not ($sidebarPagingPayload.Contains('data-codex-plus-thread-timestamp-suffix'))) 'Sidebar paging should keep modified times inline instead of a separate suffix span.'
 
 $payloadBundle = Get-CodexPlusPayloadBundle
 Assert-True (-not ($payloadBundle.Contains('__CODEX_PLUS_WINDOW_TITLE'))) 'Injected payload bundle should not rewrite the webview title for taskbar labeling.'
