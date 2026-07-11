@@ -211,6 +211,29 @@ function Get-CodexSidebarPagingPayload {
     return true;
   }
 
+  function findRowByTextSignature(list, normalizedRowText) {
+    return getSidebarRows(list).find((row) => getRowTextSignature(row) === normalizedRowText) || null;
+  }
+
+  function findSourceRowInList(list, normalizedRowText) {
+    if (!list || !normalizedRowText) return null;
+
+    let row = findRowByTextSignature(list, normalizedRowText);
+    let attempts = 0;
+    while (!row && attempts < 8) {
+      const showMoreButton = Array.from(list.querySelectorAll('button')).find((button) => {
+        return normalizeText(button.textContent) === 'Show more' && !button.hidden;
+      });
+      if (!showMoreButton) break;
+
+      showMoreButton.click();
+      attempts += 1;
+      row = findRowByTextSignature(list, normalizedRowText);
+    }
+
+    return row;
+  }
+
   function findSourceRow(listLabel, rowText) {
     const normalizedListLabel = normalizeText(listLabel);
     const normalizedRowText = normalizeText(rowText);
@@ -225,7 +248,7 @@ function Get-CodexSidebarPagingPayload {
       .find(Boolean);
     if (!list) return null;
 
-    return getSidebarRows(list).find((row) => getRowTextSignature(row) === normalizedRowText) || null;
+    return findSourceRowInList(list, normalizedRowText);
   }
 
   function findRowByThreadId(threadId) {

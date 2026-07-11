@@ -769,6 +769,7 @@ Assert-True ($sidebarPagingPayload.Contains('data-app-action-sidebar-thread-titl
 Assert-True ($sidebarPagingPayload.Contains("data-codex-plus-sidebar-synthetic-section")) 'Sidebar paging should mark synthetic sections explicitly.'
 Assert-True ($sidebarPagingPayload.Contains("data-codex-plus-sidebar-synthetic-list")) 'Synthetic Threads should mark their list so source lookups can skip it.'
 Assert-True ($sidebarPagingPayload.Contains("data-codex-plus-source-list-label")) 'Synthetic Threads rows should preserve their source list label for click proxying.'
+Assert-True ($sidebarPagingPayload.Contains('findSourceRowInList')) 'Synthetic Threads should auto-expand paged lists before proxying clicks.'
 Assert-True ($sidebarPagingPayload.Contains('data-codex-plus-sidebar-action')) 'Synthetic Threads should expose a dedicated collapse action for the header toggle.'
 Assert-True ($sidebarPagingPayload.Contains('group/section-toggle')) 'Synthetic Threads should reuse the project-style section toggle button.'
 Assert-True ($sidebarPagingPayload.Contains('aria-expanded')) 'Synthetic Threads toggle should publish its open/closed state.'
