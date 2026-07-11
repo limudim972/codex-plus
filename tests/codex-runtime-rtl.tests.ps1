@@ -747,6 +747,13 @@ Assert-True (-not $textSelectorsOnly.Contains("'td'")) 'Payload text block targe
 Assert-True (-not $textSelectorsOnly.Contains("'th'")) 'Payload text block targeting should not include table headers.'
 Assert-True ($payload.Contains('MutationObserver')) 'Payload should reapply after React DOM changes.'
 
+$sidebarPagingPayload = Get-CodexSidebarPagingPayload
+Assert-True ($sidebarPagingPayload.Contains("key: 'threads'")) 'Sidebar paging should define the synthetic Threads section.'
+Assert-True ($sidebarPagingPayload.Contains("title: 'Threads'")) 'Sidebar paging should render a Threads heading.'
+Assert-True ($sidebarPagingPayload.Contains("minVisibleCount: 3")) 'Sidebar paging should keep at least three thread rows visible by default.'
+Assert-True ($sidebarPagingPayload.Contains("(task)")) 'Synthetic Threads labels should suffix task threads explicitly.'
+Assert-True ($sidebarPagingPayload.Contains("data-codex-plus-sidebar-synthetic-section")) 'Sidebar paging should mark synthetic sections explicitly.'
+
 $payloadBundle = Get-CodexPlusPayloadBundle
 Assert-True (-not ($payloadBundle.Contains('__CODEX_PLUS_WINDOW_TITLE'))) 'Injected payload bundle should not rewrite the webview title for taskbar labeling.'
 

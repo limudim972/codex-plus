@@ -5,6 +5,8 @@ Use this reference when inspecting Codex behavior in a running app, especially w
 ## Live targets
 
 - Prefer the live Codex debugger target instead of restarting the app.
+- When you need a fresh Codex Plus window, launch through `C:\Users\Noam\AppData\Local\Codex Plus\runtime\launch-codex-plus.vbs` or the installed `Codex Plus` shortcut, not raw `ChatGPT.exe`.
+- Before launching a fresh window, snapshot the existing Codex Plus port/profile pairs so you can exclude them afterward.
 - Check `http://127.0.0.1:<port>/json/list` for the actual running port.
 - If IPv4 is unavailable, try the IPv6 loopback form.
 - The active page usually appears as `app://-/index.html`.
@@ -17,6 +19,9 @@ Use this reference when inspecting Codex behavior in a running app, especially w
   - `--remote-debugging-port`
   - `--user-data-dir`
   - launcher-specific profile path
+- If you launched a new Codex Plus window for verification, attach only to the port/profile pair that appeared after launch.
+- Prefer the live browser-process port over `Codex Plus\state.json` when they disagree.
+- A visible `N.Codex` window title is a good hint for the launcher-scoped browser process you want, but still confirm the paired `--remote-debugging-port` and `--user-data-dir`.
 - Prefer the browser process entry point, not crashpad, GPU, or utility children.
 
 ## Important selectors

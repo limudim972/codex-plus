@@ -15,24 +15,32 @@ This repo-local copy includes a Codex Plus method for attaching to an already-ru
 
 1. Inspect the running Codex target before restarting anything.
 2. If a live UI change is requested, fix the running surface first, verify it in the live UI, and only then change the persisted script or launcher.
-3. Resolve the active debug port for the running Codex instance.
+3. Launch Codex Plus through the installed launcher path when you need a fresh Plus window.
+   - Prefer `C:\Users\Noam\AppData\Local\Codex Plus\runtime\launch-codex-plus.vbs` or an installed `Codex Plus.lnk`.
+   - Do not launch raw `ChatGPT.exe` when the goal is to reproduce Codex Plus runtime behavior.
+   - The launcher sets up the scoped profile, debug port, splash helper, and watchdog flow used by Codex Plus.
+   - Before launching, record the existing Codex Plus `--remote-debugging-port` and `--user-data-dir` pairs.
+   - After launching, attach only to the newly appeared port/profile pair, not to any pre-existing Codex window.
+4. Resolve the active debug port for the running Codex instance.
    - Check the running `ChatGPT.exe` command line for `--remote-debugging-port=...`.
    - If working in Codex Plus, prefer the launcher-scoped port for the instance you are inspecting.
-   - Do not assume `18317`; use the actual live port when one is already running.
-4. Open the debugger list from `http://127.0.0.1:<port>/json/list` or the IPv6 loopback equivalent when needed.
-4. Identify the active surface:
+   - Pair the port with the matching `--user-data-dir` so you stay attached to the intended window.
+   - If you just launched a fresh window, restrict attachment to the port/profile pair that did not exist before launch.
+   - Do not assume `18317` or the saved state port; use the actual live port when one is already running.
+5. Open the debugger list from `http://127.0.0.1:<port>/json/list` or the IPv6 loopback equivalent when needed.
+6. Identify the active surface:
    - main chat surface
    - tabpanel or other app panel
    - browser/resource panel
    - separate frame or target, if present
-5. Verify the exact node or state source before changing behavior.
+7. Verify the exact node or state source before changing behavior.
    - Use stable selectors for the relevant surface.
    - Do not assume a browser-like panel is an iframe or webview.
-6. Verify live results in DevTools.
+8. Verify live results in DevTools.
    - Check computed `direction`, `text-align`, and `unicode-bidi` when relevant.
    - Confirm the target surface exists and is the one you expect.
-7. If the UI does not visibly expose the data you need, inspect client-side state separately from the rendered DOM.
-8. Use the live probe script or the PowerShell helper for a quick read-only check of the current debugger target.
+9. If the UI does not visibly expose the data you need, inspect client-side state separately from the rendered DOM.
+10. Use the live probe script or the PowerShell helper for a quick read-only check of the current debugger target.
 
 ## Codex Plus Method
 
@@ -58,6 +66,9 @@ When the port is unknown:
 
 - inspect running `ChatGPT.exe` processes and read `--remote-debugging-port=...`
 - prefer the process with the matching `--user-data-dir` for the launcher-scoped instance you care about
+- infer the live port from the visible browser-process command line before trusting `Codex Plus\state.json`
+- if a saved state port and the live process port disagree, use the live process port
+- when launching a new window for debugging, diff the before/after process list and use only the newly introduced port/profile pair
 - if multiple Codex Plus windows are open, keep the port and `user-data-dir` paired so you inspect the correct window
 
 ### Inspection order

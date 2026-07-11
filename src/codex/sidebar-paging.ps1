@@ -6,6 +6,8 @@ function Get-CodexSidebarPagingPayload {
   const SECTION_SELECTOR = '[class*="group/nav-section-title"]';
   const PAGE_SIZE = 3;
   const RECENT_WINDOW_MS = 24 * 60 * 60 * 1000;
+  const SYNTHETIC_SECTION_ATTR = 'data-codex-plus-sidebar-synthetic-section';
+  const SYNTHETIC_ROW_ATTR = 'data-codex-plus-sidebar-synthetic-row';
   const PAGER_ATTR = 'data-codex-plus-sidebar-pager';
   const ACTION_ATTR = 'data-codex-plus-sidebar-action';
   const STATE_ATTR = 'data-codex-plus-sidebar-loaded';
@@ -14,6 +16,7 @@ function Get-CodexSidebarPagingPayload {
   const PROJECT_ORDER = __CODEX_PLUS_PROJECT_ORDER__;
 
   const SECTION_SPECS = [
+    { key: 'threads', title: 'Threads', minVisibleCount: 3, synthetic: true },
     { key: 'projects', title: 'Projects', minVisibleCount: 2 },
     { key: 'tasks', labels: ['Tasks', 'Chats'], minVisibleCount: 0 }
   ];
@@ -38,6 +41,17 @@ function Get-CodexSidebarPagingPayload {
       const ariaLabel = normalizeText(list.getAttribute('aria-label'));
       return ariaLabel && normalizedLabels.includes(ariaLabel);
     }) || null;
+  }
+
+  function getSidebarSectionLists(scopeDoc, predicate) {
+    return Array.from(scopeDoc.querySelectorAll('[role="list"]')).filter((list) => {
+      const ariaLabel = normalizeText(list.getAttribute('aria-label'));
+      return ariaLabel && predicate(ariaLabel, list);
+    });
+  }
+
+  function getSectionShellFromTitle(title) {
+    return title?.parentElement || null;
   }
 
   function getSidebarSectionList(title) {
@@ -121,6 +135,75 @@ function Get-CodexSidebarPagingPayload {
     return nested ? nested.getAttribute('data-app-action-sidebar-thread-id') : '';
   }
 
+  function getThreadTitleElement(row) {
+    return row?.querySelector('[data-thread-title="true"]') || null;
+  }
+
+  function getAllSidebarThreadRows() {
+    const rows = [];
+    const seen = new Set();
+
+    const appendRow = (row, kind, projectTitle) => {
+      if (!row || row.hasAttribute(PAGER_ATTR) || row.hasAttribute(SYNTHETIC_ROW_ATTR)) return;
+      const text = textOf(row);
+      const key = [kind, projectTitle || '', text].join('|').toLowerCase();
+      if (!text || seen.has(key)) return;
+      seen.add(key);
+      rows.push({ row, kind, projectTitle: projectTitle || '' });
+    };
+
+    const threadList = getSidebarSectionListByLabel(document, 'Threads');
+    for (const row of getSidebarRows(threadList)) {
+      appendRow(row, 'task', '');
+    }
+
+    for (const list of getSidebarSectionLists(document, (label) => label.startsWith('Scheduled tasks in '))) {
+      const projectTitle = normalizeText(list.getAttribute('aria-label')).replace(/^Scheduled tasks in\s+/i, '');
+      for (const row of getSidebarRows(list)) {
+        appendRow(row, 'project', projectTitle);
+      }
+    }
+
+    return rows;
+  }
+
+  function getThreadTitleForRow(row) {
+    return textOf(getThreadTitleElement(row)) || textOf(row);
+  }
+
+  function getProjectLabelForRow(row) {
+    const explicitLabel = row?.querySelector('[data-app-action-sidebar-project-label]');
+    const explicitText = textOf(explicitLabel);
+    if (explicitText) return explicitText;
+
+    const projectId = getProjectIdForRow(row);
+    if (!projectId) return '';
+    const normalized = String(projectId).replace(/\\+/g, '/').replace(/\/+$/g, '');
+    const parts = normalized.split('/').filter(Boolean);
+    return parts.length > 0 ? parts[parts.length - 1] : normalized;
+  }
+
+  function formatThreadLabel(row, kind, projectTitle) {
+    const title = getThreadTitleForRow(row);
+    if (!title) return '';
+    if (kind === 'project') {
+      const projectLabel = projectTitle || getProjectLabelForRow(row);
+      return projectLabel ? (title + ' (' + projectLabel + ')') : title;
+    }
+    return /\s+\([^)]+\)$/.test(title) ? title : (title + ' (task)');
+  }
+
+  function setThreadLabel(row, label) {
+    if (!row || !label) return;
+    const titleElement = getThreadTitleElement(row);
+    if (titleElement) {
+      titleElement.textContent = label;
+      return;
+    }
+    const fallbackLabel = row.querySelector('[aria-label]') || row.firstElementChild || row;
+    fallbackLabel.textContent = label;
+  }
+
   function parseThreadTimestampMs(threadId) {
     const value = normalizeThreadId(threadId);
     const uuidPart = value.includes(':') ? value.split(':').pop() : value;
@@ -159,7 +242,7 @@ function Get-CodexSidebarPagingPayload {
       return Math.max(minimum, countRecentRows(rows, (row) => projectTimes.get(normalizeProjectId(getProjectIdForRow(row)))));
     }
 
-    if (spec.key === 'tasks') {
+    if (spec.key === 'tasks' || spec.key === 'threads') {
       return Math.max(minimum, countRecentRows(rows, (row) => parseThreadTimestampMs(getThreadIdForRow(row))));
     }
 
@@ -186,6 +269,80 @@ function Get-CodexSidebarPagingPayload {
     for (const pager of Array.from(root.querySelectorAll('[' + PAGER_ATTR + ']'))) {
       pager.remove();
     }
+  }
+
+  function removeSyntheticSection(sectionKey) {
+    const shell = document.querySelector('[' + SYNTHETIC_SECTION_ATTR + '="' + sectionKey + '"]');
+    if (shell) shell.remove();
+  }
+
+  function ensureSyntheticThreadsSection() {
+    const projectsHeading = getSidebarSectionTitle(document, 'Projects');
+    const projectsShell = getSectionShellFromTitle(projectsHeading);
+
+    if (!projectsShell) {
+      removeSyntheticSection('threads');
+      return null;
+    }
+
+    const sourceRows = getAllSidebarThreadRows();
+    const seen = new Set();
+    const threadRows = [];
+    for (const entry of sourceRows) {
+      const row = entry.row;
+      const signature = [
+        entry.kind,
+        entry.projectTitle,
+        getThreadIdForRow(row),
+        getThreadTitleForRow(row) || textOf(row)
+      ].join('|').toLowerCase();
+      if (seen.has(signature)) continue;
+      seen.add(signature);
+
+      const clone = row.cloneNode(true);
+      clone.setAttribute(SYNTHETIC_ROW_ATTR, 'threads');
+      setThreadLabel(clone, formatThreadLabel(row, entry.kind, entry.projectTitle));
+      threadRows.push({
+        row: clone,
+        timestampMs: parseThreadTimestampMs(getThreadIdForRow(row))
+      });
+    }
+
+    threadRows.sort((left, right) => right.timestampMs - left.timestampMs);
+
+    let shell = document.querySelector('[' + SYNTHETIC_SECTION_ATTR + '="threads"]');
+    if (!shell) {
+      shell = document.createElement('div');
+      shell.setAttribute(SYNTHETIC_SECTION_ATTR, 'threads');
+
+      const title = document.createElement('div');
+      title.className = projectsHeading.className;
+      title.textContent = 'Threads';
+      shell.appendChild(title);
+
+      const sectionContainer = document.createElement('div');
+      const scroller = document.createElement('div');
+      const list = document.createElement('div');
+      list.setAttribute('role', 'list');
+      list.setAttribute('aria-label', 'Threads');
+      scroller.appendChild(list);
+      sectionContainer.appendChild(scroller);
+      shell.appendChild(sectionContainer);
+    }
+
+    const list = shell.querySelector('[role="list"]');
+    clearPagers(list);
+    writeLoaded(list, Math.max(0, readLoaded(list)));
+    list.innerHTML = '';
+    for (const entry of threadRows) {
+      list.appendChild(entry.row);
+    }
+
+    if (shell.parentElement !== projectsShell.parentElement || shell.nextSibling !== projectsShell) {
+      projectsShell.parentElement.insertBefore(shell, projectsShell);
+    }
+
+    return list;
   }
 
   function renderSidebarSection(sectionList, visibleCount, sectionKey) {
@@ -256,7 +413,7 @@ function Get-CodexSidebarPagingPayload {
 
   function apply() {
     for (const spec of SECTION_SPECS) {
-      const list = resolveSidebarSectionList(spec);
+      const list = spec.synthetic ? ensureSyntheticThreadsSection() : resolveSidebarSectionList(spec);
       if (!list) continue;
 
       clearPagers(list);
