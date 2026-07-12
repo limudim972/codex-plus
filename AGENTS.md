@@ -1,4 +1,5 @@
 # AGENTS.md
+- IMPORTANT: when changing repo code that affects runtime behavior, update both the checked-in source and the installed desktop/runtime copy together so Codex Plus stays in sync.
 - When changing repo code that affects runtime behavior, update the checked-in source and the installed desktop/runtime copy together so the deployed Codex Plus behavior stays in sync with the repo.
 - Keep reusable helper scripts under `tools/`.
 - For live Codex Plus app debugging in this repo, inspect already-running debug ports with `tools/invoke-codex-devtools.ps1` before adding new launcher logic or assuming the current DOM shape.
