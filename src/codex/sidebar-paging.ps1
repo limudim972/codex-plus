@@ -127,6 +127,38 @@ function Get-CodexSidebarPagingPayload {
     return nested ? nested.getAttribute('data-app-action-sidebar-thread-id') : '';
   }
 
+  // Remote project rows keep their metadata in React props, not in the DOM.
+  function getReactFiberForElement(element) {
+    if (!element) return null;
+    const fiberKey = Object.keys(element).find((key) => key.startsWith('__reactFiber$'));
+    return fiberKey ? element[fiberKey] : null;
+  }
+
+  function getProjectGroupFromRow(row) {
+    let fiber = getReactFiberForElement(row);
+    let depth = 0;
+    while (fiber && depth < 8) {
+      const props = fiber.memoizedProps;
+      if (props?.group && typeof props.group === 'object') {
+        return props.group;
+      }
+      fiber = fiber.return;
+      depth += 1;
+    }
+    return null;
+  }
+
+  function toTimestampMs(value) {
+    const timestamp = Number(value || 0);
+    if (!Number.isFinite(timestamp) || timestamp <= 0) return 0;
+    return timestamp < 1e12 ? Math.round(timestamp * 1000) : Math.round(timestamp);
+  }
+
+  function getRemoteProjectTimestampMsForRow(row) {
+    const group = getProjectGroupFromRow(row);
+    return toTimestampMs(group?.cloudEnvironment?.created_at);
+  }
+
   function getThreadTitleElement(row) {
     if (!row) return null;
     return row.querySelector('[data-thread-title="true"], [data-app-action-sidebar-thread-title], .text-fade-truncate') || null;
@@ -452,9 +484,12 @@ function Get-CodexSidebarPagingPayload {
     if (explicit > 0) return explicit;
 
     const projectId = normalizeProjectId(getProjectIdForRow(row));
-    if (!projectId) return 0;
+    if (projectId) {
+      const projectTimestamp = Number(getProjectTimestampMap().get(projectId) || 0);
+      if (projectTimestamp > 0) return projectTimestamp;
+    }
 
-    return Number(getProjectTimestampMap().get(projectId) || 0);
+    return getRemoteProjectTimestampMsForRow(row);
   }
 
   function countRecentRows(rows, getTimestampMs) {
@@ -795,6 +830,20 @@ function Get-CodexSidebarPagingPayload {
     const rows = getSidebarRows(sectionList);
     if (rows.length === 0) return;
 
+    if (sectionKey === 'projects') {
+      rows.sort((left, right) => {
+        const rightTimestamp = Number(getProjectTimestampMsForRow(right) || 0);
+        const leftTimestamp = Number(getProjectTimestampMsForRow(left) || 0);
+        if (rightTimestamp !== leftTimestamp) {
+          return rightTimestamp - leftTimestamp;
+        }
+
+        const leftLabel = normalizeText(getThreadBaseLabel(left) || textOf(left));
+        const rightLabel = normalizeText(getThreadBaseLabel(right) || textOf(right));
+        return leftLabel.localeCompare(rightLabel);
+      });
+    }
+
     for (const row of rows) {
       const timestampMs = sectionKey === 'projects' ? getProjectTimestampMsForRow(row) : getThreadTimestampMsForRow(row);
       const nextLabel = formatThreadLabel(row, sectionKey, null, timestampMs);
@@ -880,7 +929,7 @@ function Get-CodexSidebarPagingPayload {
         pager.style.setProperty('display', nextPagerDisplay, 'important');
       }
 
-      const beforeNode = hiddenRows[loaded] || null;
+      const beforeNode = sectionKey === 'projects' ? null : (hiddenRows[loaded] || null);
       if (pager.parentElement !== sectionList || pager.nextSibling !== beforeNode) {
         sectionList.insertBefore(pager, beforeNode);
       }

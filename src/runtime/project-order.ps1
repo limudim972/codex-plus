@@ -7,25 +7,29 @@ function Get-CodexDevSqlitePath {
 }
 
 function Get-CodexRecentThreadSnapshot {
-    $stateDbPath = Get-CodexStateSqlitePath
     $pythonCommand = Get-Command -Name python -ErrorAction SilentlyContinue
-    if ($pythonCommand -and (Test-Path -LiteralPath $stateDbPath)) {
-        $script = @'
+    $stateDbPath = Get-CodexStateSqlitePath
+    $devDbPath = Get-CodexDevSqlitePath
+    if (-not $pythonCommand -or -not (Test-Path -LiteralPath $stateDbPath)) {
+        return @()
+    }
+
+    $script = @'
 import json
 import sqlite3
 import sys
 
-db_path = sys.argv[1]
-conn = sqlite3.connect(db_path)
-cur = conn.cursor()
+state_db_path = sys.argv[1]
+dev_db_path = sys.argv[2] if len(sys.argv) > 2 else ''
+state_conn = sqlite3.connect(state_db_path)
+state_cur = state_conn.cursor()
 
-rows = cur.execute(
+state_rows = state_cur.execute(
     """
     SELECT
         id,
         title,
         cwd,
-        source,
         created_at_ms,
         updated_at_ms
     FROM threads
@@ -43,6 +47,33 @@ rows = cur.execute(
     """
 ).fetchall()
 
+display_titles = {}
+if dev_db_path:
+    try:
+        dev_conn = sqlite3.connect(dev_db_path)
+        dev_cur = dev_conn.cursor()
+        for thread_id, display_title, source_kind, source_detail in dev_cur.execute(
+            """
+            SELECT
+                thread_id,
+                display_title,
+                source_kind,
+                source_detail
+            FROM local_thread_catalog
+            WHERE host_id = 'local'
+              AND missing_candidate = 0
+              AND thread_id IS NOT NULL
+              AND TRIM(thread_id) != ''
+            """
+        ).fetchall():
+            display_titles[str(thread_id).strip().lower()] = {
+                "display_title": display_title,
+                "source_kind": source_kind,
+                "source_detail": source_detail,
+            }
+    except Exception:
+        display_titles = {}
+
 def normalize_cwd(value):
     if not value:
         return value
@@ -53,105 +84,31 @@ def normalize_cwd(value):
 print(json.dumps([
     {
         "id": thread_id,
-        "title": title,
-        "display_title": title,
+        "title": (display_titles.get(str(thread_id).strip().lower(), {}) or {}).get("display_title") or title,
+        "display_title": (display_titles.get(str(thread_id).strip().lower(), {}) or {}).get("display_title") or title,
         "cwd": normalize_cwd(cwd),
-        "source_kind": source,
-        "source_detail": source,
+        "source_kind": (display_titles.get(str(thread_id).strip().lower(), {}) or {}).get("source_kind") or '',
+        "source_detail": (display_titles.get(str(thread_id).strip().lower(), {}) or {}).get("source_detail") or '',
         "last_modified_ms": int(updated_at_ms or created_at_ms or 0),
     }
-    for thread_id, title, cwd, source, created_at_ms, updated_at_ms in rows
-], ensure_ascii=True))
-'@
-
-        try {
-            $raw = @($script) | & $pythonCommand.Source - $stateDbPath
-            if ($raw) {
-                $parsed = $raw | ConvertFrom-Json
-                return @($parsed)
-            }
-        } catch {
-        }
-    }
-
-    $dbPath = Get-CodexDevSqlitePath
-    if (-not (Test-Path -LiteralPath $dbPath)) {
-        return @()
-    }
-
-    if (-not $pythonCommand) {
-        return @()
-    }
-
-    $script = @'
-import json
-import sqlite3
-import sys
-
-db_path = sys.argv[1]
-conn = sqlite3.connect(db_path)
-cur = conn.cursor()
-
-rows = cur.execute(
-    """
-    SELECT
-        thread_id,
-        display_title,
-        cwd,
-        source_kind,
-        source_detail,
-        CASE
-            WHEN source_updated_at IS NOT NULL AND source_updated_at > 0 THEN CAST(source_updated_at * 1000 AS INTEGER)
-            WHEN source_created_at IS NOT NULL AND source_created_at > 0 THEN CAST(source_created_at * 1000 AS INTEGER)
-            ELSE 0
-        END AS last_modified_ms
-    FROM local_thread_catalog
-    WHERE host_id = 'local'
-      AND missing_candidate = 0
-      AND display_title IS NOT NULL
-      AND TRIM(display_title) != ''
-    ORDER BY last_modified_ms DESC, observation_sequence DESC, display_title ASC
-    LIMIT 12
-    """
-).fetchall()
-
-def normalize_cwd(value):
-    if not value:
-        return value
-    if value.startswith("\\\\?\\"):
-        return value[4:]
-    return value
-
-print(json.dumps([
-    {
-        "id": thread_id,
-        "title": display_title,
-        "display_title": display_title,
-        "cwd": normalize_cwd(cwd),
-        "source_kind": source_kind,
-        "source_detail": source_detail,
-        "last_modified_ms": last_modified_ms,
-    }
-    for thread_id, display_title, cwd, source_kind, source_detail, last_modified_ms in rows
+    for thread_id, title, cwd, created_at_ms, updated_at_ms in state_rows
 ], ensure_ascii=True))
 '@
 
     try {
-        $raw = @($script) | & $pythonCommand.Source - $dbPath
-        if (-not $raw) {
-            return @()
+        $raw = @($script) | & $pythonCommand.Source - $stateDbPath $devDbPath
+        if ($raw) {
+            $parsed = $raw | ConvertFrom-Json
+            return @($parsed)
         }
-
-        $parsed = $raw | ConvertFrom-Json
-        return @($parsed)
     } catch {
-        return @()
     }
+    return @()
 }
 
 function Get-CodexProjectTimestampSnapshot {
-    $dbPath = Get-CodexStateSqlitePath
-    if (-not (Test-Path -LiteralPath $dbPath)) {
+    $stateDbPath = Get-CodexStateSqlitePath
+    if (-not (Test-Path -LiteralPath $stateDbPath)) {
         return @()
     }
 
@@ -211,7 +168,7 @@ print(json.dumps([
 '@
 
     try {
-        $raw = @($script) | & $pythonCommand.Source - $dbPath
+        $raw = @($script) | & $pythonCommand.Source - $stateDbPath
         if (-not $raw) {
             return @()
         }
