@@ -586,7 +586,9 @@ function Get-CodexSidebarPagingPayload {
 
     const button = document.createElement('div');
     button.setAttribute('role', 'button');
-    button.className = 'group relative h-[var(--height-token-row)] rounded-[var(--radius-token-row)] py-row-y text-sm pr-1 pl-[var(--padding-row-cell-x,var(--padding-row-x))]';
+    button.setAttribute('tabindex', '0');
+    button.setAttribute('aria-roledescription', 'sortable');
+    button.className = 'group relative h-[var(--height-token-row)] cursor-interaction rounded-[var(--radius-token-row)] py-row-y text-sm hover:bg-token-list-hover-background focus-visible:outline focus-visible:outline-offset-[-2px] pr-1 pl-[var(--padding-row-cell-x,var(--padding-row-x))]';
 
     const outer = document.createElement('div');
     outer.className = 'flex h-full w-full items-center text-sm leading-4';
@@ -646,6 +648,9 @@ function Get-CodexSidebarPagingPayload {
     }
 
     const currentRows = getSidebarRows(listElement);
+    orderedRows.sort((left, right) => {
+      return Number(right.getAttribute(THREAD_UPDATED_ATTR) || 0) - Number(left.getAttribute(THREAD_UPDATED_ATTR) || 0);
+    });
     const sameOrder = currentRows.length === orderedRows.length && currentRows.every((row, index) => row === orderedRows[index]);
     if (!sameOrder) {
       listElement.replaceChildren(...orderedRows);

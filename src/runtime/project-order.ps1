@@ -7,12 +7,78 @@ function Get-CodexDevSqlitePath {
 }
 
 function Get-CodexRecentThreadSnapshot {
+    $stateDbPath = Get-CodexStateSqlitePath
+    $pythonCommand = Get-Command -Name python -ErrorAction SilentlyContinue
+    if ($pythonCommand -and (Test-Path -LiteralPath $stateDbPath)) {
+        $script = @'
+import json
+import sqlite3
+import sys
+
+db_path = sys.argv[1]
+conn = sqlite3.connect(db_path)
+cur = conn.cursor()
+
+rows = cur.execute(
+    """
+    SELECT
+        id,
+        title,
+        cwd,
+        source,
+        created_at_ms,
+        updated_at_ms
+    FROM threads
+    WHERE archived = 0
+      AND title IS NOT NULL
+      AND TRIM(title) != ''
+      AND cwd IS NOT NULL
+      AND TRIM(cwd) != ''
+    ORDER BY
+        COALESCE(NULLIF(updated_at_ms, 0), NULLIF(created_at_ms, 0), 0) DESC,
+        updated_at_ms DESC,
+        created_at_ms DESC,
+        title ASC
+    LIMIT 12
+    """
+).fetchall()
+
+def normalize_cwd(value):
+    if not value:
+        return value
+    if value.startswith("\\\\?\\"):
+        value = value[4:]
+    return value.replace("/", "\\")
+
+print(json.dumps([
+    {
+        "id": thread_id,
+        "title": title,
+        "display_title": title,
+        "cwd": normalize_cwd(cwd),
+        "source_kind": source,
+        "source_detail": source,
+        "last_modified_ms": int(updated_at_ms or created_at_ms or 0),
+    }
+    for thread_id, title, cwd, source, created_at_ms, updated_at_ms in rows
+], ensure_ascii=True))
+'@
+
+        try {
+            $raw = @($script) | & $pythonCommand.Source - $stateDbPath
+            if ($raw) {
+                $parsed = $raw | ConvertFrom-Json
+                return @($parsed)
+            }
+        } catch {
+        }
+    }
+
     $dbPath = Get-CodexDevSqlitePath
     if (-not (Test-Path -LiteralPath $dbPath)) {
         return @()
     }
 
-    $pythonCommand = Get-Command -Name python -ErrorAction SilentlyContinue
     if (-not $pythonCommand) {
         return @()
     }
