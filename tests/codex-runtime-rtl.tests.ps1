@@ -171,6 +171,7 @@ Assert-True (@($projectSnapshot | Where-Object { $_.cwd -and [int64]$_.last_modi
 
 $recentThreadSnapshot = @(Get-CodexRecentThreadSnapshot)
 Assert-True ($recentThreadSnapshot.Count -gt 1) 'Recent thread snapshot should include multiple rows.'
+Assert-True (@($recentThreadSnapshot | Where-Object { $_.title -and $_.cwd -and [int64]$_.last_modified_ms -gt 0 }).Count -gt 0) 'Recent thread snapshot should include state DB thread rows with positive timestamps.'
 $recentThreadNewest = ($recentThreadSnapshot | Select-Object -First 1).last_modified_ms
 $recentThreadOldest = ($recentThreadSnapshot | Select-Object -Last 1).last_modified_ms
 Assert-True ([int64]$recentThreadNewest -ge [int64]$recentThreadOldest) 'Recent thread snapshot should already be sorted newest first.'
@@ -784,8 +785,10 @@ Assert-True ($sidebarPagingPayload.Contains("title: 'Threads'")) 'Sidebar paging
 Assert-True ($sidebarPagingPayload.Contains("minVisibleCount: 3")) 'Sidebar paging should keep at least three thread rows visible by default.'
 Assert-True ($sidebarPagingPayload.Contains('PROJECT_TIMESTAMPS')) 'Sidebar paging should include project timestamps for project rows.'
 Assert-True ($sidebarPagingPayload.Contains('getProjectTimestampMsForRow')) 'Sidebar paging should resolve project timestamps from the local state snapshot.'
+Assert-True ($sidebarPagingPayload.Contains('getRemoteProjectTimestampMsForRow')) 'Sidebar paging should fall back to remote project timestamps from React props.'
+Assert-True ($sidebarPagingPayload.Contains('cloudEnvironment')) 'Sidebar paging should read the remote project cloud environment metadata.'
 Assert-True ($sidebarPagingPayload.Contains('hover:bg-token-list-hover-background')) 'Synthetic Threads fallback rows should keep hover styling.'
-Assert-True ($sidebarPagingPayload.Contains('display_title')) 'Synthetic Threads labels should come from the catalog display title.'
+Assert-True ($sidebarPagingPayload.Contains('display_title')) 'Synthetic Threads labels should come from the state DB display title.'
 Assert-True ($sidebarPagingPayload.Contains('data-codex-plus-thread-id')) 'Synthetic Threads rows should retain the source thread id for click proxying.'
 Assert-True ($sidebarPagingPayload.Contains('data-app-action-sidebar-thread-title')) 'Synthetic Threads should target the live Codex thread title element.'
 Assert-True ($sidebarPagingPayload.Contains("data-codex-plus-sidebar-synthetic-section")) 'Sidebar paging should mark synthetic sections explicitly.'
