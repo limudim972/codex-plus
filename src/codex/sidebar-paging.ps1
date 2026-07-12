@@ -27,6 +27,7 @@ function Get-CodexSidebarPagingPayload {
   const RECENT_THREADS = __CODEX_PLUS_RECENT_THREADS__;
   const PROJECT_TIMESTAMPS = __CODEX_PLUS_PROJECT_TIMESTAMPS__;
   const LEGACY_TIMESTAMP_SUFFIX_SELECTOR = 'span[aria-hidden="true"].pointer-events-none.select-none.whitespace-nowrap.text-token-description-foreground';
+  let internalNavigationModulesPromise = null;
   let projectTimestampMap = null;
 
   const SECTION_SPECS = [
@@ -133,6 +134,163 @@ function Get-CodexSidebarPagingPayload {
     if (!element) return null;
     const fiberKey = Object.keys(element).find((key) => key.startsWith('__reactFiber$'));
     return fiberKey ? element[fiberKey] : null;
+  }
+
+  function getReactFiberFromSubtree(element) {
+    const directFiber = getReactFiberForElement(element);
+    if (directFiber) return directFiber;
+
+    for (const descendant of Array.from(element?.querySelectorAll('*') || [])) {
+      const fiber = getReactFiberForElement(descendant);
+      if (fiber) return fiber;
+    }
+    return null;
+  }
+
+  function getAppScopeFromFiber(fiber) {
+    let currentFiber = fiber;
+    let fiberDepth = 0;
+    while (currentFiber && fiberDepth < 40) {
+      let hook = currentFiber.memoizedState;
+      let hookDepth = 0;
+      while (hook && hookDepth < 80) {
+        const memoizedState = hook.memoizedState;
+        const candidate = memoizedState?.current;
+        if (
+          candidate
+          && candidate.node?.store
+          && typeof candidate.get === 'function'
+          && typeof candidate.set === 'function'
+        ) {
+          return candidate;
+        }
+        hook = hook.next;
+        hookDepth += 1;
+      }
+      currentFiber = currentFiber.return;
+      fiberDepth += 1;
+    }
+    return null;
+  }
+
+  function getAppScopeFromSidebar() {
+    const candidates = [
+      ...Array.from(document.querySelectorAll('[data-app-action-sidebar-thread-id]')),
+      ...Array.from(document.querySelectorAll('[data-app-action-sidebar-project-row]'))
+    ];
+
+    for (const candidate of candidates) {
+      const scope = getAppScopeFromFiber(getReactFiberFromSubtree(candidate));
+      if (scope) return scope;
+    }
+    return null;
+  }
+
+  function getReactRouterNavigatorFromSidebar() {
+    const candidates = [
+      ...Array.from(document.querySelectorAll('[data-app-action-sidebar-thread-id]')),
+      ...Array.from(document.querySelectorAll('[data-app-action-sidebar-project-row]'))
+    ];
+
+    for (const candidate of candidates) {
+      let currentFiber = getReactFiberFromSubtree(candidate);
+      let fiberDepth = 0;
+      while (currentFiber && fiberDepth < 160) {
+        const props = currentFiber.memoizedProps;
+        const navigator = props?.navigator;
+        if (
+          props?.location
+          && navigator
+          && typeof navigator.push === 'function'
+        ) {
+          return navigator;
+        }
+        currentFiber = currentFiber.return;
+        fiberDepth += 1;
+      }
+    }
+    return null;
+  }
+
+  function findAssetName(mainSource, assetPrefix) {
+    const marker = assetPrefix + '-';
+    const markerIndex = mainSource.indexOf(marker);
+    if (markerIndex < 0) return '';
+
+    const extensionIndex = mainSource.indexOf('.js', markerIndex);
+    return extensionIndex < 0 ? '' : mainSource.slice(markerIndex, extensionIndex + 3);
+  }
+
+  function getInternalNavigationModules() {
+    if (!internalNavigationModulesPromise) {
+      internalNavigationModulesPromise = (async () => {
+        const mainScriptUrl = Array.from(document.scripts)
+          .map((script) => script.src)
+          .find(Boolean);
+        if (!mainScriptUrl) return null;
+
+        const response = await fetch(mainScriptUrl);
+        if (!response.ok) return null;
+        const mainSource = await response.text();
+        const navigationName = findAssetName(mainSource, 'sidebar-thread-navigation');
+        const appServerName = findAssetName(mainSource, 'app-server-manager-signals');
+        if (!navigationName || !appServerName) return null;
+
+        const [navigation, appServer] = await Promise.all([
+          import(new URL(navigationName, mainScriptUrl).href),
+          import(new URL(appServerName, mainScriptUrl).href)
+        ]);
+        return { navigation, appServer };
+      })().catch(() => null);
+    }
+    return internalNavigationModulesPromise;
+  }
+
+  function getThreadNavigationLocation(sourceListLabel) {
+    const projectLabel = getProjectLabelFromSourceList(sourceListLabel);
+    if (projectLabel) {
+      const projectRow = findProjectRowByLabel(projectLabel);
+      const projectId = getProjectIdForRow(projectRow);
+      if (projectId) return 'project:' + projectId;
+    }
+    return 'flat-chats';
+  }
+
+  async function navigateThreadThroughCodex(threadRow) {
+    const threadId = normalizeThreadId(threadRow?.getAttribute('data-codex-plus-thread-id'));
+    if (!threadId) return false;
+
+    const scope = getAppScopeFromSidebar();
+    if (!scope) return false;
+
+    const modules = await getInternalNavigationModules();
+    if (!modules || typeof modules.navigation?.t !== 'function') return false;
+
+    const routerNavigator = getReactRouterNavigatorFromSidebar();
+    if (!routerNavigator || typeof routerNavigator.push !== 'function') return false;
+
+    const hostId = 'local';
+    const manager = typeof modules.appServer?.c === 'object'
+      ? scope.get(modules.appServer.c, hostId)
+      : null;
+    if (!manager || typeof manager.activateThreadSummary !== 'function') return false;
+
+    try {
+      modules.appServer.Et?.(scope, threadId, hostId);
+      manager.activateThreadSummary(threadId);
+      if (typeof manager.getConversation === 'function' && !manager.getConversation(threadId)) {
+        return false;
+      }
+      routerNavigator.push('/local/' + threadId);
+      modules.navigation.t(
+        scope,
+        hostId + ':' + threadId,
+        getThreadNavigationLocation(threadRow.getAttribute(SOURCE_LIST_ATTR))
+      );
+      return true;
+    } catch {
+      return false;
+    }
   }
 
   function getProjectGroupFromRow(row) {
@@ -407,31 +565,27 @@ function Get-CodexSidebarPagingPayload {
         event.stopPropagation();
         event.stopImmediatePropagation();
       };
-      const sourceRow = findSourceRow(row.getAttribute(SOURCE_LIST_ATTR), row.getAttribute(SOURCE_TEXT_ATTR))
-        || findRowByThreadId(row.getAttribute('data-codex-plus-thread-id'));
-      if (sourceRow) {
-        stopSyntheticEvent();
-        row.setAttribute(NAVIGATION_PENDING_ATTR, 'true');
-        dispatchRowClick(sourceRow);
-        window.setTimeout(() => row.removeAttribute(NAVIGATION_PENDING_ATTR), 0);
-        return;
-      }
-
-      if (!expandSourceProject(row.getAttribute(SOURCE_LIST_ATTR))) {
-        return;
-      }
-
       stopSyntheticEvent();
       row.setAttribute(NAVIGATION_PENDING_ATTR, 'true');
-      waitForSourceRow(
-        row.getAttribute(SOURCE_LIST_ATTR),
-        row.getAttribute(SOURCE_TEXT_ATTR),
-        row.getAttribute('data-codex-plus-thread-id')
-      )
-        .then((resolvedSourceRow) => {
-          if (resolvedSourceRow) {
-            dispatchRowClick(resolvedSourceRow);
+      navigateThreadThroughCodex(row)
+        .then((handled) => {
+          if (handled) return;
+
+          const sourceRow = findSourceRow(row.getAttribute(SOURCE_LIST_ATTR), row.getAttribute(SOURCE_TEXT_ATTR))
+            || findRowByThreadId(row.getAttribute('data-codex-plus-thread-id'));
+          if (sourceRow) {
+            dispatchRowClick(sourceRow);
+            return;
           }
+
+          if (!expandSourceProject(row.getAttribute(SOURCE_LIST_ATTR))) return;
+          return waitForSourceRow(
+            row.getAttribute(SOURCE_LIST_ATTR),
+            row.getAttribute(SOURCE_TEXT_ATTR),
+            row.getAttribute('data-codex-plus-thread-id')
+          ).then((resolvedSourceRow) => {
+            if (resolvedSourceRow) dispatchRowClick(resolvedSourceRow);
+          });
         })
         .finally(() => row.removeAttribute(NAVIGATION_PENDING_ATTR));
     };
