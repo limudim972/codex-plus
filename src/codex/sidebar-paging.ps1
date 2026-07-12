@@ -13,6 +13,7 @@ function Get-CodexSidebarPagingPayload {
   const SYNTHETIC_ROW_ATTR = 'data-codex-plus-sidebar-synthetic-row';
   const SOURCE_LIST_ATTR = 'data-codex-plus-source-list-label';
   const SOURCE_TEXT_ATTR = 'data-codex-plus-source-row-text';
+  const NAVIGATION_PENDING_ATTR = 'data-codex-plus-thread-navigation-pending';
   const PAGER_ATTR = 'data-codex-plus-sidebar-pager';
   const ACTION_ATTR = 'data-codex-plus-sidebar-action';
   const STATE_ATTR = 'data-codex-plus-sidebar-loaded';
@@ -108,7 +109,7 @@ function Get-CodexSidebarPagingPayload {
   }
 
   function normalizeThreadId(value) {
-    return String(value || '').trim().toLowerCase();
+    return String(value || '').trim().toLowerCase().replace(/^(?:local|remote):/, '');
   }
 
   function getProjectIdForRow(row) {
@@ -329,6 +330,56 @@ function Get-CodexSidebarPagingPayload {
     return findSourceRowInList(list, normalizedRowText);
   }
 
+  function getProjectLabelFromSourceList(listLabel) {
+    const normalizedListLabel = normalizeText(listLabel);
+    const prefix = 'Scheduled tasks in ';
+    return normalizedListLabel.startsWith(prefix)
+      ? normalizedListLabel.slice(prefix.length).trim()
+      : '';
+  }
+
+  function findProjectRowByLabel(projectLabel) {
+    const normalizedProjectLabel = normalizeText(projectLabel);
+    if (!normalizedProjectLabel) return null;
+
+    return Array.from(document.querySelectorAll('[data-app-action-sidebar-project-row]'))
+      .find((row) => normalizeText(row.getAttribute('data-app-action-sidebar-project-label')) === normalizedProjectLabel)
+      || null;
+  }
+
+  function expandSourceProject(sourceListLabel) {
+    const projectLabel = getProjectLabelFromSourceList(sourceListLabel);
+    const projectRow = findProjectRowByLabel(projectLabel);
+    if (!projectRow) return false;
+
+    const expanded = projectRow.getAttribute('aria-expanded') === 'true'
+      || projectRow.getAttribute('data-app-action-sidebar-project-collapsed') === 'false';
+    if (!expanded) {
+      if (typeof projectRow.click === 'function') {
+        projectRow.click();
+      } else {
+        dispatchRowClick(projectRow);
+      }
+    }
+    return true;
+  }
+
+  function waitForSourceRow(listLabel, rowText, threadId) {
+    return new Promise((resolve) => {
+      let attempts = 0;
+      const poll = () => {
+        const sourceRow = findSourceRow(listLabel, rowText) || findRowByThreadId(threadId);
+        if (sourceRow || attempts >= 20) {
+          resolve(sourceRow || null);
+          return;
+        }
+        attempts += 1;
+        window.setTimeout(poll, 50);
+      };
+      poll();
+    });
+  }
+
   function findRowByThreadId(threadId) {
     const normalizedThreadId = normalizeThreadId(threadId);
     if (!normalizedThreadId) return null;
@@ -347,15 +398,42 @@ function Get-CodexSidebarPagingPayload {
     row.setAttribute(SOURCE_TEXT_ATTR, sourceRowText);
 
     const invokeSourceRow = (event) => {
-      const sourceRow = findSourceRow(row.getAttribute(SOURCE_LIST_ATTR), row.getAttribute(SOURCE_TEXT_ATTR))
-        || findRowByThreadId(row.getAttribute('data-codex-plus-thread-id'));
-      if (!sourceRow || sourceRow.hidden || sourceRow.getClientRects().length === 0) {
+      if (row.getAttribute(NAVIGATION_PENDING_ATTR) === 'true') {
         return;
       }
-      event.preventDefault();
-      event.stopPropagation();
-      event.stopImmediatePropagation();
-      dispatchRowClick(sourceRow);
+
+      const stopSyntheticEvent = () => {
+        event.preventDefault();
+        event.stopPropagation();
+        event.stopImmediatePropagation();
+      };
+      const sourceRow = findSourceRow(row.getAttribute(SOURCE_LIST_ATTR), row.getAttribute(SOURCE_TEXT_ATTR))
+        || findRowByThreadId(row.getAttribute('data-codex-plus-thread-id'));
+      if (sourceRow) {
+        stopSyntheticEvent();
+        row.setAttribute(NAVIGATION_PENDING_ATTR, 'true');
+        dispatchRowClick(sourceRow);
+        window.setTimeout(() => row.removeAttribute(NAVIGATION_PENDING_ATTR), 0);
+        return;
+      }
+
+      if (!expandSourceProject(row.getAttribute(SOURCE_LIST_ATTR))) {
+        return;
+      }
+
+      stopSyntheticEvent();
+      row.setAttribute(NAVIGATION_PENDING_ATTR, 'true');
+      waitForSourceRow(
+        row.getAttribute(SOURCE_LIST_ATTR),
+        row.getAttribute(SOURCE_TEXT_ATTR),
+        row.getAttribute('data-codex-plus-thread-id')
+      )
+        .then((resolvedSourceRow) => {
+          if (resolvedSourceRow) {
+            dispatchRowClick(resolvedSourceRow);
+          }
+        })
+        .finally(() => row.removeAttribute(NAVIGATION_PENDING_ATTR));
     };
 
     row.addEventListener('click', invokeSourceRow, true);
