@@ -712,7 +712,14 @@ function Get-CodexSidebarPagingPayload {
 
   function getThreadTitleElement(row) {
     if (!row) return null;
-    return row.querySelector('[data-thread-title="true"], [data-app-action-sidebar-thread-title], .text-fade-truncate') || null;
+    const titleElement = row.querySelector('[data-thread-title="true"], .text-fade-truncate');
+    if (titleElement) return titleElement;
+
+    // `data-app-action-sidebar-thread-title` lives on Codex's native row wrapper,
+    // not on the element that lays out the title. Selecting it appends the
+    // timestamp below the row instead of beside the title.
+    return Array.from(row.querySelectorAll('[data-app-action-sidebar-thread-title]'))
+      .find((candidate) => !candidate.hasAttribute('data-app-action-sidebar-thread-row')) || null;
   }
 
   function stripThreadTimestampSuffix(label) {
@@ -1059,7 +1066,9 @@ function Get-CodexSidebarPagingPayload {
         if (!timestampElement) {
           timestampElement = row.ownerDocument.createElement('span');
           timestampElement.setAttribute(NATIVE_TIMESTAMP_ELEMENT_ATTR, 'true');
-          timestampElement.className = 'ms-1 shrink-0 text-xs text-token-text-tertiary';
+          timestampElement.className = 'ms-1 inline-flex shrink-0 items-center whitespace-nowrap text-xs text-token-text-tertiary';
+        }
+        if (timestampElement.parentElement !== titleHost) {
           titleHost.appendChild(timestampElement);
         }
         if (timestampElement.textContent !== timestampText) {
@@ -1114,6 +1123,64 @@ function Get-CodexSidebarPagingPayload {
     const explicit = Number(row?.getAttribute(THREAD_UPDATED_ATTR) || '0');
     if (explicit > 0) return explicit;
     return parseThreadTimestampMs(getThreadIdForRow(row));
+  }
+
+  function getSidebarRowTimestampMs(row, sortKey) {
+    return sortKey === 'projects'
+      ? getProjectTimestampMsForRow(row)
+      : getThreadTimestampMsForRow(row);
+  }
+
+  function getSidebarRowSortLabel(row) {
+    return normalizeText(
+      getThreadBaseLabel(row)
+      || getProjectLabelForRow(row)
+      || textOf(row)
+    );
+  }
+
+  function sortSidebarRows(sectionList, rows, sortKey) {
+    rows.sort((left, right) => {
+      const rightTimestamp = Number(getSidebarRowTimestampMs(right, sortKey) || 0);
+      const leftTimestamp = Number(getSidebarRowTimestampMs(left, sortKey) || 0);
+      if (rightTimestamp !== leftTimestamp) {
+        return rightTimestamp - leftTimestamp;
+      }
+
+      const labelOrder = getSidebarRowSortLabel(left).localeCompare(getSidebarRowSortLabel(right));
+      if (labelOrder !== 0) return labelOrder;
+
+      const leftId = getProjectIdForRow(left) || getThreadIdForRow(left) || '';
+      const rightId = getProjectIdForRow(right) || getThreadIdForRow(right) || '';
+      return String(leftId).localeCompare(String(rightId));
+    });
+
+    const pager = Array.from(sectionList?.children || [])
+      .find((child) => child.hasAttribute(PAGER_ATTR)) || null;
+    const currentRows = getSidebarRows(sectionList);
+    const sameOrder = currentRows.length === rows.length && currentRows.every((row, index) => row === rows[index]);
+    if (!sameOrder && sectionList) {
+      for (const row of rows) {
+        sectionList.insertBefore(row, pager);
+      }
+    }
+
+    return rows;
+  }
+
+  function sortUnmanagedSidebarLists() {
+    for (const list of Array.from(document.querySelectorAll('[role="list"]'))) {
+      if (list.hasAttribute(SYNTHETIC_LIST_ATTR)) continue;
+
+      const rows = getSidebarRows(list);
+      if (rows.length === 0) continue;
+
+      const hasProjectRows = rows.some((row) => Boolean(getProjectIdForRow(row)));
+      const hasThreadRows = rows.some((row) => Boolean(getThreadIdForRow(row)));
+      if (!hasProjectRows && !hasThreadRows) continue;
+
+      sortSidebarRows(list, rows, hasProjectRows ? 'projects' : 'threads');
+    }
   }
 
   function getProjectTimestampMap() {
@@ -1538,22 +1605,10 @@ function Get-CodexSidebarPagingPayload {
     const rows = getSidebarRows(sectionList);
     if (rows.length === 0) return;
 
-    if (sectionKey === 'projects') {
-      rows.sort((left, right) => {
-        const rightTimestamp = Number(getProjectTimestampMsForRow(right) || 0);
-        const leftTimestamp = Number(getProjectTimestampMsForRow(left) || 0);
-        if (rightTimestamp !== leftTimestamp) {
-          return rightTimestamp - leftTimestamp;
-        }
-
-        const leftLabel = normalizeText(getThreadBaseLabel(left) || textOf(left));
-        const rightLabel = normalizeText(getThreadBaseLabel(right) || textOf(right));
-        return leftLabel.localeCompare(rightLabel);
-      });
-    }
+    sortSidebarRows(sectionList, rows, sectionKey === 'projects' ? 'projects' : 'threads');
 
     for (const row of rows) {
-      const timestampMs = sectionKey === 'projects' ? getProjectTimestampMsForRow(row) : getThreadTimestampMsForRow(row);
+      const timestampMs = getSidebarRowTimestampMs(row, sectionKey === 'projects' ? 'projects' : 'threads');
       const nextLabel = formatThreadLabel(row, sectionKey, null, timestampMs);
       const baseLabel = nextLabel;
       setThreadLabel(row, nextLabel, baseLabel, timestampMs);
@@ -1661,6 +1716,7 @@ function Get-CodexSidebarPagingPayload {
         writeLoaded(list, Math.max(0, Math.min(readLoaded(list), Math.max(0, rows.length - visibleCount))));
         renderSidebarSection(list, visibleCount, spec.key);
       }
+      sortUnmanagedSidebarLists();
       syncSyntheticThreadActiveState();
     } finally {
       if (wasObserving) observe();
