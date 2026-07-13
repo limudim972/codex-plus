@@ -15,10 +15,11 @@ This repo-local copy includes a Codex Plus method for attaching to an already-ru
 
 1. Inspect the running Codex target before restarting anything.
 2. Launch Codex Plus through the installed launcher path when you need a fresh Plus window.
-   - Prefer `C:\Users\Noam\AppData\Local\Codex Plus\runtime\launch-codex-plus.vbs` or an installed `Codex Plus.lnk`.
-   - Do not launch raw `ChatGPT.exe` when the goal is to reproduce Codex Plus runtime behavior.
+   - Prefer the Desktop shortcut at Desktop\Codex Plus.lnk.
+   - Command form: Start-Process -FilePath Desktop\Codex Plus.lnk. 
+   - Do not launch raw ChatGPT.exe when the goal is to reproduce Codex Plus runtime behavior.
    - The launcher sets up the scoped profile, debug port, splash helper, and watchdog flow used by Codex Plus.
-   - Before launching, record the existing Codex Plus `--remote-debugging-port` and `--user-data-dir` pairs.
+   - Before launching, record the existing Codex Plus --remote-debugging-port and --user-data-dir pairs.
    - After launching, attach only to the newly appeared port/profile pair, not to any pre-existing Codex window.
    - If you updated the local Plus runtime or checked-in payload files, do not inject the script into an already-open page; launch a fresh Plus window and verify the change there.
 3. Resolve the active debug port for the running Codex instance.

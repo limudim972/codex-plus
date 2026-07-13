@@ -164,12 +164,20 @@ The implementation is in `src/codex/sidebar-paging.ps1`. The installed copy must
 - Use repository DevTools helpers for read-only inspection.
 - Use real mouse input for UI clicks.
 - Do not use a live script-injection helper as a test mechanism.
-- After runtime changes, launch a fresh Plus instance through the installed launcher.
+- After runtime changes, launch a fresh Plus instance through the installed launcher Desktop\Codex Plus.lnk
 - Verify the exact synthetic row and its initial state.
 - Verify the main conversation title/content after clicking.
 - Verify the project remains collapsed/hidden when that is part of the test.
 
 The decisive check is: before, the main view shows conversation A; after a real click on the synthetic row for B, the main view shows conversation B.
+
+## Working-thread spinner
+
+Native thread rows expose their React `statusState` through the live row fibers. A thread that is currently working has `statusState.type === "loading"`; this is independent of whether that thread is the currently selected route. The native row may therefore be working while `isActive` is false.
+
+Synthetic rows still mirror selection with `data-app-action-sidebar-thread-active="true"` and `aria-current="page"`, but `syncSyntheticThreadActiveState()` builds a separate working-thread set from native sidebar rows and their React fibers. It preserves Codex's native `.animate-spin` indicator and adds the Plus fallback spinner when a working native row has no indicator; the same working ID drives the synthetic mirror, so changing the selected synthetic thread does not move the spinner.
+
+Both indicators are attached to the inner thread button, not the outer drag/list wrapper. The Plus fallback uses the native `52px` right-side indicator geometry and remains visible while the row is hovered. Synthetic labels prefer the matching native row's rendered title by thread ID, with the snapshot title used only as a fallback.
 
 ## Fragility notes
 
