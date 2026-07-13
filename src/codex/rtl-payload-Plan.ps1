@@ -63,33 +63,61 @@ function Get-CodexRtlPayloadPlan {
   }
 
   function applyBlockDirection(element, direction, options) {
-    cleanupOwnedDirection(element);
     const forceLtr = Boolean(options && options.forceLtr);
 
     if (direction === 'rtl') {
-      element.setAttribute('dir', 'rtl');
-      element.setAttribute('data-codex-plus-plan-rtl', 'rtl');
-      element.style.direction = 'rtl';
-      element.style.textAlign = 'right';
-      element.style.unicodeBidi = 'plaintext';
+      if (element.getAttribute('dir') !== 'rtl') {
+        element.setAttribute('dir', 'rtl');
+      }
+      if (element.getAttribute('data-codex-plus-plan-rtl') !== 'rtl') {
+        element.setAttribute('data-codex-plus-plan-rtl', 'rtl');
+      }
+      if (element.style.direction !== 'rtl') {
+        element.style.direction = 'rtl';
+      }
+      if (element.style.textAlign !== 'right') {
+        element.style.textAlign = 'right';
+      }
+      if (element.style.unicodeBidi !== 'plaintext') {
+        element.style.unicodeBidi = 'plaintext';
+      }
       return;
     }
 
     if (direction === 'ltr' && forceLtr) {
-      element.setAttribute('dir', 'ltr');
-      element.setAttribute('data-codex-plus-plan-rtl', 'ltr');
-      element.style.direction = 'ltr';
-      element.style.textAlign = 'left';
-      element.style.unicodeBidi = 'isolate';
+      if (element.getAttribute('dir') !== 'ltr') {
+        element.setAttribute('dir', 'ltr');
+      }
+      if (element.getAttribute('data-codex-plus-plan-rtl') !== 'ltr') {
+        element.setAttribute('data-codex-plus-plan-rtl', 'ltr');
+      }
+      if (element.style.direction !== 'ltr') {
+        element.style.direction = 'ltr';
+      }
+      if (element.style.textAlign !== 'left') {
+        element.style.textAlign = 'left';
+      }
+      if (element.style.unicodeBidi !== 'isolate') {
+        element.style.unicodeBidi = 'isolate';
+      }
+      return;
     }
+
+    cleanupOwnedDirection(element);
   }
 
   function processInlineTechnicalIslands(root) {
     for (const technical of root.querySelectorAll(INLINE_TECHNICAL_SELECTOR)) {
       if (technical.closest('pre')) continue;
-      technical.setAttribute('dir', 'ltr');
-      technical.setAttribute('data-codex-plus-plan-rtl', 'ltr');
-      technical.style.unicodeBidi = 'isolate';
+      if (technical.getAttribute('dir') !== 'ltr') {
+        technical.setAttribute('dir', 'ltr');
+      }
+      if (technical.getAttribute('data-codex-plus-plan-rtl') !== 'ltr') {
+        technical.setAttribute('data-codex-plus-plan-rtl', 'ltr');
+      }
+      if (technical.style.unicodeBidi !== 'isolate') {
+        technical.style.unicodeBidi = 'isolate';
+      }
     }
   }
 
@@ -131,12 +159,24 @@ function Get-CodexRtlPayloadPlan {
     for (const panel of scopeDoc.querySelectorAll(PLAN_PANEL_SELECTOR)) {
       if (shouldSkipElement(panel)) continue;
 
-      panel.setAttribute('data-codex-plus-plan-surface', 'plan');
-      panel.setAttribute('dir', 'rtl');
-      panel.setAttribute('data-codex-plus-plan-rtl', 'rtl');
-      panel.style.direction = 'rtl';
-      panel.style.textAlign = 'right';
-      panel.style.unicodeBidi = 'plaintext';
+      if (panel.getAttribute('data-codex-plus-plan-surface') !== 'plan') {
+        panel.setAttribute('data-codex-plus-plan-surface', 'plan');
+      }
+      if (panel.getAttribute('dir') !== 'rtl') {
+        panel.setAttribute('dir', 'rtl');
+      }
+      if (panel.getAttribute('data-codex-plus-plan-rtl') !== 'rtl') {
+        panel.setAttribute('data-codex-plus-plan-rtl', 'rtl');
+      }
+      if (panel.style.direction !== 'rtl') {
+        panel.style.direction = 'rtl';
+      }
+      if (panel.style.textAlign !== 'right') {
+        panel.style.textAlign = 'right';
+      }
+      if (panel.style.unicodeBidi !== 'plaintext') {
+        panel.style.unicodeBidi = 'plaintext';
+      }
       processInlineTechnicalIslands(panel);
 
       for (const list of panel.querySelectorAll(LIST_CONTAINER_SELECTOR)) {
@@ -162,14 +202,11 @@ function Get-CodexRtlPayloadPlan {
     }
   }
 
-  function apply() {
-    ensureInlineStyle(document);
-    processPlanPanels(document);
-  }
-
   let pending = false;
+  let observing = false;
+  let applying = false;
   const schedule = () => {
-    if (pending) return;
+    if (pending || applying) return;
     pending = true;
     window.setTimeout(() => {
       pending = false;
@@ -178,15 +215,37 @@ function Get-CodexRtlPayloadPlan {
   };
 
   const observer = new MutationObserver(schedule);
-  const start = () => {
-    apply();
-    if (document.documentElement) {
-      observer.observe(document.documentElement, {
-        attributes: true,
-        childList: true,
-        subtree: true
-      });
+  const observe = () => {
+    if (observing || !document.documentElement) return;
+    observer.observe(document.documentElement, {
+      attributes: true,
+      childList: true,
+      subtree: true
+    });
+    observing = true;
+  };
+  const disconnect = () => {
+    if (!observing) return;
+    observer.disconnect();
+    observing = false;
+  };
+  const apply = () => {
+    const wasObserving = observing;
+    if (wasObserving) disconnect();
+    applying = true;
+    try {
+      ensureInlineStyle(document);
+      processPlanPanels(document);
+    } finally {
+      applying = false;
+      if (wasObserving) observe();
     }
+  };
+
+  const start = () => {
+    disconnect();
+    apply();
+    observe();
   };
 
   window.__CODEX_PLUS_RTL_PLAN = {

@@ -82,20 +82,17 @@ function Get-CodexContextBadgePayload {
     }
 
     const percent = readContextPercent(scopeDoc);
-    badge.textContent = stripBidiMarks(percent ? 'Plus ' + percent : 'Plus');
-  }
-
-  function apply() {
-    for (const scopeDoc of [document, ...Array.from(document.querySelectorAll('iframe')).map((frame) => {
-      try { return frame.contentDocument; } catch { return null; }
-    }).filter(Boolean)]) {
-      ensureBadge(scopeDoc);
+    const nextText = stripBidiMarks(percent ? 'Plus ' + percent : 'Plus');
+    if (badge.textContent !== nextText) {
+      badge.textContent = nextText;
     }
   }
 
   let pending = false;
+  let observing = false;
+  let applying = false;
   const schedule = () => {
-    if (pending) return;
+    if (pending || applying) return;
     pending = true;
     window.setTimeout(() => {
       pending = false;
@@ -104,15 +101,40 @@ function Get-CodexContextBadgePayload {
   };
 
   const observer = new MutationObserver(schedule);
-  const start = () => {
-    apply();
-    if (document.documentElement) {
-      observer.observe(document.documentElement, {
-        attributes: true,
-        childList: true,
-        subtree: true
-      });
+  const observe = () => {
+    if (observing || !document.documentElement) return;
+    observer.observe(document.documentElement, {
+      attributes: true,
+      childList: true,
+      subtree: true
+    });
+    observing = true;
+  };
+  const disconnect = () => {
+    if (!observing) return;
+    observer.disconnect();
+    observing = false;
+  };
+  const apply = () => {
+    const wasObserving = observing;
+    if (wasObserving) disconnect();
+    applying = true;
+    try {
+      for (const scopeDoc of [document, ...Array.from(document.querySelectorAll('iframe')).map((frame) => {
+        try { return frame.contentDocument; } catch { return null; }
+      }).filter(Boolean)]) {
+        ensureBadge(scopeDoc);
+      }
+    } finally {
+      applying = false;
+      if (wasObserving) observe();
     }
+  };
+
+  const start = () => {
+    disconnect();
+    apply();
+    observe();
   };
 
   window.__CODEX_PLUS_CONTEXT_BADGE = {

@@ -119,6 +119,27 @@ function Get-CodexRtlPayload {
     element.style.unicodeBidi = '';
   }
 
+  function setOwnedDirection(element, direction, marker, unicodeBidi, forceLtr) {
+    const shouldApply = direction === 'rtl' || (direction === 'ltr' && forceLtr);
+    if (!shouldApply) {
+      cleanupOwnedDirection(element);
+      return;
+    }
+
+    if (element.getAttribute('dir') !== direction) {
+      element.setAttribute('dir', direction);
+    }
+    if (element.getAttribute('data-codex-rtl-fix') !== marker) {
+      element.setAttribute('data-codex-rtl-fix', marker);
+    }
+    if (element.style.textAlign !== 'start') {
+      element.style.textAlign = 'start';
+    }
+    if (element.style.unicodeBidi !== unicodeBidi) {
+      element.style.unicodeBidi = unicodeBidi;
+    }
+  }
+
   function ensureInlineIslandsStyle() {
     if (document.head && document.head.querySelector('style[' + INLINE_STYLE_ID + ']')) return;
     if (!document.head) return;
@@ -177,23 +198,19 @@ function Get-CodexRtlPayload {
   }
 
   function applyBlockDirection(element, direction, options) {
-    cleanupOwnedDirection(element);
     const forceLtr = Boolean(options && options.forceLtr);
 
     if (direction === 'rtl') {
-      element.setAttribute('dir', 'rtl');
-      element.setAttribute('data-codex-rtl-fix', 'rtl');
-      element.style.textAlign = 'start';
-      element.style.unicodeBidi = 'plaintext';
+      setOwnedDirection(element, 'rtl', 'rtl', 'plaintext', false);
       return;
     }
 
     if (direction === 'ltr' && forceLtr) {
-      element.setAttribute('dir', 'ltr');
-      element.setAttribute('data-codex-rtl-fix', 'ltr');
-      element.style.textAlign = 'start';
-      element.style.unicodeBidi = 'isolate';
+      setOwnedDirection(element, 'ltr', 'ltr', 'isolate', true);
+      return;
     }
+
+    cleanupOwnedDirection(element);
   }
 
   function applyDirection(element, direction) {
@@ -216,11 +233,7 @@ function Get-CodexRtlPayload {
       const text = getMeaningfulText(title);
       if (!text.trim()) continue;
       const direction = classifyDirection(text);
-      cleanupOwnedDirection(title);
-      title.setAttribute('dir', direction);
-      title.setAttribute('data-codex-rtl-fix', direction);
-      title.style.textAlign = 'start';
-      title.style.unicodeBidi = 'isolate';
+      setOwnedDirection(title, direction, direction, 'isolate', true);
     }
   }
 
@@ -228,11 +241,18 @@ function Get-CodexRtlPayload {
     for (const composer of document.querySelectorAll(COMPOSER_SELECTOR)) {
       const isDirectComposer = composer.matches('div.ProseMirror') || composer.matches('textarea') || composer.hasAttribute('contenteditable');
       if (!isDirectComposer && shouldSkipElement(composer)) continue;
-      cleanupOwnedDirection(composer);
-      composer.setAttribute('dir', 'auto');
-      composer.setAttribute('data-codex-rtl-fix', 'composer');
-      composer.style.textAlign = 'start';
-      composer.style.unicodeBidi = 'plaintext';
+      if (composer.getAttribute('dir') !== 'auto') {
+        composer.setAttribute('dir', 'auto');
+      }
+      if (composer.getAttribute('data-codex-rtl-fix') !== 'composer') {
+        composer.setAttribute('data-codex-rtl-fix', 'composer');
+      }
+      if (composer.style.textAlign !== 'start') {
+        composer.style.textAlign = 'start';
+      }
+      if (composer.style.unicodeBidi !== 'plaintext') {
+        composer.style.unicodeBidi = 'plaintext';
+      }
     }
   }
 
@@ -247,9 +267,15 @@ function Get-CodexRtlPayload {
   function processInlineTechnicalIslands(root) {
     for (const technical of root.querySelectorAll(INLINE_TECHNICAL_SELECTOR)) {
       if (technical.closest('pre')) continue;
-      technical.setAttribute('dir', 'ltr');
-      technical.setAttribute('data-codex-rtl-fix', 'ltr');
-      technical.style.unicodeBidi = 'isolate';
+      if (technical.getAttribute('dir') !== 'ltr') {
+        technical.setAttribute('dir', 'ltr');
+      }
+      if (technical.getAttribute('data-codex-rtl-fix') !== 'ltr') {
+        technical.setAttribute('data-codex-rtl-fix', 'ltr');
+      }
+      if (technical.style.unicodeBidi !== 'isolate') {
+        technical.style.unicodeBidi = 'isolate';
+      }
     }
   }
 
@@ -305,17 +331,11 @@ function Get-CodexRtlPayload {
     }
   }
 
-  const apply = () => {
-    ensureInlineIslandsStyle();
-    processTitles();
-    processComposers();
-    processUserMessageBubbles();
-    processConversationRoots();
-  };
-
   let pending = false;
+  let observing = false;
+  let applying = false;
   const schedule = () => {
-    if (pending) return;
+    if (pending || applying) return;
     pending = true;
     window.setTimeout(() => {
       pending = false;
@@ -324,15 +344,40 @@ function Get-CodexRtlPayload {
   };
 
   const observer = new MutationObserver(schedule);
-  const start = () => {
-    apply();
-    if (document.documentElement) {
-      observer.observe(document.documentElement, {
-        attributes: true,
-        childList: true,
-        subtree: true
-      });
+  const observe = () => {
+    if (observing || !document.documentElement) return;
+    observer.observe(document.documentElement, {
+      attributes: true,
+      childList: true,
+      subtree: true
+    });
+    observing = true;
+  };
+  const disconnect = () => {
+    if (!observing) return;
+    observer.disconnect();
+    observing = false;
+  };
+  const apply = () => {
+    const wasObserving = observing;
+    if (wasObserving) disconnect();
+    applying = true;
+    try {
+      ensureInlineIslandsStyle();
+      processTitles();
+      processComposers();
+      processUserMessageBubbles();
+      processConversationRoots();
+    } finally {
+      applying = false;
+      if (wasObserving) observe();
     }
+  };
+
+  const start = () => {
+    disconnect();
+    apply();
+    observe();
   };
 
   window.__CODEX_RTL_FIX_CODEX = {

@@ -2,6 +2,7 @@ function Get-CodexSidebarPagingPayload {
     @'
 (function () {
   const SECTION_SELECTOR = '[class*="group/nav-section-title"]';
+  const SIDEBAR_ROOT_SELECTOR = '[data-app-action-sidebar-scroll]';
   const PAGE_SIZE = 3;
   const RECENT_WINDOW_MS = 24 * 60 * 60 * 1000;
   const RECENT_THREAD_LIMIT = 12;
@@ -18,6 +19,7 @@ function Get-CodexSidebarPagingPayload {
   const COLLAPSED_ATTR = 'data-codex-plus-sidebar-collapsed';
   const THREAD_BASE_LABEL_ATTR = 'data-codex-plus-thread-base-label';
   const THREAD_TIMESTAMP_ATTR = 'data-codex-plus-thread-timestamp-label';
+  const NATIVE_TIMESTAMP_ELEMENT_ATTR = 'data-codex-plus-native-timestamp';
   const THREAD_UPDATED_ATTR = 'data-codex-plus-thread-updated-ms';
   const THREADS_HEADER_ATTR = 'data-codex-plus-sidebar-threads-header';
   const THREADS_CONTAINER_ATTR = 'data-codex-plus-sidebar-threads-container';
@@ -91,6 +93,10 @@ function Get-CodexSidebarPagingPayload {
 
     const fallbackList = sectionContainer.querySelector('[role="list"]');
     return fallbackList && fallbackList.getAttribute('role') === 'list' ? fallbackList : null;
+  }
+
+  function getSidebarObserverRoot() {
+    return document.querySelector(SIDEBAR_ROOT_SELECTOR);
   }
 
   function resolveSidebarSectionList(spec) {
@@ -1031,6 +1037,8 @@ function Get-CodexSidebarPagingPayload {
     const nextLabel = appendThreadTimestampToLabel(nextBaseLabel, timestampMs);
     const currentLabel = normalizeText(textOf(titleElement) || textOf(row));
     const legacyTimestampSpan = row.querySelector(LEGACY_TIMESTAMP_SUFFIX_SELECTOR);
+    const isSyntheticRow = row.hasAttribute(SYNTHETIC_ROW_ATTR)
+      || Boolean(row.closest('[' + SYNTHETIC_SECTION_ATTR + '="threads"]'));
 
     if (nextBaseLabel && row.getAttribute(THREAD_BASE_LABEL_ATTR) !== nextBaseLabel) {
       row.setAttribute(THREAD_BASE_LABEL_ATTR, nextBaseLabel);
@@ -1040,6 +1048,27 @@ function Get-CodexSidebarPagingPayload {
     }
     if (row.getAttribute(THREAD_UPDATED_ATTR) !== String(timestampMs || 0)) {
       row.setAttribute(THREAD_UPDATED_ATTR, String(timestampMs || 0));
+    }
+
+    if (!isSyntheticRow && titleElement) {
+      const titleHost = titleElement.parentElement;
+      let timestampElement = row.querySelector('[' + NATIVE_TIMESTAMP_ELEMENT_ATTR + ']');
+      const timestampText = nextTimestampLabel ? '[' + nextTimestampLabel + ']' : '';
+
+      if (timestampText && titleHost) {
+        if (!timestampElement) {
+          timestampElement = row.ownerDocument.createElement('span');
+          timestampElement.setAttribute(NATIVE_TIMESTAMP_ELEMENT_ATTR, 'true');
+          timestampElement.className = 'ms-1 shrink-0 text-xs text-token-text-tertiary';
+          titleHost.appendChild(timestampElement);
+        }
+        if (timestampElement.textContent !== timestampText) {
+          timestampElement.textContent = timestampText;
+        }
+      } else if (timestampElement) {
+        timestampElement.remove();
+      }
+      return;
     }
 
     if (currentLabel === nextLabel && !legacyTimestampSpan) return;
@@ -1620,34 +1649,46 @@ function Get-CodexSidebarPagingPayload {
   }
 
   function apply() {
-    for (const spec of SECTION_SPECS) {
-      const list = spec.synthetic ? ensureSyntheticThreadsSection() : resolveSidebarSectionList(spec);
-      if (!list) continue;
+    const wasObserving = observing;
+    if (wasObserving) disconnect();
+    try {
+      for (const spec of SECTION_SPECS) {
+        const list = spec.synthetic ? ensureSyntheticThreadsSection() : resolveSidebarSectionList(spec);
+        if (!list) continue;
 
-      const rows = getSidebarRows(list);
-      const visibleCount = Math.min(rows.length, getVisibleCount(rows, spec));
-      writeLoaded(list, Math.max(0, Math.min(readLoaded(list), Math.max(0, rows.length - visibleCount))));
-      renderSidebarSection(list, visibleCount, spec.key);
+        const rows = getSidebarRows(list);
+        const visibleCount = Math.min(rows.length, getVisibleCount(rows, spec));
+        writeLoaded(list, Math.max(0, Math.min(readLoaded(list), Math.max(0, rows.length - visibleCount))));
+        renderSidebarSection(list, visibleCount, spec.key);
+      }
+      syncSyntheticThreadActiveState();
+    } finally {
+      if (wasObserving) observe();
     }
-    syncSyntheticThreadActiveState();
   }
 
   let pending = false;
   let applying = false;
   let observing = false;
+  let observingRoot = null;
   const observe = () => {
-    if (observing || !document.documentElement) return;
-    observer.observe(document.documentElement, {
-      attributes: true,
+    const root = getSidebarObserverRoot() || document.documentElement;
+    if (!root || (observing && observingRoot === root)) return;
+    if (observing) {
+      observer.disconnect();
+    }
+    observer.observe(root, {
       childList: true,
       subtree: true
     });
     observing = true;
+    observingRoot = root;
   };
   const disconnect = () => {
     if (!observing) return;
     observer.disconnect();
     observing = false;
+    observingRoot = null;
   };
   const schedule = () => {
     if (pending || applying) return;
