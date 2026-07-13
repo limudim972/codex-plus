@@ -20,6 +20,7 @@ function Get-CodexSidebarPagingPayload {
   const THREAD_BASE_LABEL_ATTR = 'data-codex-plus-thread-base-label';
   const THREAD_TIMESTAMP_ATTR = 'data-codex-plus-thread-timestamp-label';
   const NATIVE_TIMESTAMP_ELEMENT_ATTR = 'data-codex-plus-native-timestamp';
+  const THREAD_UNREAD_INDICATOR_ATTR = 'data-codex-plus-thread-unread-indicator';
   const THREAD_UPDATED_ATTR = 'data-codex-plus-thread-updated-ms';
   const THREADS_HEADER_ATTR = 'data-codex-plus-sidebar-threads-header';
   const THREADS_CONTAINER_ATTR = 'data-codex-plus-sidebar-threads-container';
@@ -542,6 +543,52 @@ function Get-CodexSidebarPagingPayload {
       || row;
   }
 
+  function getThreadUnreadIndicator(row) {
+    if (!row) return null;
+
+    const owned = row.querySelector('[' + THREAD_UNREAD_INDICATOR_ATTR + ']');
+    if (owned) return owned;
+
+    const button = getSyntheticThreadButton(row);
+    if (!button) return null;
+
+    return Array.from(button.children).find((candidate) => {
+      if (!candidate.matches?.('div[data-hover-card-open-immediately]')) return false;
+      if (!candidate.classList.contains('shrink-0')) return false;
+      return Boolean(candidate.querySelector('.icon-xs.relative.scale-50 .absolute.inset-0.rounded-full'));
+    }) || null;
+  }
+
+  function syncThreadUnreadIndicator(row, nativeRow) {
+    if (!row) return;
+
+    const existing = row.querySelector('[' + THREAD_UNREAD_INDICATOR_ATTR + ']');
+    const source = getThreadUnreadIndicator(nativeRow);
+    if (!source) {
+      if (existing) existing.remove();
+      return;
+    }
+
+    const button = getSyntheticThreadButton(row);
+    if (!button) return;
+
+    const next = source.cloneNode(true);
+    next.setAttribute(THREAD_UNREAD_INDICATOR_ATTR, 'true');
+    if (existing) {
+      existing.replaceWith(next);
+      return;
+    }
+
+    const mainContent = Array.from(button.children).find((candidate) => {
+      return candidate.querySelector?.('[data-thread-title-trigger="true"]');
+    });
+    if (mainContent?.parentElement === button) {
+      button.insertBefore(next, mainContent);
+    } else {
+      button.appendChild(next);
+    }
+  }
+
   function syncThreadSpinner(row, working, nativeRow) {
     if (!row) return;
     const existing = row.querySelector('[' + THREAD_SPINNER_ATTR + ']');
@@ -1044,8 +1091,6 @@ function Get-CodexSidebarPagingPayload {
     const nextLabel = appendThreadTimestampToLabel(nextBaseLabel, timestampMs);
     const currentLabel = normalizeText(textOf(titleElement) || textOf(row));
     const legacyTimestampSpan = row.querySelector(LEGACY_TIMESTAMP_SUFFIX_SELECTOR);
-    const isSyntheticRow = row.hasAttribute(SYNTHETIC_ROW_ATTR)
-      || Boolean(row.closest('[' + SYNTHETIC_SECTION_ATTR + '="threads"]'));
 
     if (nextBaseLabel && row.getAttribute(THREAD_BASE_LABEL_ATTR) !== nextBaseLabel) {
       row.setAttribute(THREAD_BASE_LABEL_ATTR, nextBaseLabel);
@@ -1057,7 +1102,8 @@ function Get-CodexSidebarPagingPayload {
       row.setAttribute(THREAD_UPDATED_ATTR, String(timestampMs || 0));
     }
 
-    if (!isSyntheticRow && titleElement) {
+    if (titleElement) {
+      styleThreadTitleElement(titleElement);
       const titleHost = titleElement.parentElement;
       let timestampElement = row.querySelector('[' + NATIVE_TIMESTAMP_ELEMENT_ATTR + ']');
       const timestampText = nextTimestampLabel ? '[' + nextTimestampLabel + ']' : '';
@@ -1077,20 +1123,17 @@ function Get-CodexSidebarPagingPayload {
       } else if (timestampElement) {
         timestampElement.remove();
       }
+
+      if (titleElement.textContent !== nextBaseLabel) {
+        titleElement.textContent = nextBaseLabel;
+      }
+      for (const timestampSpan of Array.from(row.querySelectorAll(LEGACY_TIMESTAMP_SUFFIX_SELECTOR))) {
+        timestampSpan.remove();
+      }
       return;
     }
 
     if (currentLabel === nextLabel && !legacyTimestampSpan) return;
-    if (titleElement) {
-      styleThreadTitleElement(titleElement);
-      titleElement.textContent = nextLabel;
-      if (legacyTimestampSpan) {
-        for (const timestampSpan of Array.from(row.querySelectorAll(LEGACY_TIMESTAMP_SUFFIX_SELECTOR))) {
-          timestampSpan.remove();
-        }
-      }
-      return;
-    }
 
     const directTextNode = Array.from(row.childNodes).find((node) => node.nodeType === Node.TEXT_NODE && normalizeText(node.nodeValue));
     if (directTextNode) {
@@ -1351,6 +1394,9 @@ function Get-CodexSidebarPagingPayload {
       const overlay = animated.closest('[data-hover-card-open-immediately]') || animated;
       if (overlay !== row) overlay.remove();
     }
+
+    const unreadIndicator = getThreadUnreadIndicator(row);
+    if (unreadIndicator) unreadIndicator.remove();
   }
 
   function createSyntheticThreadRow(label, updatedMs, templateRow) {
@@ -1406,6 +1452,12 @@ function Get-CodexSidebarPagingPayload {
   function syncSyntheticThreadRows(listElement, threadRows) {
     if (!listElement) return;
 
+    const nativeRowsByThreadId = new Map();
+    for (const nativeRow of getNativeThreadRows()) {
+      const threadId = normalizeThreadId(getThreadIdForRow(nativeRow));
+      if (threadId) nativeRowsByThreadId.set(threadId, nativeRow);
+    }
+
     const existingRows = new Map();
     for (const row of getSidebarRows(listElement)) {
       const threadId = normalizeThreadId(getThreadIdForRow(row) || row.getAttribute('data-codex-plus-thread-id'));
@@ -1429,6 +1481,7 @@ function Get-CodexSidebarPagingPayload {
       if (threadId) {
         row.setAttribute('data-app-action-sidebar-thread-id', threadId);
       }
+      syncThreadUnreadIndicator(row, nativeRowsByThreadId.get(threadId) || null);
       wireSyntheticThreadRow(row, entry.row.getAttribute(SOURCE_LIST_ATTR) || 'Tasks', entry.row.getAttribute(SOURCE_TEXT_ATTR) || getThreadTitleForRow(entry.row));
       orderedRows.push(row);
       if (threadId) {

@@ -176,9 +176,13 @@ Assert-True ($sidebarPayload.Contains('threadKeys')) 'Sidebar payload should use
 Assert-True ($sidebarPayload.Contains('projectGroups')) 'Sidebar payload should use live project groups for project ordering.'
 Assert-True ($sidebarPayload.Contains('threadRecencyAtByKey')) 'Sidebar payload should use live thread recency for timestamp fallbacks.'
 Assert-True ($sidebarPayload.Contains('conversation.updatedAt')) 'Sidebar payload should use live conversation update times.'
+Assert-True ($sidebarPayload.Contains('NATIVE_TIMESTAMP_ELEMENT_ATTR')) 'Sidebar payload should render timestamps as dedicated row elements.'
+Assert-True ($sidebarPayload.Contains('inline-flex shrink-0 items-center whitespace-nowrap text-xs text-token-text-tertiary')) 'Sidebar payload should match the task timestamp flex styling.'
+Assert-True ($sidebarPayload.Contains('THREAD_UNREAD_INDICATOR_ATTR')) 'Sidebar payload should identify owned unread indicators on synthetic rows.'
+Assert-True ($sidebarPayload.Contains('syncThreadUnreadIndicator')) 'Sidebar payload should mirror unread indicators from matching native thread rows.'
 Assert-True (-not ($sidebarPayload.Contains('Get-CodexRecentThreadSnapshot'))) 'Sidebar payload should not call the removed state DB thread snapshot.'
 Assert-True (-not ($sidebarPayload.Contains('PROJECT_TIMESTAMPS'))) 'Sidebar payload should not embed project timestamp snapshots.'
-Assert-True (($sidebarPayload.Contains('titleElement.textContent = nextLabel;') -or $sidebarPayload.Contains('directTextNode.nodeValue = nextLabel;'))) 'Sidebar payload should write the inline label directly into the existing text node.'
+Assert-True ($sidebarPayload.Contains('titleElement.textContent !== nextBaseLabel')) 'Sidebar payload should keep the timestamp separate from the thread title.'
 Assert-True (-not ($sidebarPayload.Contains('data-codex-plus-thread-timestamp-suffix'))) 'Sidebar payload should render modified times inline instead of a separate suffix span.'
 
 $roots = @(Get-CodexShortcutSearchRoots)
