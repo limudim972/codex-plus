@@ -142,6 +142,13 @@ function Show-CodexLaunchSplash {
     $image.Margin = [System.Windows.Thickness]::new(0, 0, 12, 0)
     $image.Source = Get-CodexLaunchSplashIconSource
 
+    $rotation = [System.Windows.Media.RotateTransform]::new()
+    $image.RenderTransformOrigin = [System.Windows.Point]::new(0.5, 0.5)
+    $image.RenderTransform = $rotation
+    $spin = [System.Windows.Media.Animation.DoubleAnimation]::new(0, 360, [System.Windows.Duration]::new([TimeSpan]::FromSeconds(1.2)))
+    $spin.RepeatBehavior = [System.Windows.Media.Animation.RepeatBehavior]::Forever
+    $rotation.BeginAnimation([System.Windows.Media.RotateTransform]::AngleProperty, $spin)
+
     $text = [System.Windows.Controls.TextBlock]::new()
     $text.Text = 'Plus'
     $text.FontFamily = [System.Windows.Media.FontFamily]::new('Segoe UI Semibold')

@@ -148,7 +148,8 @@ Assert-True ($splashBody.Contains('[System.Windows.Controls.Image]')) 'Launch sp
 Assert-True ($splashBody.Contains('Text = ''Plus''')) 'Launch splash should add a Plus wordmark next to the icon.'
 Assert-True ($splashBody.Contains('$image.Width = 36')) 'Launch splash should keep the icon at the original compact size.'
 Assert-True ($splashBody.Contains('$text.FontSize = 28')) 'Launch splash should keep the Plus label at the original compact size.'
-Assert-True (-not $splashBody.Contains('DoubleAnimation')) 'Launch splash should stay static after reverting the loading animation experiment.'
+Assert-True ($splashBody.Contains('DoubleAnimation')) 'Launch splash should animate the icon while Codex is loading.'
+Assert-True ($splashBody.Contains('RepeatBehavior]::Forever')) 'Launch splash icon animation should loop until the Codex window is visible.'
 Assert-True ($splashBody.Contains('Get-CodexVisibleProcessCount')) 'Launch splash should close itself when the real Codex window becomes visible.'
 $desktopProcessNames = @(Get-CodexDesktopProcessNames)
 Assert-Equal 2 @($desktopProcessNames).Count 'Desktop process lookup should include the two supported Codex executable names by default.'
