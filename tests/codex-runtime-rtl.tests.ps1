@@ -130,6 +130,9 @@ Assert-Equal "$($fakeInstallInfoFallback.AppExe),0" (Get-CodexIconLocation -Inst
 $installBody = (Get-Command -Name Install-CodexRtlPatch -CommandType Function).ScriptBlock.ToString()
 Assert-True ($installBody.Contains('OwnedArtifacts')) 'Patch flow should persist owned artifacts explicitly.'
 Assert-True ($installBody.Contains('Codex Plus')) 'Patch flow should create sibling Codex Plus shortcuts.'
+Assert-True (-not $installBody.Contains('-AllowRestart')) 'Patch flow should not restart or kill an existing Codex process during install.'
+Assert-True (-not $installBody.Contains('Start-CodexForRtl')) 'Patch flow should not launch Codex during install.'
+Assert-True (-not $installBody.Contains('Invoke-CodexRtlInjection')) 'Patch flow should not inject Codex during install.'
 $launchBody = (Get-Command -Name Launch-CodexRtl -CommandType Function).ScriptBlock.ToString()
 Assert-True ($launchBody.Contains('Start-CodexForRtl')) 'Codex launch should delegate to the approved-verb launch helper.'
 $splashIconBody = (Get-Command -Name Get-CodexLaunchSplashIcon -CommandType Function).ScriptBlock.ToString()
@@ -163,26 +166,18 @@ $desktopProcessBody = (Get-Command -Name Get-CodexDesktopProcesses -CommandType 
 Assert-True ($desktopProcessBody.Contains('-Filter $nameFilter')) 'Desktop process lookup should narrow the WMI query to the expected process names.'
 Assert-True ($desktopProcessBody.Contains('-OperationTimeoutSec 3')) 'Desktop process lookup should bound the WMI query so splash helpers cannot hang indefinitely.'
 Assert-True ($desktopProcessBody.Contains('catch')) 'Desktop process lookup should fail closed when the WMI query stalls or errors.'
-$patchBody = Get-Content -LiteralPath $patchScript -Raw
-Assert-True ($patchBody.Contains('$RequiresElevation = (-not ($LaunchCodexRtl -or $ShowLaunchSplash -or $StartCloseWatchdog -or $SkipMain))')) 'Elevation should be skipped for launch-only helper paths such as the splash and watchdog.'
-
-$projectSnapshot = @(Get-CodexProjectTimestampSnapshot)
-Assert-True ($projectSnapshot.Count -gt 0) 'Project timestamp snapshot should include local project rows.'
-Assert-True (@($projectSnapshot | Where-Object { $_.cwd -and [int64]$_.last_modified_ms -gt 0 }).Count -gt 0) 'Project timestamp snapshot should include positive last-modified timestamps.'
-
-$recentThreadSnapshot = @(Get-CodexRecentThreadSnapshot)
-Assert-True ($recentThreadSnapshot.Count -gt 1) 'Recent thread snapshot should include multiple rows.'
-Assert-True (@($recentThreadSnapshot | Where-Object { $_.title -and $_.cwd -and [int64]$_.last_modified_ms -gt 0 }).Count -gt 0) 'Recent thread snapshot should include state DB thread rows with positive timestamps.'
-$recentThreadNewest = ($recentThreadSnapshot | Select-Object -First 1).last_modified_ms
-$recentThreadOldest = ($recentThreadSnapshot | Select-Object -Last 1).last_modified_ms
-Assert-True ([int64]$recentThreadNewest -ge [int64]$recentThreadOldest) 'Recent thread snapshot should already be sorted newest first.'
-
 $sidebarPayload = Get-CodexSidebarPagingPayload
 Assert-True ($sidebarPayload.Contains('appendThreadTimestampToLabel')) 'Sidebar payload should keep the inline modified-time formatter centralized.'
 Assert-True ($sidebarPayload.Contains("dateStyle: 'short'")) 'Sidebar payload should format modified times with a concise locale-aware date.'
 Assert-True ($sidebarPayload.Contains('THREAD_BASE_LABEL_ATTR')) 'Sidebar payload should preserve the original row label before appending modified time.'
-Assert-True ($sidebarPayload.Contains('PROJECT_TIMESTAMPS')) 'Sidebar payload should embed project timestamps for collapsed project rows.'
-Assert-True ($sidebarPayload.Contains('getProjectTimestampMsForRow')) 'Sidebar payload should resolve project timestamps from the local state snapshot.'
+Assert-True ($sidebarPayload.Contains('getLiveSidebarCatalog')) 'Sidebar payload should read thread data from the live Codex app state.'
+Assert-True ($sidebarPayload.Contains('cachedBindings')) 'Sidebar payload should discover the live Codex thread bindings structurally.'
+Assert-True ($sidebarPayload.Contains('threadKeys')) 'Sidebar payload should use live thread keys for ordering.'
+Assert-True ($sidebarPayload.Contains('projectGroups')) 'Sidebar payload should use live project groups for project ordering.'
+Assert-True ($sidebarPayload.Contains('threadRecencyAtByKey')) 'Sidebar payload should use live thread recency for timestamp fallbacks.'
+Assert-True ($sidebarPayload.Contains('conversation.updatedAt')) 'Sidebar payload should use live conversation update times.'
+Assert-True (-not ($sidebarPayload.Contains('Get-CodexRecentThreadSnapshot'))) 'Sidebar payload should not call the removed state DB thread snapshot.'
+Assert-True (-not ($sidebarPayload.Contains('PROJECT_TIMESTAMPS'))) 'Sidebar payload should not embed project timestamp snapshots.'
 Assert-True (($sidebarPayload.Contains('titleElement.textContent = nextLabel;') -or $sidebarPayload.Contains('directTextNode.nodeValue = nextLabel;'))) 'Sidebar payload should write the inline label directly into the existing text node.'
 Assert-True (-not ($sidebarPayload.Contains('data-codex-plus-thread-timestamp-suffix'))) 'Sidebar payload should render modified times inline instead of a separate suffix span.'
 
@@ -784,12 +779,11 @@ $sidebarPagingPayload = Get-CodexSidebarPagingPayload
 Assert-True ($sidebarPagingPayload.Contains("key: 'threads'")) 'Sidebar paging should define the synthetic Threads section.'
 Assert-True ($sidebarPagingPayload.Contains("title: 'Threads'")) 'Sidebar paging should render a Threads heading.'
 Assert-True ($sidebarPagingPayload.Contains("minVisibleCount: 3")) 'Sidebar paging should keep at least three thread rows visible by default.'
-Assert-True ($sidebarPagingPayload.Contains('PROJECT_TIMESTAMPS')) 'Sidebar paging should include project timestamps for project rows.'
-Assert-True ($sidebarPagingPayload.Contains('getProjectTimestampMsForRow')) 'Sidebar paging should resolve project timestamps from the local state snapshot.'
+Assert-True ($sidebarPagingPayload.Contains('getProjectTimestampMsForRow')) 'Sidebar paging should resolve project timestamps from live state.'
 Assert-True ($sidebarPagingPayload.Contains('getRemoteProjectTimestampMsForRow')) 'Sidebar paging should fall back to remote project timestamps from React props.'
 Assert-True ($sidebarPagingPayload.Contains('cloudEnvironment')) 'Sidebar paging should read the remote project cloud environment metadata.'
 Assert-True ($sidebarPagingPayload.Contains('hover:bg-token-list-hover-background')) 'Synthetic Threads fallback rows should keep hover styling.'
-Assert-True ($sidebarPagingPayload.Contains('display_title')) 'Synthetic Threads labels should come from the state DB display title.'
+Assert-True ($sidebarPagingPayload.Contains('displayTitle')) 'Synthetic Threads labels should come from the live catalog display title.'
 Assert-True ($sidebarPagingPayload.Contains('data-codex-plus-thread-id')) 'Synthetic Threads rows should retain the source thread id for click proxying.'
 Assert-True ($sidebarPagingPayload.Contains('data-app-action-sidebar-thread-title')) 'Synthetic Threads should target the live Codex thread title element.'
 Assert-True ($sidebarPagingPayload.Contains("data-codex-plus-sidebar-synthetic-section")) 'Sidebar paging should mark synthetic sections explicitly.'

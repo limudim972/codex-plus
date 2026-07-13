@@ -17,7 +17,6 @@ function Install-CodexRtlRuntimeFiles {
         'src/codex/context-badge.ps1',
         'src/codex/sidebar-paging.ps1',
         'src/runtime/state.ps1',
-        'src/runtime/project-order.ps1',
         'src/runtime/files.ps1',
         'src/runtime/shortcuts.ps1',
         'src/runtime/launch.ps1',
@@ -39,6 +38,13 @@ function Install-CodexRtlRuntimeFiles {
         $destinationFullPath = [System.IO.Path]::GetFullPath($destination)
         if ($sourceFullPath -ine $destinationFullPath) {
             Copy-Item -LiteralPath $source -Destination $destination -Force
+        }
+    }
+
+    foreach ($obsoleteItem in @('src/runtime/project-order.ps1')) {
+        $obsoletePath = Join-Path $runtimeRoot $obsoleteItem
+        if (Test-Path -LiteralPath $obsoletePath) {
+            Remove-Item -LiteralPath $obsoletePath -Force
         }
     }
 

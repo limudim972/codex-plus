@@ -53,7 +53,7 @@ function Invoke-SelectedAppAction {
     switch ($ActionId) {
         'Patch' {
             & $invokeWithConfirmation `
-                -Warning "Patch will close and relaunch Codex if it is open.`nLaunch Codex using the Codex Plus shortcuts after patching." `
+                -Warning "Patch applies to newly opened Codex windows.`nExisting Codex windows stay open; launch Codex using the Codex Plus shortcuts after patching." `
                 -Action { Install-CodexRtlPatch }
         }
         'Restore' {

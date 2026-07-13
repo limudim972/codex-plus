@@ -55,10 +55,6 @@ function Install-CodexRtlPatch {
         -OwnedArtifacts $ownedArtifacts
     Save-CodexRtlState -State $state
 
-    Start-CodexForRtl -Inspection $installInfo -Port $port -AllowRestart | Out-Null
-    Invoke-CodexRtlInjection -Port $port | Out-Null
-    Wait-CodexWindowTitleSync -Port $port | Out-Null
-
     Write-Host "Codex Plus launcher installed." -ForegroundColor Green
     Write-Host "Created or refreshed $createdOrRefreshedCount Codex Plus shortcut(s)." -ForegroundColor Green
     Write-Host "Skipped $($skippedCodexShortcuts.Count) candidate location(s)." -ForegroundColor Green

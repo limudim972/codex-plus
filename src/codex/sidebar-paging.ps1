@@ -1,13 +1,10 @@
 function Get-CodexSidebarPagingPayload {
-    $recentThreadSnapshot = @(Get-CodexRecentThreadSnapshot)
-    $recentThreadJson = @($recentThreadSnapshot) | ConvertTo-Json -Compress
-    $projectTimestampSnapshot = @(Get-CodexProjectTimestampSnapshot)
-    $projectTimestampJson = @($projectTimestampSnapshot) | ConvertTo-Json -Compress
     @'
 (function () {
   const SECTION_SELECTOR = '[class*="group/nav-section-title"]';
   const PAGE_SIZE = 3;
   const RECENT_WINDOW_MS = 24 * 60 * 60 * 1000;
+  const RECENT_THREAD_LIMIT = 12;
   const SYNTHETIC_SECTION_ATTR = 'data-codex-plus-sidebar-synthetic-section';
   const SYNTHETIC_LIST_ATTR = 'data-codex-plus-sidebar-synthetic-list';
   const SYNTHETIC_ROW_ATTR = 'data-codex-plus-sidebar-synthetic-row';
@@ -25,12 +22,14 @@ function Get-CodexSidebarPagingPayload {
   const THREADS_HEADER_ATTR = 'data-codex-plus-sidebar-threads-header';
   const THREADS_CONTAINER_ATTR = 'data-codex-plus-sidebar-threads-container';
   const BUTTON_CLASS = 'border-token-border no-drag cursor-interaction flex items-center gap-1 border whitespace-nowrap select-none focus:outline-none disabled:cursor-not-allowed disabled:opacity-40 rounded-full text-token-muted-foreground enabled:hover:bg-transparent data-[state=open]:bg-transparent hover:text-token-foreground border-transparent px-2 py-0.5 text-sm leading-[18px] text-token-description-foreground hover:text-token-foreground -ml-[9px]';
-  const RECENT_THREADS = __CODEX_PLUS_RECENT_THREADS__;
-  const PROJECT_TIMESTAMPS = __CODEX_PLUS_PROJECT_TIMESTAMPS__;
   const LEGACY_TIMESTAMP_SUFFIX_SELECTOR = 'span[aria-hidden="true"].pointer-events-none.select-none.whitespace-nowrap.text-token-description-foreground';
   let internalNavigationModulesPromise = null;
-  let projectTimestampMap = null;
   const nativeThreadTitleCache = new Map();
+  let liveCatalogScope = null;
+  let liveCatalogStateBinding = null;
+  let liveCatalogCache = null;
+  let liveCatalogThreadSignature = '';
+  let liveCatalogLastRefreshMs = 0;
 
   const SECTION_SPECS = [
     { key: 'threads', title: 'Threads', minVisibleCount: 3, synthetic: true },
@@ -296,6 +295,182 @@ function Get-CodexSidebarPagingPayload {
     return null;
   }
 
+  function normalizeLiveThreadKey(value) {
+    return String(value || '').trim().toLowerCase();
+  }
+
+  function isLiveThreadCatalog(value) {
+    return Boolean(
+      value
+      && Array.isArray(value.threadKeys)
+      && Array.isArray(value.projectGroups)
+      && value.threadRecencyAtByKey
+      && typeof value.threadRecencyAtByKey.get === 'function'
+    );
+  }
+
+  function getLiveThreadCatalogState(scope) {
+    const cachedBindings = scope?.node?.cachedBindings;
+    if (
+      !cachedBindings
+      || typeof cachedBindings.entries !== 'function'
+      || typeof scope?.get !== 'function'
+    ) {
+      return null;
+    }
+
+    if (liveCatalogScope === scope && liveCatalogStateBinding) {
+      try {
+        const state = scope.get(liveCatalogStateBinding);
+        if (isLiveThreadCatalog(state)) {
+          return { state, cachedBindings };
+        }
+      } catch {
+      }
+      liveCatalogStateBinding = null;
+    }
+
+    for (const [binding] of cachedBindings.entries()) {
+      let state = null;
+      try {
+        state = scope.get(binding);
+      } catch {
+        continue;
+      }
+      if (!isLiveThreadCatalog(state)) continue;
+
+      liveCatalogScope = scope;
+      liveCatalogStateBinding = binding;
+      return { state, cachedBindings };
+    }
+
+    return null;
+  }
+
+  function getLiveThreadRecordKey(task, conversation) {
+    const explicitKey = normalizeLiveThreadKey(task?.key || conversation?.key);
+    if (explicitKey) return explicitKey;
+
+    const threadId = normalizeLiveThreadKey(conversation?.id);
+    if (!threadId) return '';
+    const hostId = normalizeLiveThreadKey(task?.kind || conversation?.hostId || 'local') || 'local';
+    return hostId + ':' + threadId;
+  }
+
+  function addLiveThreadRecord(records, bindings, value, binding) {
+    const task = value?.task || value;
+    const conversation = task?.conversation;
+    if (!conversation || !conversation.id) return;
+
+    const key = getLiveThreadRecordKey(task, conversation);
+    if (!key) return;
+
+    records.set(key, {
+      key,
+      id: String(conversation.id),
+      title: normalizeText(conversation.title),
+      cwd: normalizeText(conversation.cwd),
+      updatedAt: conversation.updatedAt,
+      createdAt: conversation.createdAt,
+      source: normalizeText(conversation.source || task?.source),
+      kind: normalizeText(task?.kind || conversation.hostId)
+    });
+    bindings.set(key, binding);
+  }
+
+  function collectLiveThreadValue(records, bindings, value, binding) {
+    if (Array.isArray(value)) {
+      for (const item of value) {
+        addLiveThreadRecord(records, bindings, item, binding);
+      }
+      return;
+    }
+    addLiveThreadRecord(records, bindings, value, binding);
+  }
+
+  function refreshLiveThreadBindings(catalog, forceScan) {
+    const { state, cachedBindings, scope } = catalog;
+    const threadKeys = Array.isArray(state.threadKeys)
+      ? state.threadKeys.map(normalizeLiveThreadKey).filter(Boolean)
+      : [];
+    const threadSignature = threadKeys.join('|');
+    const shouldScan = Boolean(
+      forceScan
+      || !liveCatalogCache
+      || liveCatalogCache.scope !== scope
+      || liveCatalogThreadSignature !== threadSignature
+      || liveCatalogCache.bindingCount !== cachedBindings.size
+    );
+
+    if (shouldScan) {
+      const records = new Map();
+      const bindings = new Map();
+      for (const [binding] of cachedBindings.entries()) {
+        let value = null;
+        try {
+          value = scope.get(binding);
+        } catch {
+          continue;
+        }
+        collectLiveThreadValue(records, bindings, value, binding);
+      }
+      liveCatalogCache = {
+        scope,
+        records,
+        bindings,
+        bindingCount: cachedBindings.size
+      };
+      liveCatalogThreadSignature = threadSignature;
+      liveCatalogLastRefreshMs = Date.now();
+      return;
+    }
+
+    if (Date.now() - liveCatalogLastRefreshMs < 250) return;
+
+    for (const [key, binding] of liveCatalogCache.bindings.entries()) {
+      let value = null;
+      try {
+        value = scope.get(binding);
+      } catch {
+        continue;
+      }
+      collectLiveThreadValue(liveCatalogCache.records, liveCatalogCache.bindings, value, binding);
+    }
+    liveCatalogLastRefreshMs = Date.now();
+  }
+
+  function getLiveSidebarCatalog() {
+    const scope = getAppScopeFromSidebar();
+    if (!scope) return null;
+
+    if (liveCatalogScope !== scope) {
+      liveCatalogScope = scope;
+      liveCatalogStateBinding = null;
+      liveCatalogCache = null;
+      liveCatalogThreadSignature = '';
+      liveCatalogLastRefreshMs = 0;
+    }
+
+    const stateResult = getLiveThreadCatalogState(scope);
+    if (!stateResult) return null;
+
+    const catalog = {
+      scope,
+      state: stateResult.state,
+      cachedBindings: stateResult.cachedBindings
+    };
+    refreshLiveThreadBindings(catalog, false);
+    return {
+      scope,
+      state: stateResult.state,
+      threadKeys: Array.isArray(stateResult.state.threadKeys)
+        ? stateResult.state.threadKeys.map(normalizeLiveThreadKey).filter(Boolean)
+        : [],
+      records: liveCatalogCache?.records || new Map(),
+      projectGroups: Array.isArray(stateResult.state.projectGroups) ? stateResult.state.projectGroups : []
+    };
+  }
+
   function getActiveThreadId() {
     const activeRow = Array.from(document.querySelectorAll('[data-app-action-sidebar-thread-active="true"]'))
       .find((row) => !row.closest('[' + SYNTHETIC_ROW_ATTR + '="threads"]'));
@@ -511,6 +686,22 @@ function Get-CodexSidebarPagingPayload {
   function getRemoteProjectTimestampMsForRow(row) {
     const group = getProjectGroupFromRow(row);
     return toTimestampMs(group?.cloudEnvironment?.created_at);
+  }
+
+  function getLiveThreadTimestampMs(record, catalog) {
+    if (!record) return 0;
+
+    const threadKey = normalizeLiveThreadKey(record.key);
+    const recency = catalog?.state?.threadRecencyAtByKey;
+    const recencyValue = recency && typeof recency.get === 'function'
+      ? (recency.get(threadKey) || recency.get(record.key))
+      : 0;
+
+    return Math.max(
+      toTimestampMs(record.updatedAt),
+      toTimestampMs(recencyValue),
+      parseThreadTimestampMs(record.id)
+    );
   }
 
   function getThreadTitleElement(row) {
@@ -825,8 +1016,8 @@ function Get-CodexSidebarPagingPayload {
     return title || '';
   }
 
-  function formatThreadLabelFromSnapshot(entry) {
-    const title = normalizeText(entry?.display_title || entry?.title);
+  function formatThreadLabelFromCatalog(entry) {
+    const title = normalizeText(entry?.displayTitle || entry?.title);
     if (!title) return '';
     return title;
   }
@@ -897,24 +1088,33 @@ function Get-CodexSidebarPagingPayload {
   }
 
   function getProjectTimestampMap() {
-    if (projectTimestampMap instanceof Map) {
-      return projectTimestampMap;
-    }
-
     const map = new Map();
-    const entries = Array.isArray(PROJECT_TIMESTAMPS) ? PROJECT_TIMESTAMPS : [];
-    for (const entry of entries) {
-      const projectId = normalizeProjectId(entry?.cwd);
-      const timestampMs = Number(entry?.last_modified_ms || 0);
-      if (!projectId || timestampMs <= 0) continue;
+    const catalog = getLiveSidebarCatalog();
+    if (!catalog) return map;
+
+    const updateProjectTimestamp = (projectId, timestampMs) => {
+      if (!projectId || timestampMs <= 0) return;
       const current = Number(map.get(projectId) || 0);
-      if (timestampMs > current) {
-        map.set(projectId, timestampMs);
+      if (timestampMs > current) map.set(projectId, timestampMs);
+    };
+
+    for (const group of catalog.projectGroups) {
+      const projectId = normalizeProjectId(group?.projectId || group?.path);
+      if (!projectId) continue;
+
+      updateProjectTimestamp(projectId, toTimestampMs(group?.cloudEnvironment?.created_at));
+      for (const threadKey of Array.isArray(group?.threadKeys) ? group.threadKeys : []) {
+        const record = catalog.records.get(normalizeLiveThreadKey(threadKey));
+        updateProjectTimestamp(projectId, getLiveThreadTimestampMs(record, catalog));
       }
     }
 
-    projectTimestampMap = map;
-    return projectTimestampMap;
+    for (const record of catalog.records.values()) {
+      const projectId = normalizeProjectId(record?.cwd);
+      updateProjectTimestamp(projectId, getLiveThreadTimestampMs(record, catalog));
+    }
+
+    return map;
   }
 
   function getProjectTimestampMsForRow(row) {
@@ -1155,19 +1355,31 @@ function Get-CodexSidebarPagingPayload {
   }
 
   function getRecentThreadEntries() {
+    const catalog = getLiveSidebarCatalog();
+    if (!catalog) return [];
+
     const projectTitleMap = getProjectTitleMap();
     const nativeThreadTitleMap = getNativeThreadTitleMap();
     const seen = new Set();
+    const entries = [];
 
-    return (Array.isArray(RECENT_THREADS) ? RECENT_THREADS : []).map((entry) => {
-      const cwd = normalizeProjectId(entry?.cwd);
+    for (const threadKey of catalog.threadKeys) {
+      const record = catalog.records.get(threadKey);
+      if (!record) continue;
+
+      const cwd = normalizeProjectId(record.cwd);
       const projectTitle = projectTitleMap.get(cwd) || '';
       const kind = projectTitle ? 'project' : 'task';
-      const id = normalizeThreadId(entry?.id);
-      const snapshotTitle = normalizeText(entry?.display_title || entry?.title);
-      const title = nativeThreadTitleMap.get(id) || snapshotTitle;
-      const lastModifiedMs = Number(entry?.last_modified_ms || 0);
-      return {
+      const id = normalizeThreadId(record.id);
+      const title = nativeThreadTitleMap.get(id) || normalizeText(record.title);
+      const lastModifiedMs = getLiveThreadTimestampMs(record, catalog);
+      if (!id || !title || !cwd || lastModifiedMs <= 0) continue;
+
+      const signature = [id, cwd, title, kind].join('|').toLowerCase();
+      if (seen.has(signature)) continue;
+      seen.add(signature);
+
+      entries.push({
         id,
         title,
         displayTitle: title,
@@ -1177,14 +1389,12 @@ function Get-CodexSidebarPagingPayload {
         lastModifiedMs,
         sourceListLabel: kind === 'project' ? ('Scheduled tasks in ' + projectTitle) : 'Tasks',
         sourceRowText: title
-      };
-    }).filter((entry) => {
-      if (!entry.title || entry.lastModifiedMs <= 0) return false;
-      const signature = [entry.id || '', entry.cwd || '', entry.title, entry.kind].join('|').toLowerCase();
-      if (seen.has(signature)) return false;
-      seen.add(signature);
-      return true;
-    }).sort((left, right) => right.lastModifiedMs - left.lastModifiedMs);
+      });
+    }
+
+    return entries
+      .sort((left, right) => right.lastModifiedMs - left.lastModifiedMs)
+      .slice(0, RECENT_THREAD_LIMIT);
   }
 
   function ensureSyntheticThreadsSection() {
@@ -1197,6 +1407,11 @@ function Get-CodexSidebarPagingPayload {
     }
 
     const recentThreadEntries = getRecentThreadEntries();
+    if (recentThreadEntries.length === 0) {
+      removeSyntheticSection('threads');
+      return null;
+    }
+
     const templateRow = getSyntheticThreadTemplateRow();
     const seen = new Set();
     const threadRows = [];
@@ -1204,7 +1419,7 @@ function Get-CodexSidebarPagingPayload {
       const signature = [entry.id || '', entry.cwd || '', entry.title, entry.kind].join('|').toLowerCase();
       if (seen.has(signature)) continue;
       seen.add(signature);
-      const label = formatThreadLabelFromSnapshot(entry);
+      const label = formatThreadLabelFromCatalog(entry);
       const clone = createSyntheticThreadRow(label, entry.lastModifiedMs, templateRow);
       clone.setAttribute('data-codex-plus-thread-id', entry.id);
       clone.setAttribute(SYNTHETIC_ROW_ATTR, 'threads');
@@ -1471,5 +1686,5 @@ function Get-CodexSidebarPagingPayload {
     start();
   }
 })();
-'@.Replace('__CODEX_PLUS_RECENT_THREADS__', $recentThreadJson).Replace('__CODEX_PLUS_PROJECT_TIMESTAMPS__', $projectTimestampJson)
+'@
 }

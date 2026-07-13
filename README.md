@@ -19,7 +19,6 @@ This project is derived from [`Ben-Boaron0/codex-rtl-fix`](https://github.com/Be
 - Creates `Codex Plus` shortcuts that launch Codex with local enhancement injection.
 - Keeps mixed Hebrew or Arabic content readable without changing the installed app package.
 - Preserves normal left-to-right behavior for technical fragments such as code blocks and English-only text.
-- Verifies the signed bootstrap script before elevation.
 
 ## Requirements
 
@@ -27,7 +26,7 @@ This project is derived from [`Ben-Boaron0/codex-rtl-fix`](https://github.com/Be
 | :--- | :--- |
 | **Windows 10 / 11** | Codex Desktop installed |
 | **Windows PowerShell** | Windows PowerShell 5.1 (`powershell.exe`) or PowerShell 7 (`pwsh`) |
-| **Administrator** | Required for install and restore |
+| **Administrator** | Not required for the normal install flow |
 
 ## Quick Install
 
@@ -37,7 +36,7 @@ Open **Windows PowerShell** and run:
 irm https://raw.githubusercontent.com/limudim972/codex-plus/main/install.ps1 | iex
 ```
 
-The installer verifies `patch.ps1`, downloads the required module files, prompts for elevation, and opens the Codex Plus menu.
+The installer downloads `patch.ps1`, stages the required module files, and opens the Codex Plus menu without prompting for elevation by default.
 
 ## If You Prefer To Run From A Local Checkout
 
@@ -106,30 +105,9 @@ This is a cosmetic warning from the Appx module when running under PowerShell 7.
 
 ## Security And Verification
 
-`install.ps1` verifies an RSA-4096 signature over this repo's `patch.ps1` before running it. `patch.ps1` also pins SHA-256 hashes for every dot-sourced module it loads.
+`install.ps1` downloads `patch.ps1` and the module files it needs, then stages them locally before running the patch. `patch.ps1` still pins SHA-256 hashes for every dot-sourced module it loads.
 
-**Public-key fingerprint (SHA-256):**
-
-```text
-dc:6e:f8:65:eb:3c:00:46:76:98:3b:35:9c:77:1e:ba:31:70:4b:5f:fc:c2:b2:3e:5f:4a:d3:46:44:84:7b:1f
-```
-
-To verify a local checkout:
-
-```powershell
-powershell -ExecutionPolicy Bypass -File .\tools\verify-signature.ps1
-```
-
-This key is what lets the installer confirm that the checked-out `patch.ps1` matches a release signed by the maintainer. If the public key or fingerprint changes unexpectedly and there is no clearly announced key rotation in the repo history or release notes, treat that as a reason to pause and review before running the tool.
-
-## Maintainer Notes
-
-These are only needed when preparing or validating a release:
-
-```powershell
-powershell -ExecutionPolicy Bypass -File .\tools\sign-release.ps1
-powershell -ExecutionPolicy Bypass -File .\tools\verify-signature.ps1
-```
+For local development, run the installer from a checkout you trust and review the files in `src/` before patching a machine you care about.
 
 ## Support Status
 
@@ -138,7 +116,7 @@ powershell -ExecutionPolicy Bypass -File .\tools\verify-signature.ps1
 
 By using it, you accept that:
 
-1. You trust the code you are running with administrator privileges.
+1. You trust the code you are running on your machine.
 2. Modifying Codex behavior may not align with vendor support expectations or terms.
 3. Enhancements depend on launching Codex through Codex Plus-created shortcuts.
 4. This is a stopgap until Codex provides native RTL support.

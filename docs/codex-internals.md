@@ -177,7 +177,7 @@ Native thread rows expose their React `statusState` through the live row fibers.
 
 Synthetic rows still mirror selection with `data-app-action-sidebar-thread-active="true"` and `aria-current="page"`, but `syncSyntheticThreadActiveState()` builds a separate working-thread set from native sidebar rows and their React fibers. It preserves Codex's native `.animate-spin` indicator and adds the Plus fallback spinner when a working native row has no indicator; the same working ID drives the synthetic mirror, so changing the selected synthetic thread does not move the spinner.
 
-Both indicators are attached to the inner thread button, not the outer drag/list wrapper. The Plus fallback uses the native `52px` right-side indicator geometry and remains visible while the row is hovered. Synthetic labels prefer the matching native row's rendered title by thread ID, with the snapshot title used only as a fallback.
+Both indicators are attached to the inner thread button, not the outer drag/list wrapper. The Plus fallback uses the native `52px` right-side indicator geometry and remains visible while the row is hovered. Synthetic labels prefer the matching native row's rendered title by thread ID, with the live Codex conversation title used only as a fallback.
 
 ## Fragility notes
 

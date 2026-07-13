@@ -5,7 +5,6 @@
     Installs and restores the local Codex Desktop RTL runtime.
 #>
 param(
-    [string]$TrustedPubKey,
     [switch]$LaunchCodexRtl,
     [switch]$ShowLaunchSplash,
     [switch]$StartCloseWatchdog,
@@ -20,28 +19,6 @@ if ($env:OS -ne 'Windows_NT') {
     exit 1
 }
 
-$IsAdmin = ([Security.Principal.WindowsPrincipal][Security.Principal.WindowsIdentity]::GetCurrent()).IsInRole([Security.Principal.WindowsBuiltInRole]::Administrator)
-$RequiresElevation = (-not ($LaunchCodexRtl -or $ShowLaunchSplash -or $StartCloseWatchdog -or $SkipMain))
-if ((-not $SkipMain) -and $RequiresElevation -and (-not $IsAdmin)) {
-    Write-Host "Requesting Administrator privileges..." -ForegroundColor Yellow
-    if ($PSCommandPath) {
-        $args = @('-NoProfile', '-ExecutionPolicy', 'Bypass', '-File', $PSCommandPath)
-        if ($TrustedPubKey) { $args += @('-TrustedPubKey', $TrustedPubKey) }
-        Start-Process -FilePath "C:\Windows\System32\WindowsPowerShell\v1.0\powershell.exe" `
-            -Verb RunAs `
-            -ArgumentList $args
-        Exit
-    }
-
-    try {
-        [Net.ServicePointManager]::SecurityProtocol =
-            [Net.ServicePointManager]::SecurityProtocol -bor [Net.SecurityProtocolType]::Tls12
-    } catch { }
-    $InstallUrl = "https://raw.githubusercontent.com/limudim972/codex-plus/main/install.ps1"
-    Invoke-Expression (Invoke-RestMethod $InstallUrl)
-    Exit
-}
-
 foreach ($module in @(
     'src/shared/logging.ps1',
     'src/shared/prompting.ps1',
@@ -52,7 +29,6 @@ foreach ($module in @(
     'src/codex/context-badge.ps1',
     'src/codex/sidebar-paging.ps1',
     'src/runtime/state.ps1',
-    'src/runtime/project-order.ps1',
     'src/runtime/files.ps1',
     'src/runtime/shortcuts.ps1',
     'src/runtime/launch.ps1',
@@ -76,14 +52,14 @@ if ($StartCloseWatchdog) {
         throw 'WatchPort could not be resolved for the Codex close watchdog.'
     }
     Watch-CodexCloseToQuit -Port $WatchPort -LauncherKey $LauncherKey
-    Exit
+    return
 }
 
 $script:CodexRtlPatchScriptPath = $PSCommandPath
 
 if ($ShowLaunchSplash) {
     Show-CodexLaunchSplash -LauncherKey $LauncherKey
-    Exit
+    return
 }
 
 if ($SkipMain) {
@@ -92,12 +68,12 @@ if ($SkipMain) {
 
 if ($InstallCodexPlus) {
     Install-CodexRtlPatch
-    Exit
+    return
 }
 
 if ($LaunchCodexRtl) {
     Launch-CodexRtl
-    Exit
+    return
 }
 
 Show-Menu
