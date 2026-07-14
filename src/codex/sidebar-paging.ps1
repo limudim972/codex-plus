@@ -32,6 +32,9 @@ function Get-CodexSidebarPagingPayload {
   let liveCatalogCache = null;
   let liveCatalogThreadSignature = '';
   let liveCatalogLastRefreshMs = 0;
+  const nativeThreadUnreadIndicatorCache = new Map();
+  const nativeThreadUnreadStateCache = new Set();
+  const nativeThreadWorkingCache = new Set();
 
   const SECTION_SPECS = [
     { key: 'threads', title: 'Threads', minVisibleCount: 3, synthetic: true },
@@ -194,11 +197,40 @@ function Get-CodexSidebarPagingPayload {
 
   function getWorkingThreadIds() {
     const workingThreadIds = new Set();
+    const catalog = getLiveSidebarCatalog(true);
+    for (const record of catalog?.records?.values?.() || []) {
+      const threadId = normalizeThreadId(record?.id || record?.key);
+      const statusType = getLiveThreadStatus(record)?.type;
+      if (threadId && isWorkingThreadStatus(getLiveThreadStatus(record))) {
+        workingThreadIds.add(threadId);
+      } else if (threadId && statusType && statusType !== 'notLoaded') {
+        nativeThreadWorkingCache.delete(threadId);
+      }
+    }
+
+    for (const threadId of nativeThreadWorkingCache) {
+      workingThreadIds.add(threadId);
+    }
+
     for (const row of getNativeThreadRows()) {
       const threadId = normalizeThreadId(getThreadIdForRow(row));
       const statusState = getReactThreadStatusState(row);
-      if (threadId && statusState?.type === 'loading') {
+      if (!threadId || !statusState?.type) continue;
+
+      const hasUnread = Boolean(
+        statusState.unread || Number(statusState.unreadCount || 0) > 0
+      );
+      if (hasUnread) {
+        nativeThreadUnreadStateCache.add(threadId);
+      } else if (statusState.unread === false || statusState.unreadCount !== undefined) {
+        nativeThreadUnreadStateCache.delete(threadId);
+      }
+
+      if (statusState?.type === 'loading') {
+        nativeThreadWorkingCache.add(threadId);
         workingThreadIds.add(threadId);
+      } else {
+        nativeThreadWorkingCache.delete(threadId);
       }
     }
     return workingThreadIds;
@@ -357,29 +389,53 @@ function Get-CodexSidebarPagingPayload {
     const explicitKey = normalizeLiveThreadKey(task?.key || conversation?.key);
     if (explicitKey) return explicitKey;
 
-    const threadId = normalizeLiveThreadKey(conversation?.id);
+    const threadId = normalizeLiveThreadKey(conversation?.id || conversation?.conversationId);
     if (!threadId) return '';
-    const hostId = normalizeLiveThreadKey(task?.kind || conversation?.hostId || 'local') || 'local';
+    const hostId = normalizeLiveThreadKey(task?.kind || task?.hostId || conversation?.hostId || 'local') || 'local';
     return hostId + ':' + threadId;
   }
 
   function addLiveThreadRecord(records, bindings, value, binding) {
     const task = value?.task || value;
-    const conversation = task?.conversation;
-    if (!conversation || !conversation.id) return;
+    const conversation = task?.conversation || (
+      task?.id || task?.conversationId
+        ? task
+        : null
+    );
+    const conversationId = conversation?.id || conversation?.conversationId;
+    if (!conversation || !conversationId) return;
 
     const key = getLiveThreadRecordKey(task, conversation);
     if (!key) return;
 
+    const previous = records.get(key) || {};
+    const nextStatus = conversation.threadRuntimeStatus || conversation.statusState || null;
+    const previousStatus = previous.threadRuntimeStatus || null;
+    const mergedStatus = isWorkingThreadStatus(nextStatus) || isWorkingThreadStatus(previousStatus)
+      ? (isWorkingThreadStatus(nextStatus) ? nextStatus : previousStatus)
+      : (nextStatus || previousStatus);
+    const nextUpdatedAt = Math.max(
+      Number(previous.updatedAt || 0),
+      Number(conversation.updatedAt || 0)
+    ) || conversation.updatedAt || previous.updatedAt || 0;
+    const nextCreatedAt = Math.min(
+      Number(previous.createdAt || 0) || Number.MAX_SAFE_INTEGER,
+      Number(conversation.createdAt || 0) || Number.MAX_SAFE_INTEGER
+    );
+
     records.set(key, {
+      ...previous,
       key,
-      id: String(conversation.id),
-      title: normalizeText(conversation.title),
-      cwd: normalizeText(conversation.cwd),
-      updatedAt: conversation.updatedAt,
-      createdAt: conversation.createdAt,
-      source: normalizeText(conversation.source || task?.source),
-      kind: normalizeText(task?.kind || conversation.hostId)
+      id: String(conversationId),
+      title: normalizeText(conversation.title) || previous.title || '',
+      cwd: normalizeText(conversation.cwd) || previous.cwd || '',
+      updatedAt: nextUpdatedAt,
+      createdAt: nextCreatedAt === Number.MAX_SAFE_INTEGER ? (conversation.createdAt || previous.createdAt || 0) : nextCreatedAt,
+      source: normalizeText(conversation.source || task?.source) || previous.source || '',
+      kind: normalizeText(task?.kind || task?.hostId || conversation.hostId) || previous.kind || '',
+      hasUnreadTurn: Boolean(previous.hasUnreadTurn || conversation.hasUnreadTurn || conversation.unread),
+      unreadCount: Math.max(Number(previous.unreadCount || 0), Number(conversation.unreadCount || 0)),
+      threadRuntimeStatus: mergedStatus
     });
     bindings.set(key, binding);
   }
@@ -391,6 +447,18 @@ function Get-CodexSidebarPagingPayload {
       }
       return;
     }
+
+    for (const collection of [
+      value?.recentConversations,
+      value?.threadSummaries,
+      value?.conversations instanceof Map ? Array.from(value.conversations.values()) : null
+    ]) {
+      if (!Array.isArray(collection)) continue;
+      for (const item of collection) {
+        addLiveThreadRecord(records, bindings, item, binding);
+      }
+    }
+
     addLiveThreadRecord(records, bindings, value, binding);
   }
 
@@ -445,7 +513,7 @@ function Get-CodexSidebarPagingPayload {
     liveCatalogLastRefreshMs = Date.now();
   }
 
-  function getLiveSidebarCatalog() {
+  function getLiveSidebarCatalog(forceScan) {
     const scope = getAppScopeFromSidebar();
     if (!scope) return null;
 
@@ -465,7 +533,7 @@ function Get-CodexSidebarPagingPayload {
       state: stateResult.state,
       cachedBindings: stateResult.cachedBindings
     };
-    refreshLiveThreadBindings(catalog, false);
+    refreshLiveThreadBindings(catalog, Boolean(forceScan));
     return {
       scope,
       state: stateResult.state,
@@ -473,8 +541,45 @@ function Get-CodexSidebarPagingPayload {
         ? stateResult.state.threadKeys.map(normalizeLiveThreadKey).filter(Boolean)
         : [],
       records: liveCatalogCache?.records || new Map(),
-      projectGroups: Array.isArray(stateResult.state.projectGroups) ? stateResult.state.projectGroups : []
+      projectGroups: Array.isArray(stateResult.state.projectGroups) ? stateResult.state.projectGroups : [],
+      cachedBindings: stateResult.cachedBindings
     };
+  }
+
+  function getLiveThreadRecordById(catalog, threadId) {
+    const normalizedThreadId = normalizeThreadId(threadId);
+    if (!normalizedThreadId) return null;
+
+    const matches = Array.from(catalog?.records?.values?.() || [])
+      .filter((record) => normalizeThreadId(record?.id || record?.key) === normalizedThreadId);
+    return matches.find((record) => {
+      return Boolean(record?.hasUnreadTurn)
+        || Number(record?.unreadCount || 0) > 0
+        || isWorkingThreadStatus(getLiveThreadStatus(record));
+    }) || matches[0] || null;
+  }
+
+  function getProjectGroupForThreadKey(catalog, threadKey) {
+    const normalizedThreadKey = normalizeLiveThreadKey(threadKey);
+    if (!normalizedThreadKey) return null;
+
+    return (catalog?.projectGroups || []).find((group) => {
+      return Array.isArray(group?.threadKeys)
+        && group.threadKeys.some((candidate) => normalizeLiveThreadKey(candidate) === normalizedThreadKey);
+    }) || null;
+  }
+
+  function getProjectTitleFromGroup(group) {
+    return normalizeText(group?.label || group?.path || group?.projectId);
+  }
+
+  function getLiveThreadStatus(record) {
+    const status = record?.threadRuntimeStatus;
+    return status && typeof status.type === 'string' ? status : null;
+  }
+
+  function isWorkingThreadStatus(status) {
+    return status?.type === 'loading' || status?.type === 'active';
   }
 
   function getActiveThreadId() {
@@ -551,19 +656,79 @@ function Get-CodexSidebarPagingPayload {
     const button = getSyntheticThreadButton(row);
     if (!button) return null;
 
-    return Array.from(button.children).find((candidate) => {
+    const indicator = Array.from(button.children).find((candidate) => {
       if (!candidate.matches?.('div[data-hover-card-open-immediately]')) return false;
       if (!candidate.classList.contains('shrink-0')) return false;
       return Boolean(candidate.querySelector('.icon-xs.relative.scale-50 .absolute.inset-0.rounded-full'));
     }) || null;
+
+    const threadId = normalizeThreadId(getThreadIdForRow(row));
+    if (indicator && threadId) {
+      nativeThreadUnreadIndicatorCache.set(threadId, indicator.cloneNode(true));
+    }
+    return indicator;
   }
 
-  function syncThreadUnreadIndicator(row, nativeRow) {
+  function keepSyntheticUnreadIndicatorVisible(indicator) {
+    if (!indicator?.classList) return indicator;
+    indicator.classList.remove('group-hover:hidden');
+    indicator.classList.remove('group-has-[:focus-visible]:hidden');
+    return indicator;
+  }
+
+  function getNativeThreadUnreadState(row) {
+    const statusState = getReactThreadStatusState(row);
+    if (!statusState || typeof statusState.type !== 'string') return null;
+    return Boolean(statusState.unread || Number(statusState.unreadCount || 0) > 0);
+  }
+
+  function createThreadUnreadIndicator() {
+    const indicator = document.createElement('div');
+    indicator.className = 'flex shrink-0 items-center justify-end absolute right-0 top-0 z-10 flex h-full min-w-[52px] items-center justify-end gap-2 pr-1 group-hover:hidden group-has-[:focus-visible]:hidden';
+    indicator.setAttribute('data-hover-card-open-immediately', 'true');
+
+    const slot = document.createElement('span');
+    slot.className = 'flex h-5 min-w-5 items-center justify-center';
+    const status = document.createElement('div');
+    status.className = 'relative flex size-5 shrink-0 items-center justify-center text-token-description-foreground';
+    const icon = document.createElement('span');
+    icon.className = 'icon-xs relative scale-50';
+    const dot = document.createElement('span');
+    dot.className = 'absolute inset-0 rounded-full';
+    dot.style.backgroundColor = 'var(--vscode-textLink-foreground)';
+    icon.appendChild(dot);
+    status.appendChild(icon);
+    slot.appendChild(status);
+    indicator.appendChild(slot);
+    return indicator;
+  }
+
+  function syncThreadUnreadIndicator(row, nativeRow, liveRecord) {
     if (!row) return;
 
     const existing = row.querySelector('[' + THREAD_UNREAD_INDICATOR_ATTR + ']');
     const source = getThreadUnreadIndicator(nativeRow);
-    if (!source) {
+    const threadId = normalizeThreadId(row.getAttribute('data-codex-plus-thread-id') || getThreadIdForRow(row));
+    const nativeUnread = nativeRow ? getNativeThreadUnreadState(nativeRow) : null;
+    if (threadId && nativeUnread !== null) {
+      if (nativeUnread) {
+        nativeThreadUnreadStateCache.add(threadId);
+      } else {
+        nativeThreadUnreadStateCache.delete(threadId);
+      }
+    }
+    if (nativeRow && !source && threadId) {
+      nativeThreadUnreadIndicatorCache.delete(threadId);
+    }
+    const cached = !nativeRow && threadId ? nativeThreadUnreadIndicatorCache.get(threadId) : null;
+    const cachedUnread = Boolean(threadId && nativeThreadUnreadStateCache.has(threadId));
+    const liveUnread = Boolean(
+      nativeUnread
+      || cachedUnread
+      || liveRecord?.hasUnreadTurn
+      || Number(liveRecord?.unreadCount || 0) > 0
+    );
+    if (!source && !cached && !liveUnread) {
       if (existing) existing.remove();
       return;
     }
@@ -571,7 +736,9 @@ function Get-CodexSidebarPagingPayload {
     const button = getSyntheticThreadButton(row);
     if (!button) return;
 
-    const next = source.cloneNode(true);
+    const next = keepSyntheticUnreadIndicatorVisible(
+      (source || cached || createThreadUnreadIndicator()).cloneNode(true)
+    );
     next.setAttribute(THREAD_UNREAD_INDICATOR_ATTR, 'true');
     if (existing) {
       existing.replaceWith(next);
@@ -1085,7 +1252,11 @@ function Get-CodexSidebarPagingPayload {
   function formatThreadLabelFromCatalog(entry) {
     const title = normalizeText(entry?.displayTitle || entry?.title);
     if (!title) return '';
-    return title;
+    if (entry?.kind === 'project') {
+      const projectTitle = normalizeText(entry?.projectTitle) || 'project';
+      return title + ' (' + projectTitle + ')';
+    }
+    return title + ' (task)';
   }
 
   function setThreadLabel(row, label, baseLabel, updatedMs) {
@@ -1400,6 +1571,40 @@ function Get-CodexSidebarPagingPayload {
     return null;
   }
 
+  function removeSyntheticThreadActions(row) {
+    if (!row) return;
+
+    const actionContainers = new Set();
+    for (const button of Array.from(row.querySelectorAll('button[aria-label]'))) {
+      const label = normalizeText(button.getAttribute('aria-label')).toLowerCase();
+      if (!label.includes('pin') && !label.includes('archive')) continue;
+
+      const container = button.parentElement?.parentElement;
+      if (container?.tagName === 'DIV') {
+        actionContainers.add(container);
+      } else {
+        button.remove();
+      }
+    }
+
+    for (const container of actionContainers) {
+      container.remove();
+    }
+
+    const actionLayout = Array.from(row.querySelectorAll('div')).filter((element) => {
+      const className = String(element.className || '');
+      return className.includes('group-hover:min-w-12')
+        || className.includes('group-has-[:focus-visible]:min-w-12');
+    });
+    for (const element of actionLayout) {
+      const trailingSpacer = element.nextElementSibling;
+      element.remove();
+      if (trailingSpacer && String(trailingSpacer.className || '').includes('group-hover:hidden')) {
+        trailingSpacer.remove();
+      }
+    }
+  }
+
   function sanitizeSyntheticThreadTemplate(row) {
     const nativeStateAttributes = [
       'data-app-action-sidebar-thread-id',
@@ -1424,6 +1629,7 @@ function Get-CodexSidebarPagingPayload {
 
     const unreadIndicator = getThreadUnreadIndicator(row);
     if (unreadIndicator) unreadIndicator.remove();
+    removeSyntheticThreadActions(row);
   }
 
   function createSyntheticThreadRow(label, updatedMs, templateRow) {
@@ -1480,6 +1686,7 @@ function Get-CodexSidebarPagingPayload {
     if (!listElement) return;
 
     const nativeRowsByThreadId = new Map();
+    const catalog = getLiveSidebarCatalog();
     for (const nativeRow of getNativeThreadRows()) {
       const threadId = normalizeThreadId(getThreadIdForRow(nativeRow));
       if (threadId) nativeRowsByThreadId.set(threadId, nativeRow);
@@ -1508,7 +1715,12 @@ function Get-CodexSidebarPagingPayload {
       if (threadId) {
         row.setAttribute('data-app-action-sidebar-thread-id', threadId);
       }
-      syncThreadUnreadIndicator(row, nativeRowsByThreadId.get(threadId) || null);
+      removeSyntheticThreadActions(row);
+      syncThreadUnreadIndicator(
+        row,
+        nativeRowsByThreadId.get(threadId) || null,
+        getLiveThreadRecordById(catalog, threadId)
+      );
       wireSyntheticThreadRow(row, entry.row.getAttribute(SOURCE_LIST_ATTR) || 'Tasks', entry.row.getAttribute(SOURCE_TEXT_ATTR) || getThreadTitleForRow(entry.row));
       orderedRows.push(row);
       if (threadId) {
@@ -1544,8 +1756,9 @@ function Get-CodexSidebarPagingPayload {
       if (!record) continue;
 
       const cwd = normalizeProjectId(record.cwd);
-      const projectTitle = projectTitleMap.get(cwd) || '';
-      const kind = projectTitle ? 'project' : 'task';
+      const projectGroup = getProjectGroupForThreadKey(catalog, threadKey);
+      const projectTitle = getProjectTitleFromGroup(projectGroup) || projectTitleMap.get(cwd) || '';
+      const kind = projectGroup || projectTitle ? 'project' : 'task';
       const id = normalizeThreadId(record.id);
       const title = nativeThreadTitleMap.get(id) || normalizeText(record.title);
       const lastModifiedMs = getLiveThreadTimestampMs(record, catalog);
@@ -1561,6 +1774,7 @@ function Get-CodexSidebarPagingPayload {
         displayTitle: title,
         cwd,
         projectTitle,
+        projectId: normalizeText(projectGroup?.projectId),
         kind,
         lastModifiedMs,
         sourceListLabel: kind === 'project' ? ('Scheduled tasks in ' + projectTitle) : 'Tasks',
@@ -1599,7 +1813,7 @@ function Get-CodexSidebarPagingPayload {
       clone.setAttribute(SYNTHETIC_ROW_ATTR, 'threads');
       clone.setAttribute(THREAD_UPDATED_ATTR, String(entry.lastModifiedMs));
       setThreadLabel(clone, label, stripThreadTimestampSuffix(label), entry.lastModifiedMs);
-      wireSyntheticThreadRow(clone, entry.sourceListLabel || 'Tasks', entry.displayTitle || entry.title);
+      wireSyntheticThreadRow(clone, entry.sourceListLabel || 'Tasks', entry.sourceRowText || entry.title);
       threadRows.push({
         row: clone,
         timestampMs: entry.lastModifiedMs,
@@ -1855,6 +2069,8 @@ function Get-CodexSidebarPagingPayload {
       }
     }, 50);
   };
+
+  window.setInterval(schedule, 500);
 
   const observer = new MutationObserver(schedule);
   const start = () => {

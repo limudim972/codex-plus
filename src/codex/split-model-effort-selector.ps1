@@ -6,6 +6,7 @@ function Get-CodexSplitModelEffortSelectorPayload {
 
   const HOST_ATTR = 'data-codex-plus-split-model-effort-selector';
   const STYLE_ATTR = 'data-codex-plus-split-model-effort-style';
+  const NATIVE_HIDDEN_ATTR = 'data-codex-plus-native-selector-hidden';
   const NATIVE_TRIGGER_SELECTOR = '[data-codex-intelligence-trigger="true"]';
   const EFFORT_LABELS = {
     low: 'Light',
@@ -40,6 +41,8 @@ function Get-CodexSplitModelEffortSelectorPayload {
   let pending = false;
   let destroyed = false;
   let syncInterval = null;
+  let hiddenNativeTrigger = null;
+  let hiddenNativeTriggerState = null;
 
   function modelLabel(model) {
     return String(model.displayName || model.model || model.id || 'Model')
@@ -112,6 +115,43 @@ function Get-CodexSplitModelEffortSelectorPayload {
     let child = descendant;
     while (child && child.parentElement !== parent) child = child.parentElement;
     return child;
+  }
+
+  function restoreNativeTrigger() {
+    if (!hiddenNativeTrigger) return;
+
+    hiddenNativeTrigger.hidden = Boolean(hiddenNativeTriggerState?.hidden);
+    if (hiddenNativeTriggerState?.ariaHidden == null) {
+      hiddenNativeTrigger.removeAttribute('aria-hidden');
+    } else {
+      hiddenNativeTrigger.setAttribute('aria-hidden', hiddenNativeTriggerState.ariaHidden);
+    }
+    hiddenNativeTrigger.removeAttribute(NATIVE_HIDDEN_ATTR);
+    if (hiddenNativeTriggerState?.display) {
+      hiddenNativeTrigger.style.setProperty('display', hiddenNativeTriggerState.display);
+    } else {
+      hiddenNativeTrigger.style.removeProperty('display');
+    }
+    hiddenNativeTrigger = null;
+    hiddenNativeTriggerState = null;
+  }
+
+  function hideNativeTrigger(nativeTrigger) {
+    if (!nativeTrigger) return;
+    if (hiddenNativeTrigger !== nativeTrigger) {
+      restoreNativeTrigger();
+      hiddenNativeTrigger = nativeTrigger;
+      hiddenNativeTriggerState = {
+        hidden: nativeTrigger.hidden,
+        ariaHidden: nativeTrigger.getAttribute('aria-hidden'),
+        display: nativeTrigger.style.display
+      };
+    }
+
+    nativeTrigger.hidden = true;
+    nativeTrigger.setAttribute('aria-hidden', 'true');
+    nativeTrigger.setAttribute(NATIVE_HIDDEN_ATTR, 'true');
+    nativeTrigger.style.setProperty('display', 'none', 'important');
   }
 
   function ensureStyle() {
@@ -213,9 +253,11 @@ function Get-CodexSplitModelEffortSelectorPayload {
     const controller = getController(nativeTrigger);
     if (!nativeTrigger || !controller) {
       if (host) host.hidden = true;
+      restoreNativeTrigger();
       return;
     }
 
+    hideNativeTrigger(nativeTrigger);
     const toolbar = findToolbar(nativeTrigger);
     const anchor = directChildContaining(toolbar, nativeTrigger) || nativeTrigger;
     if (!host || !host.isConnected) {
@@ -241,6 +283,7 @@ function Get-CodexSplitModelEffortSelectorPayload {
     observer.disconnect();
     if (syncInterval) window.clearInterval(syncInterval);
     if (host) host.remove();
+    restoreNativeTrigger();
   }
 
   const observer = new MutationObserver(schedule);
