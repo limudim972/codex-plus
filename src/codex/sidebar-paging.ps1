@@ -5,7 +5,6 @@ function Get-CodexSidebarPagingPayload {
   const SIDEBAR_ROOT_SELECTOR = '[data-app-action-sidebar-scroll]';
   const PAGE_SIZE = 3;
   const RECENT_WINDOW_MS = 24 * 60 * 60 * 1000;
-  const RECENT_THREAD_LIMIT = 12;
   const SYNTHETIC_SECTION_ATTR = 'data-codex-plus-sidebar-synthetic-section';
   const SYNTHETIC_LIST_ATTR = 'data-codex-plus-sidebar-synthetic-list';
   const SYNTHETIC_ROW_ATTR = 'data-codex-plus-sidebar-synthetic-row';
@@ -1560,9 +1559,7 @@ function Get-CodexSidebarPagingPayload {
       });
     }
 
-    return entries
-      .sort((left, right) => right.lastModifiedMs - left.lastModifiedMs)
-      .slice(0, RECENT_THREAD_LIMIT);
+    return entries.sort((left, right) => right.lastModifiedMs - left.lastModifiedMs);
   }
 
   function ensureSyntheticThreadsSection() {

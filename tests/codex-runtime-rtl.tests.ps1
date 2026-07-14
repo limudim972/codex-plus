@@ -797,6 +797,7 @@ Assert-True ($sidebarPagingPayload.Contains('sortUnmanagedSidebarLists')) 'Sideb
 Assert-True ($sidebarPagingPayload.Contains('hover:bg-token-list-hover-background')) 'Synthetic Threads fallback rows should keep hover styling.'
 Assert-True ($sidebarPagingPayload.Contains('displayTitle')) 'Synthetic Threads labels should come from the live catalog display title.'
 Assert-True ($sidebarPagingPayload.Contains('data-codex-plus-thread-id')) 'Synthetic Threads rows should retain the source thread id for click proxying.'
+Assert-True ($sidebarPagingPayload.Contains('return entries.sort((left, right) => right.lastModifiedMs - left.lastModifiedMs);')) 'Synthetic Threads should mirror the full live thread catalog without a recent-items cap.'
 Assert-True ($sidebarPagingPayload.Contains('data-app-action-sidebar-thread-title')) 'Synthetic Threads should target the live Codex thread title element.'
 Assert-True ($sidebarPagingPayload.Contains("data-codex-plus-sidebar-synthetic-section")) 'Sidebar paging should mark synthetic sections explicitly.'
 Assert-True ($sidebarPagingPayload.Contains("data-codex-plus-sidebar-synthetic-list")) 'Synthetic Threads should mark their list so source lookups can skip it.'
