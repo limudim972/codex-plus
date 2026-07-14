@@ -20,13 +20,18 @@ function Pause-ForInstallerExit {
 }
 
 function Start-CodexPlusAfterInstall {
-    $desktopShortcutPath = Join-Path $env:USERPROFILE 'Desktop\Codex Plus.lnk'
-    if (-not (Test-Path -LiteralPath $desktopShortcutPath)) {
-        throw "Codex Plus desktop shortcut not found: $desktopShortcutPath"
+    $shortcutCandidates = @(
+        (Join-Path $env:USERPROFILE 'Desktop\Codex Plus.lnk'),
+        (Join-Path $env:APPDATA 'Microsoft\Windows\Start Menu\Programs\Codex Plus.lnk')
+    )
+    $shortcutPath = $shortcutCandidates | Where-Object { Test-Path -LiteralPath $_ } | Select-Object -First 1
+    if (-not $shortcutPath) {
+        Write-Host 'Codex Plus installed, but no launcher shortcut was found. Start it from the Start Menu.' -ForegroundColor Yellow
+        return
     }
 
-    Write-Host "Launching Codex Plus from the desktop link..." -ForegroundColor Green
-    Start-Process -FilePath $desktopShortcutPath | Out-Null
+    Write-Host "Launching Codex Plus from $shortcutPath ..." -ForegroundColor Green
+    Start-Process -FilePath $shortcutPath | Out-Null
 }
 
 if ($env:OS -ne 'Windows_NT') {

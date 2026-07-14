@@ -48,6 +48,18 @@ function Install-CodexRtlPatch {
         Write-Warn "Codex Plus Start Menu shortcut creation skipped for $(Get-CodexRtlShortcutPath): $($_.Exception.Message)"
     }
 
+    try {
+        $desktopShortcutPath = Join-Path $env:USERPROFILE 'Desktop\Codex Plus.lnk'
+        if (-not (Test-Path -LiteralPath $desktopShortcutPath) -or (Test-CodexRtlOwnedShortcut -ShortcutPath $desktopShortcutPath)) {
+            $desktopSpec = New-CodexLauncherShortcutSpec -ShortcutPath $desktopShortcutPath -InstallInfo $installInfo
+            New-CodexLauncherShortcut -ShortcutPath $desktopShortcutPath -Spec $desktopSpec
+            $ownedArtifacts += $desktopShortcutPath
+            $createdOrRefreshedCount++
+        }
+    } catch {
+        Write-Warn "Codex Plus Desktop shortcut creation skipped for $env:USERPROFILE\Desktop\Codex Plus.lnk: $($_.Exception.Message)"
+    }
+
     $state = New-CodexRtlState `
         -InstallInfo $installInfo `
         -Port $port `
