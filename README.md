@@ -103,6 +103,28 @@ Codex Plus stores its runtime under `%LOCALAPPDATA%\Codex Plus` and launches Cod
 
 This is a cosmetic warning from the Appx module when running under PowerShell 7. It does not affect the tool. You can safely ignore it, or switch to Windows PowerShell (`powershell.exe`) to suppress it.
 
+## Build a Single-EXE Installer
+
+On Windows, run:
+
+```powershell
+powershell.exe -ExecutionPolicy Bypass -File .\build-exe-installer.ps1
+```
+
+This creates `dist\CodexPlus-Setup.exe`, a self-extracting installer containing the checked-in PowerShell runtime and modules. Codex Desktop must already be installed, but the end user only needs to run the one EXE. The default IExpress build requires only Windows; the alternative .NET builder requires the .NET 8 SDK.
+
+### Installer files
+
+| File | Needed to build the EXE? | Needed by the end user? | Purpose |
+|---|---:|---:|---|
+| `build-exe-installer.ps1` | Yes | No | Builds the Windows IExpress EXE. |
+| `install.ps1` | Yes | No | Embedded installer entry point. |
+| `patch.ps1` | Yes | No | Embedded runtime setup and menu logic. |
+| `src/**/*.ps1` | Yes | No | Embedded runtime modules and Codex Plus features. |
+| `dist/CodexPlus-Setup.exe` | No | Yes | The only Codex Plus file the end user needs to run. |
+
+The EXE temporarily extracts the embedded scripts during installation and removes them afterward. The original `src/`, `install.ps1`, and `patch.ps1` files are not copied beside the EXE.
+
 ## Security And Verification
 
 `install.ps1` downloads `patch.ps1` and the module files it needs, then stages them locally before running the patch. `patch.ps1` still pins SHA-256 hashes for every dot-sourced module it loads.
