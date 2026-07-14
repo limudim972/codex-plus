@@ -34,7 +34,7 @@ function Get-CodexSplitModelEffortSelectorPayload {
     'leading-[18px]',
     'min-w-0'
   ].join(' ');
-  const CHEVRON = '<svg width="16" height="16" viewBox="0 0 16 16" fill="currentColor" xmlns="http://www.w3.org/2000/svg" aria-hidden="true" class="cp-split-selector-chevron me-0.5 h-3.5 w-3.5 shrink-0 text-token-text-tertiary"><path d="M12.1338 5.94433C12.3919 5.77382 12.7434 5.80202 12.9707 6.02929C13.1979 6.25656 13.2261 6.60807 13.0556 6.8662L12.9707 6.9707L8.47067 11.4707C8.21097 11.7304 7.78896 11.7304 7.52926 11.4707L3.02926 6.9707L2.9443 6.8662C2.77379 6.60807 2.80199 6.25656 3.02926 6.02929C3.25653 5.80202 3.60804 5.77382 3.86617 5.94433L3.97067 6.02929L7.99996 10.0586L12.0293 6.02929L12.1338 5.94433Z"></path></svg>';
+  const CHEVRON = '<svg width="16" height="16" viewBox="0 0 16 16" fill="currentColor" xmlns="http://www.w3.org/2000/svg" aria-hidden="true" class="cp-split-selector-chevron h-3.5 w-3.5 shrink-0 text-token-text-tertiary"><path d="M12.1338 5.94433C12.3919 5.77382 12.7434 5.80202 12.9707 6.02929C13.1979 6.25656 13.2261 6.60807 13.0556 6.8662L12.9707 6.9707L8.47067 11.4707C8.21097 11.7304 7.78896 11.7304 7.52926 11.4707L3.02926 6.9707L2.9443 6.8662C2.77379 6.60807 2.80199 6.25656 3.02926 6.02929C3.25653 5.80202 3.60804 5.77382 3.86617 5.94433L3.97067 6.02929L7.99996 10.0586L12.0293 6.02929L12.1338 5.94433Z"></path></svg>';
 
   let host = null;
   let pending = false;
@@ -79,6 +79,25 @@ function Get-CodexSplitModelEffortSelectorPayload {
       .filter(Boolean);
   }
 
+  function syncSelectWidth(select) {
+    if (!select || !select.options.length) return;
+    const selectedOption = select.options[select.selectedIndex];
+    if (!selectedOption) return;
+
+    const styles = getComputedStyle(select);
+    const canvas = document.createElement('canvas');
+    const context = canvas.getContext('2d');
+    if (!context) return;
+
+    context.font = [styles.fontStyle, styles.fontWeight, styles.fontSize, styles.fontFamily].join(' ');
+    const label = selectedOption.textContent || '';
+    const letterSpacing = parseFloat(styles.letterSpacing) || 0;
+    const textWidth = context.measureText(label).width + letterSpacing * Math.max(0, label.length - 1);
+    const horizontalPadding = parseFloat(styles.paddingInlineStart) + parseFloat(styles.paddingInlineEnd);
+    const horizontalBorder = parseFloat(styles.borderInlineStartWidth) + parseFloat(styles.borderInlineEndWidth);
+    select.style.width = Math.ceil(textWidth + horizontalPadding + horizontalBorder) + 'px';
+  }
+
   function findToolbar(nativeTrigger) {
     let node = nativeTrigger.parentElement;
     while (node && node !== document.body) {
@@ -100,15 +119,15 @@ function Get-CodexSplitModelEffortSelectorPayload {
     const style = document.createElement('style');
     style.setAttribute(STYLE_ATTR, 'true');
     style.textContent = `
-      [${HOST_ATTR}] { align-items: center; display: inline-flex; gap: 4px; min-width: 0; }
+      [${HOST_ATTR}] { align-items: center; display: inline-flex; gap: 0; min-width: 0; }
       [${HOST_ATTR}] .cp-split-selector-wrap { display: inline-flex; min-width: 0; position: relative; }
       [${HOST_ATTR}] .cp-split-selector {
         appearance: none; background-color: transparent; font-size: 13px; font-weight: 445; height: 28px;
-        line-height: 18px; max-width: 118px; padding-block: 0; padding-inline-end: 25px; padding-inline-start: 8px;
+        line-height: 18px; max-width: 118px; padding-block: 0; padding-inline-end: 14px; padding-inline-start: 8px;
       }
       [${HOST_ATTR}] .cp-split-selector-effort { max-width: 112px; }
       [${HOST_ATTR}] .cp-split-selector-chevron {
-        inset-inline-end: 5px; pointer-events: none; position: absolute; top: 50%; transform: translateY(-50%);
+        inset-inline-end: 0; margin: 0; pointer-events: none; position: absolute; top: 50%; transform: translateY(-50%);
       }
     `;
     document.head.appendChild(style);
@@ -148,6 +167,8 @@ function Get-CodexSplitModelEffortSelectorPayload {
 
     modelSelect.value = selectedModel.model || selectedModel.id;
     effortSelect.value = efforts.includes(controller.reasoningEffort) ? controller.reasoningEffort : (selectedModel.defaultReasoningEffort || efforts[0]);
+    syncSelectWidth(modelSelect);
+    syncSelectWidth(effortSelect);
     modelSelect.disabled = Boolean(controller.modelOptionsDisabled);
     effortSelect.disabled = Boolean(controller.reasoningEffortDisabled || efforts.length === 0);
   }
