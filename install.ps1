@@ -19,6 +19,16 @@ function Pause-ForInstallerExit {
     }
 }
 
+function Start-CodexPlusAfterInstall {
+    $desktopShortcutPath = Join-Path $env:USERPROFILE 'Desktop\Codex Plus.lnk'
+    if (-not (Test-Path -LiteralPath $desktopShortcutPath)) {
+        throw "Codex Plus desktop shortcut not found: $desktopShortcutPath"
+    }
+
+    Write-Host "Launching Codex Plus from the desktop link..." -ForegroundColor Green
+    Start-Process -FilePath $desktopShortcutPath | Out-Null
+}
+
 if ($env:OS -ne 'Windows_NT') {
     Write-Host "Codex Plus is Windows-only. Please run it on Windows 10/11." -ForegroundColor Red
     exit 1
@@ -74,8 +84,7 @@ if ($LocalDev) {
     Write-Host "Launching local Codex Plus installer..." -ForegroundColor Green
     & (Join-Path $SourceRoot 'patch.ps1') -InstallCodexPlus
     Write-Host "Codex Plus installer finished." -ForegroundColor Green
-    Write-Host "Launch Codex Plus to see the changes." -ForegroundColor Yellow
-    Pause-ForInstallerExit
+    Start-CodexPlusAfterInstall
 } else {
     $content = [System.Text.Encoding]::UTF8.GetString($patchBytes)
     if ($content.Length -gt 0 -and $content[0] -eq [char]0xFEFF) { $content = $content.Substring(1) }
@@ -105,6 +114,5 @@ if ($LocalDev) {
     Write-Host "Codex Plus downloaded ($($patchBytes.Length) bytes) and modules staged. Running installer..." -ForegroundColor Green
     & $TmpFile -InstallCodexPlus
     Write-Host "Codex Plus installer finished." -ForegroundColor Green
-    Write-Host "Launch Codex Plus to see the changes." -ForegroundColor Yellow
-    Pause-ForInstallerExit
+    Start-CodexPlusAfterInstall
 }
