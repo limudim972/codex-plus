@@ -812,6 +812,13 @@ function Get-CodexSidebarPagingPayload {
     element.classList.add('text-token-foreground');
   }
 
+  function isThreadSidebarRow(row) {
+    return Boolean(
+      getThreadIdForRow(row)
+      || row?.getAttribute(SYNTHETIC_ROW_ATTR) === 'threads'
+    );
+  }
+
   function syncThreadToggleButton(button, collapsed) {
     if (!button) return;
     const nextLabel = collapsed ? 'Show Threads list' : 'Hide Threads list';
@@ -1108,6 +1115,8 @@ function Get-CodexSidebarPagingPayload {
       const timestampText = nextTimestampLabel ? '[' + nextTimestampLabel + ']' : '';
 
       if (timestampText && titleHost) {
+        // Keep thread and task timestamps inset like project rows instead of pushing them to the edge.
+        titleHost.classList.toggle('pr-6', isThreadSidebarRow(row));
         if (!timestampElement) {
           timestampElement = row.ownerDocument.createElement('span');
           timestampElement.setAttribute(NATIVE_TIMESTAMP_ELEMENT_ATTR, 'true');

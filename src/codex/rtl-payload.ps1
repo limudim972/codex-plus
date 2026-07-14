@@ -400,6 +400,7 @@ function Get-CodexPlusPayloadBundle {
         Get-CodexRtlPayload
         Get-CodexRtlPayloadPlan
         Get-CodexContextBadgePayload
+        Get-CodexSplitModelEffortSelectorPayload
         Get-CodexSidebarPagingPayload
     ) -join "`n"
 }

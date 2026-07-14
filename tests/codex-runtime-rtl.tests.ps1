@@ -47,6 +47,7 @@ try {
         'src/shared/asar.ps1',
         'src/codex/detection.ps1',
         'src/codex/rtl-payload.ps1',
+        'src/codex/split-model-effort-selector.ps1',
         'src/runtime/state.ps1',
         'src/runtime/files.ps1',
         'src/runtime/shortcuts.ps1',
@@ -178,6 +179,7 @@ Assert-True ($sidebarPayload.Contains('threadRecencyAtByKey')) 'Sidebar payload 
 Assert-True ($sidebarPayload.Contains('conversation.updatedAt')) 'Sidebar payload should use live conversation update times.'
 Assert-True ($sidebarPayload.Contains('NATIVE_TIMESTAMP_ELEMENT_ATTR')) 'Sidebar payload should render timestamps as dedicated row elements.'
 Assert-True ($sidebarPayload.Contains('inline-flex shrink-0 items-center whitespace-nowrap text-xs text-token-text-tertiary')) 'Sidebar payload should match the task timestamp flex styling.'
+Assert-True ($sidebarPayload.Contains("titleHost.classList.toggle('pr-6'")) 'Sidebar payload should keep thread and task timestamps inset from the row edge.'
 Assert-True ($sidebarPayload.Contains('THREAD_UNREAD_INDICATOR_ATTR')) 'Sidebar payload should identify owned unread indicators on synthetic rows.'
 Assert-True ($sidebarPayload.Contains('syncThreadUnreadIndicator')) 'Sidebar payload should mirror unread indicators from matching native thread rows.'
 Assert-True ($sidebarPayload.Contains('isUnreadSyntheticThreadRow')) 'Sidebar payload should identify unread synthetic thread rows for visibility.'
@@ -783,6 +785,16 @@ Assert-True (-not $textSelectorsOnly.Contains("'td'")) 'Payload text block targe
 Assert-True (-not $textSelectorsOnly.Contains("'th'")) 'Payload text block targeting should not include table headers.'
 Assert-True ($payload.Contains('MutationObserver')) 'Payload should reapply after React DOM changes.'
 
+$splitSelectorPayload = Get-CodexSplitModelEffortSelectorPayload
+Assert-True ($splitSelectorPayload.Contains('data-codex-plus-model-select')) 'Split selector should expose a dedicated model select.'
+Assert-True ($splitSelectorPayload.Contains('data-codex-plus-effort-select')) 'Split selector should expose a dedicated effort select.'
+Assert-True ($splitSelectorPayload.Contains('supportedReasoningEfforts')) 'Split selector should derive effort options from the selected live model.'
+Assert-True ($splitSelectorPayload.Contains('latest.onSelectModel(model.model || model.id, nextEffort)')) 'Split selector should use Codex native model and effort callback arguments.'
+Assert-True ($splitSelectorPayload.Contains('latest.onSelectReasoningEffort(event.target.value)')) 'Split selector should use Codex native effort callback.'
+Assert-True ($splitSelectorPayload.Contains('const CHEVRON')) 'Split selector should render a native-style chevron for each select.'
+Assert-True ($splitSelectorPayload.Contains('window.setInterval(schedule, 500)')) 'Split selector should periodically reconcile native Codex state after delayed updates.'
+Assert-True (-not ($splitSelectorPayload.Contains('role="dialog"'))) 'Split selector should not open a custom popup panel.'
+
 $sidebarPagingPayload = Get-CodexSidebarPagingPayload
 Assert-True ($sidebarPagingPayload.Contains("key: 'threads'")) 'Sidebar paging should define the synthetic Threads section.'
 Assert-True ($sidebarPagingPayload.Contains("title: 'Threads'")) 'Sidebar paging should render a Threads heading.'
@@ -836,6 +848,7 @@ Assert-True (-not ($sidebarPagingPayload.Contains('data-codex-plus-thread-timest
 
 $payloadBundle = Get-CodexPlusPayloadBundle
 Assert-True (-not ($payloadBundle.Contains('__CODEX_PLUS_WINDOW_TITLE'))) 'Injected payload bundle should not rewrite the webview title for taskbar labeling.'
+Assert-True ($payloadBundle.Contains('__CODEX_PLUS_SPLIT_MODEL_EFFORT_SELECTOR')) 'Injected payload bundle should include the split model and effort selectors.'
 
 $nodeCommand = Get-Command -Name node -ErrorAction SilentlyContinue
 if ($nodeCommand) {
