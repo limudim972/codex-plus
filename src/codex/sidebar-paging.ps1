@@ -37,7 +37,7 @@ function Get-CodexSidebarPagingPayload {
   const SECTION_SPECS = [
     { key: 'threads', title: 'Threads', minVisibleCount: 3, synthetic: true },
     { key: 'projects', title: 'Projects', minVisibleCount: 2 },
-    { key: 'tasks', labels: ['Tasks', 'Chats'], minVisibleCount: 0 }
+    { key: 'tasks', labels: ['Tasks', 'Chats'], minVisibleCount: 3 }
   ];
 
   function normalizeText(text) {
@@ -1287,7 +1287,7 @@ function Get-CodexSidebarPagingPayload {
     if (!rows.length) return minimum;
 
     if (spec.key === 'tasks') {
-      return Math.max(minimum, countRecentRows(rows, (row) => getThreadTimestampMsForRow(row)));
+      return minimum;
     }
 
     return minimum;
@@ -1327,6 +1327,13 @@ function Get-CodexSidebarPagingPayload {
     }
   }
 
+  function isUnreadSyntheticThreadRow(row) {
+    return Boolean(
+      row?.hasAttribute(SYNTHETIC_ROW_ATTR)
+      && row.querySelector('[' + THREAD_UNREAD_INDICATOR_ATTR + ']')
+    );
+  }
+
   function clearPagers(root) {
     for (const pager of Array.from(root.querySelectorAll('[' + PAGER_ATTR + ']'))) {
       pager.remove();
@@ -1335,8 +1342,20 @@ function Get-CodexSidebarPagingPayload {
 
   function bindSingleActivation(button, handler) {
     if (!button) return;
-    button.onclick = handler;
-    button.onpointerup = null;
+
+    const pointerActivationKey = '__codexPlusLastPointerActivationAt';
+    button.onclick = (event) => {
+      const lastPointerActivationAt = Number(button[pointerActivationKey] || 0);
+      button[pointerActivationKey] = 0;
+      if (lastPointerActivationAt > 0 && performance.now() - lastPointerActivationAt < 500) {
+        return;
+      }
+      handler(event);
+    };
+    button.onpointerup = (event) => {
+      button[pointerActivationKey] = performance.now();
+      handler(event);
+    };
   }
 
   function removeSyntheticSection(sectionKey) {
@@ -1667,8 +1686,26 @@ function Get-CodexSidebarPagingPayload {
       setThreadLabel(row, nextLabel, baseLabel, timestampMs);
     }
 
-    const visibleRows = rows.slice(0, visibleCount);
-    const hiddenRows = rows.slice(visibleCount);
+    let orderedRows = rows;
+    let effectiveVisibleCount = visibleCount;
+    if (sectionKey === 'threads' && sectionList.hasAttribute(SYNTHETIC_LIST_ATTR)) {
+      const initialVisibleRows = rows.slice(0, visibleCount);
+      const initiallyHiddenRows = rows.slice(visibleCount);
+      const unreadRows = initiallyHiddenRows.filter(isUnreadSyntheticThreadRow);
+      if (unreadRows.length > 0) {
+        const remainingHiddenRows = initiallyHiddenRows.filter((row) => !isUnreadSyntheticThreadRow(row));
+        orderedRows = [...initialVisibleRows, ...unreadRows, ...remainingHiddenRows];
+        effectiveVisibleCount = initialVisibleRows.length + unreadRows.length;
+
+        const existingPager = sectionList.querySelector('[' + PAGER_ATTR + '="' + sectionKey + '"]');
+        for (const row of orderedRows) {
+          sectionList.insertBefore(row, existingPager);
+        }
+      }
+    }
+
+    const visibleRows = orderedRows.slice(0, effectiveVisibleCount);
+    const hiddenRows = orderedRows.slice(effectiveVisibleCount);
     const loaded = Math.max(0, Math.min(readLoaded(sectionList), hiddenRows.length));
 
     for (const row of visibleRows) {
