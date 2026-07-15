@@ -1,3 +1,12 @@
+# Normalize tracked text files consistently across Windows and non-Windows checkouts.
+*               text=auto
+*.ps1           text eol=lf
+*.md            text eol=lf
+*.bat           text eol=crlf
+*.vbs           text eol=crlf
+*.ico           binary
+*.exe           binary
+
 # Files involved in RSA signature verification MUST stay byte-identical between
 # the working copy, the repository, and what raw.githubusercontent.com serves.
 # Any CRLF<->LF conversion would invalidate patch.ps1.sig. We pin them to LF so

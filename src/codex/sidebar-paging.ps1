@@ -422,6 +422,24 @@ function Get-CodexSidebarPagingPayload {
       Number(previous.createdAt || 0) || Number.MAX_SAFE_INTEGER,
       Number(conversation.createdAt || 0) || Number.MAX_SAFE_INTEGER
     );
+    const currentUnread = conversation.hasUnreadTurn !== undefined
+      ? Boolean(conversation.hasUnreadTurn)
+      : conversation.unread !== undefined
+        ? Boolean(conversation.unread)
+        : null;
+    const currentUnreadCount = conversation.unreadCount !== undefined
+      ? Number(conversation.unreadCount)
+      : null;
+    const hasUnreadTurn = currentUnread !== null
+      ? currentUnread
+      : Number.isFinite(currentUnreadCount)
+        ? currentUnreadCount > 0
+        : Boolean(previous.hasUnreadTurn);
+    const unreadCount = Number.isFinite(currentUnreadCount)
+      ? Math.max(0, currentUnreadCount)
+      : currentUnread === false
+        ? 0
+        : Number(previous.unreadCount || 0);
 
     records.set(key, {
       ...previous,
@@ -433,8 +451,8 @@ function Get-CodexSidebarPagingPayload {
       createdAt: nextCreatedAt === Number.MAX_SAFE_INTEGER ? (conversation.createdAt || previous.createdAt || 0) : nextCreatedAt,
       source: normalizeText(conversation.source || task?.source) || previous.source || '',
       kind: normalizeText(task?.kind || task?.hostId || conversation.hostId) || previous.kind || '',
-      hasUnreadTurn: Boolean(previous.hasUnreadTurn || conversation.hasUnreadTurn || conversation.unread),
-      unreadCount: Math.max(Number(previous.unreadCount || 0), Number(conversation.unreadCount || 0)),
+      hasUnreadTurn,
+      unreadCount,
       threadRuntimeStatus: mergedStatus
     });
     bindings.set(key, binding);
