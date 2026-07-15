@@ -48,6 +48,7 @@ $ModuleFiles = @(
     'src/shared/logging.ps1',
     'src/shared/prompting.ps1',
     'src/shared/asar.ps1',
+    'src/runtime/assets/codex-plus.ico',
     'src/codex/detection.ps1',
     'src/codex/rtl-payload.ps1',
     'src/codex/rtl-payload-Plan.ps1',

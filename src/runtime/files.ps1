@@ -8,6 +8,7 @@ function Install-CodexRtlRuntimeFiles {
     $runtimeRoot = Get-CodexRtlRuntimeRoot
     $items = @(
         'patch.ps1',
+        'src/runtime/assets/codex-plus.ico',
         'src/shared/logging.ps1',
         'src/shared/prompting.ps1',
         'src/shared/asar.ps1',

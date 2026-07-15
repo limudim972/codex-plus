@@ -2,6 +2,14 @@ function Get-CodexRtlShortcutPath {
     Join-Path $env:APPDATA 'Microsoft\Windows\Start Menu\Programs\Codex Plus.lnk'
 }
 
+function Get-CodexRtlIconPath {
+    $runtimeIconPath = Join-Path (Get-CodexRtlRuntimeRoot) 'src\runtime\assets\codex-plus.ico'
+    if (Test-Path -LiteralPath $runtimeIconPath) {
+        return $runtimeIconPath
+    }
+    return $null
+}
+
 function Get-CodexShortcutSearchRoots {
     @(
         (Join-Path $env:APPDATA 'Microsoft\Windows\Start Menu\Programs'),
@@ -86,6 +94,10 @@ function Get-CodexSiblingRtlShortcutPath {
 function Get-CodexIconLocation {
     param($InstallInfo)
 
+    $runtimeIconPath = Get-CodexRtlIconPath
+    if ($runtimeIconPath) {
+        return $runtimeIconPath
+    }
     if ($InstallInfo -and $InstallInfo.InstallLocation) {
         $icon = Join-Path $InstallInfo.InstallLocation 'app\resources\icon.ico'
         if (Test-Path -LiteralPath $icon) { return $icon }
