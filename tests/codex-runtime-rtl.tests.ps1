@@ -104,6 +104,8 @@ Assert-True ($launcherScript.Contains('-LaunchCodexRtl')) 'VBS launcher should c
 Assert-True ($launcherScript.Contains('-ShowLaunchSplash')) 'VBS launcher should start the launch splash helper before Codex appears.'
 Assert-True ($launcherScript.Contains('WScript.Arguments(0)')) 'VBS launcher should forward the shortcut-specific launcher identity.'
 Assert-True ($launcherScript.Contains('CODEX_PLUS_LAUNCHER_KEY')) 'VBS launcher should pass the launcher identity through the process environment.'
+Assert-True ($launcherScript.Contains('WScript.Arguments(0)')) 'VBS launcher should forward the shortcut-specific launcher identity.'
+Assert-True ($launcherScript.Contains('CODEX_PLUS_LAUNCHER_KEY')) 'VBS launcher should pass the launcher identity through the process environment.'
 Assert-True ($launcherScript.Contains('Scriptlet.TypeLib')) 'VBS launcher should create a fresh instance identity for each shortcut launch.'
 Assert-True ($launcherScript.Contains('instanceKey = launcherKey & "-"')) 'VBS launcher should derive each instance identity from the shortcut identity.'
 Assert-True ($launcherScript.Contains('Chr(34)')) 'VBS launcher should build the quoted patch path using Chr(34).'
@@ -112,7 +114,9 @@ Assert-True ($launcherScript.Contains(', 0, False')) 'VBS launcher should hide t
 
 $tmpIconRoot = Join-Path ([System.IO.Path]::GetTempPath()) ("codex-icon-test-{0}" -f ([guid]::NewGuid()))
 New-Item -ItemType Directory -Force -Path (Join-Path $tmpIconRoot 'app\resources') | Out-Null
+$oldIconLocalAppData = $env:LOCALAPPDATA
 try {
+    $env:LOCALAPPDATA = Join-Path $tmpIconRoot 'LocalAppData'
     $fakeIcon = Join-Path $tmpIconRoot 'app\resources\icon.ico'
     Set-Content -LiteralPath $fakeIcon -Value 'ico' -Encoding ASCII
     $fakeInstallInfoForIcon = [pscustomobject]@{
@@ -120,14 +124,16 @@ try {
         AppExe = Join-Path $tmpIconRoot 'app\Codex.exe'
     }
     Assert-Equal $fakeIcon (Get-CodexIconLocation -InstallInfo $fakeInstallInfoForIcon) 'Icon location should prefer app\resources\icon.ico.'
+
+    $fakeInstallInfoFallback = [pscustomobject]@{
+        InstallLocation = 'C:\Missing\OpenAI.Codex'
+        AppExe = 'C:\Missing\OpenAI.Codex\app\Codex.exe'
+    }
+    Assert-Equal "$($fakeInstallInfoFallback.AppExe),0" (Get-CodexIconLocation -InstallInfo $fakeInstallInfoFallback) 'Icon location should fall back to Codex.exe,0 before shell icons.'
 } finally {
+    $env:LOCALAPPDATA = $oldIconLocalAppData
     if (Test-Path -LiteralPath $tmpIconRoot) { Remove-Item -LiteralPath $tmpIconRoot -Recurse -Force }
 }
-$fakeInstallInfoFallback = [pscustomobject]@{
-    InstallLocation = 'C:\Missing\OpenAI.Codex'
-    AppExe = 'C:\Missing\OpenAI.Codex\app\Codex.exe'
-}
-Assert-Equal "$($fakeInstallInfoFallback.AppExe),0" (Get-CodexIconLocation -InstallInfo $fakeInstallInfoFallback) 'Icon location should fall back to Codex.exe,0 before shell icons.'
 $installBody = (Get-Command -Name Install-CodexRtlPatch -CommandType Function).ScriptBlock.ToString()
 Assert-True ($installBody.Contains('OwnedArtifacts')) 'Patch flow should persist owned artifacts explicitly.'
 Assert-True ($installBody.Contains('Codex Plus')) 'Patch flow should create sibling Codex Plus shortcuts.'
@@ -357,7 +363,7 @@ try {
     Assert-True (Test-CodexRtlOwnedShortcut -ShortcutPath $fallbackStartMenuShortcut) 'Fallback user Start Menu Codex Plus shortcut should be Codex Plus-owned.'
     Assert-True (@($script:SavedState.OwnedArtifacts) -contains $fallbackStartMenuShortcut) 'Saved state should track the fallback user Start Menu Codex Plus shortcut.'
     Assert-True (($script:Output -join "`n") -match 'Codex Plus launcher installed\.') 'Patch wording should start with a clear success summary.'
-    Assert-True (($script:Output -join "`n") -match 'Created or refreshed 1 Codex Plus shortcut') 'Patch wording should count the fallback Start Menu Codex Plus shortcut creation.'
+    Assert-True (($script:Output -join "`n") -match 'Created or refreshed 2 Codex Plus shortcut') 'Patch wording should count the fallback Start Menu Codex Plus shortcut creation.'
     Assert-True (($script:Output -join "`n") -match 'Skipped 0 candidate location') 'Patch wording should report skipped shortcut locations clearly.'
     Assert-True (($script:Output -join "`n") -match 'Launch Codex using a Codex Plus shortcut') 'Patch wording should tell the user how to start the patched app.'
 } finally {
@@ -834,6 +840,15 @@ Assert-True ($sidebarPagingPayload.Contains("routerNavigator.push('/local/' + th
 Assert-True ($sidebarPagingPayload.Contains('getReactThreadStatusState')) 'Synthetic Threads should read thread status from the native row React fiber.'
 Assert-True ($sidebarPagingPayload.Contains('getReactFiberCandidates')) 'Synthetic Threads should inspect all live React fibers in a native row.'
 Assert-True ($sidebarPagingPayload.Contains('getNativeThreadRows')) 'Synthetic Threads should discover native rows from the live sidebar DOM.'
+Assert-True ($sidebarPagingPayload.Contains('data-codex-plus-thread-navigation-overlay')) 'Thread navigation should expose a dedicated main-surface loading overlay.'
+Assert-True ($sidebarPagingPayload.Contains('createThreadNavigationOverlay')) 'Thread navigation should render the spinner in the main conversation area.'
+Assert-True ($sidebarPagingPayload.Contains('startThreadNavigationLoadingMonitor')) 'Thread navigation should monitor native and synthetic thread activation.'
+Assert-True ($sidebarPagingPayload.Contains('isThreadNavigationReady')) 'Thread navigation should remove the spinner after the target conversation renders.'
+Assert-True ($sidebarPagingPayload.Contains('conversationText.length > 0')) 'Thread navigation should keep the spinner visible while the replacement conversation is still empty.'
+Assert-True ($sidebarPagingPayload.Contains('THREAD_NAVIGATION_MIN_DISPLAY_MS')) 'Thread navigation should keep the spinner visible long enough to be noticed.'
+Assert-True ($sidebarPagingPayload.Contains('authoritativeUnread')) 'Synthetic unread state should prefer the current native or live read state over stale indicators.'
+Assert-True ($sidebarPagingPayload.Contains('unreadStateKnown')) 'Live thread records should preserve whether unread state was explicitly reported.'
+Assert-True ($sidebarPagingPayload.Contains('if (authoritativeUnread === false)')) 'Synthetic unread indicators should be removed when the source thread is explicitly read.'
 Assert-True ($sidebarPagingPayload.Contains('getWorkingThreadIds')) 'Synthetic Threads should collect working native thread ids from React state.'
 Assert-True ($sidebarPagingPayload.Contains('getLiveSidebarCatalog(true)')) 'Synthetic Threads should force-refresh live working state when source lists are collapsed.'
 Assert-True ($sidebarPagingPayload.Contains("statusState?.type === 'loading'")) 'Synthetic Threads should use Codex''s loading status for the working spinner.'
@@ -850,6 +865,13 @@ Assert-True ($sidebarPagingPayload.Contains('recentConversations')) 'Synthetic T
 Assert-True ($sidebarPagingPayload.Contains('conversations instanceof Map')) 'Synthetic Threads should collect live conversations from Codex''s conversation map.'
 Assert-True ($sidebarPagingPayload.Contains('nativeThreadUnreadIndicatorCache')) 'Synthetic Threads should retain native unread indicators across collapsed project rows.'
 Assert-True ($sidebarPagingPayload.Contains('nativeThreadUnreadStateCache')) 'Synthetic Threads should retain native unread state across collapsed project rows.'
+Assert-True ($sidebarPagingPayload.Contains('unreadStatePriority')) 'Synthetic unread state should retain the source priority used to resolve duplicate thread records.'
+Assert-True ($sidebarPagingPayload.Contains('currentUnreadPriority')) 'Synthetic unread state should compare collection-backed and manager-backed duplicate records.'
+Assert-True ($sidebarPagingPayload.Contains('collection-backed')) 'Synthetic unread state should prefer current thread collections over stale manager records.'
+Assert-True ($sidebarPagingPayload.Contains('stale hasUnreadTurn=true')) 'Synthetic unread state should identify stale manager unread flags.'
+Assert-True ($sidebarPagingPayload.Contains('subscribeToLiveThreadBindings')) 'Synthetic unread state should subscribe to Codex live thread binding changes.'
+Assert-True ($sidebarPagingPayload.Contains('store.sub')) 'Synthetic unread state should use Codex store subscriptions for cross-view updates.'
+Assert-True ($sidebarPagingPayload.Contains('requestSidebarRefresh = schedule')) 'Codex live thread changes should schedule a synthetic sidebar refresh.'
 Assert-True ($sidebarPagingPayload.Contains('var(--vscode-textLink-foreground)')) 'Synthetic unread indicators should use Codex''s blue unread color.'
 Assert-True ($sidebarPagingPayload.Contains('absolute right-0 top-0')) 'Synthetic unread indicators should use the native right-side status slot.'
 Assert-True ($sidebarPagingPayload.Contains('keepSyntheticUnreadIndicatorVisible')) 'Synthetic unread indicators should remain visible while hovering a thread.'

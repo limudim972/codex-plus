@@ -12,6 +12,9 @@ function Get-CodexSidebarPagingPayload {
   const SOURCE_TEXT_ATTR = 'data-codex-plus-source-row-text';
   const NAVIGATION_PENDING_ATTR = 'data-codex-plus-thread-navigation-pending';
   const THREAD_SPINNER_ATTR = 'data-codex-plus-thread-spinner';
+  const THREAD_NAVIGATION_OVERLAY_ATTR = 'data-codex-plus-thread-navigation-overlay';
+  const THREAD_NAVIGATION_MIN_DISPLAY_MS = 100;
+  const THREAD_NAVIGATION_TIMEOUT_MS = 20000;
   const PAGER_ATTR = 'data-codex-plus-sidebar-pager';
   const ACTION_ATTR = 'data-codex-plus-sidebar-action';
   const STATE_ATTR = 'data-codex-plus-sidebar-loaded';
@@ -32,6 +35,9 @@ function Get-CodexSidebarPagingPayload {
   let liveCatalogCache = null;
   let liveCatalogThreadSignature = '';
   let liveCatalogLastRefreshMs = 0;
+  let liveCatalogSubscriptionScope = null;
+  let liveCatalogSubscriptions = [];
+  let requestSidebarRefresh = () => {};
   const nativeThreadUnreadIndicatorCache = new Map();
   const nativeThreadUnreadStateCache = new Set();
   const nativeThreadWorkingCache = new Set();
@@ -395,7 +401,7 @@ function Get-CodexSidebarPagingPayload {
     return hostId + ':' + threadId;
   }
 
-  function addLiveThreadRecord(records, bindings, value, binding) {
+  function addLiveThreadRecord(records, bindings, value, binding, unreadPriority) {
     const task = value?.task || value;
     const conversation = task?.conversation || (
       task?.id || task?.conversationId
@@ -430,16 +436,24 @@ function Get-CodexSidebarPagingPayload {
     const currentUnreadCount = conversation.unreadCount !== undefined
       ? Number(conversation.unreadCount)
       : null;
-    const hasUnreadTurn = currentUnread !== null
-      ? currentUnread
-      : Number.isFinite(currentUnreadCount)
-        ? currentUnreadCount > 0
-        : Boolean(previous.hasUnreadTurn);
-    const unreadCount = Number.isFinite(currentUnreadCount)
-      ? Math.max(0, currentUnreadCount)
-      : currentUnread === false
-        ? 0
-        : Number(previous.unreadCount || 0);
+    const currentUnreadStateKnown = currentUnread !== null || Number.isFinite(currentUnreadCount);
+    const currentUnreadPriority = currentUnreadStateKnown ? Number(unreadPriority || 0) : -1;
+    const previousUnreadPriority = Number(previous.unreadStatePriority ?? -1);
+    const shouldApplyUnreadState = currentUnreadStateKnown
+      && (!previous.unreadStateKnown || currentUnreadPriority >= previousUnreadPriority);
+    const unreadStateKnown = currentUnreadStateKnown || Boolean(previous.unreadStateKnown);
+    const hasUnreadTurn = shouldApplyUnreadState
+      ? currentUnread !== null
+        ? currentUnread
+        : currentUnreadCount > 0
+      : Boolean(previous.hasUnreadTurn);
+    const unreadCount = shouldApplyUnreadState
+      ? Number.isFinite(currentUnreadCount)
+        ? Math.max(0, currentUnreadCount)
+        : currentUnread === false
+          ? 0
+          : Number(previous.unreadCount || 0)
+      : Number(previous.unreadCount || 0);
 
     records.set(key, {
       ...previous,
@@ -451,8 +465,12 @@ function Get-CodexSidebarPagingPayload {
       createdAt: nextCreatedAt === Number.MAX_SAFE_INTEGER ? (conversation.createdAt || previous.createdAt || 0) : nextCreatedAt,
       source: normalizeText(conversation.source || task?.source) || previous.source || '',
       kind: normalizeText(task?.kind || task?.hostId || conversation.hostId) || previous.kind || '',
+      unreadStateKnown,
       hasUnreadTurn,
       unreadCount,
+      unreadStatePriority: shouldApplyUnreadState
+        ? currentUnreadPriority
+        : previousUnreadPriority,
       threadRuntimeStatus: mergedStatus
     });
     bindings.set(key, binding);
@@ -461,7 +479,7 @@ function Get-CodexSidebarPagingPayload {
   function collectLiveThreadValue(records, bindings, value, binding) {
     if (Array.isArray(value)) {
       for (const item of value) {
-        addLiveThreadRecord(records, bindings, item, binding);
+        addLiveThreadRecord(records, bindings, item, binding, 2);
       }
       return;
     }
@@ -473,11 +491,44 @@ function Get-CodexSidebarPagingPayload {
     ]) {
       if (!Array.isArray(collection)) continue;
       for (const item of collection) {
-        addLiveThreadRecord(records, bindings, item, binding);
+        addLiveThreadRecord(records, bindings, item, binding, 2);
       }
     }
 
-    addLiveThreadRecord(records, bindings, value, binding);
+    // The top-level manager record can lag behind the summaries after a thread
+    // is opened. Keep it useful for runtime status, but let collection-backed
+    // unread state win over a stale hasUnreadTurn=true value.
+    addLiveThreadRecord(records, bindings, value, binding, 1);
+  }
+
+  function clearLiveCatalogSubscriptions() {
+    for (const unsubscribe of liveCatalogSubscriptions) {
+      try { unsubscribe(); } catch {}
+    }
+    liveCatalogSubscriptions = [];
+    liveCatalogSubscriptionScope = null;
+  }
+
+  function subscribeToLiveThreadBindings(scope, cachedBindings) {
+    if (!scope?.node?.store || typeof scope.node.store.sub !== 'function') return;
+    if (
+      liveCatalogSubscriptionScope === scope
+      && liveCatalogSubscriptions.length === cachedBindings.size
+    ) {
+      return;
+    }
+
+    clearLiveCatalogSubscriptions();
+    liveCatalogSubscriptionScope = scope;
+    for (const [binding] of cachedBindings.entries()) {
+      try {
+        const unsubscribe = scope.node.store.sub(binding, () => requestSidebarRefresh());
+        if (typeof unsubscribe === 'function') {
+          liveCatalogSubscriptions.push(unsubscribe);
+        }
+      } catch {
+      }
+    }
   }
 
   function refreshLiveThreadBindings(catalog, forceScan) {
@@ -545,6 +596,8 @@ function Get-CodexSidebarPagingPayload {
 
     const stateResult = getLiveThreadCatalogState(scope);
     if (!stateResult) return null;
+
+    subscribeToLiveThreadBindings(scope, stateResult.cachedBindings);
 
     const catalog = {
       scope,
@@ -616,19 +669,15 @@ function Get-CodexSidebarPagingPayload {
     }
   }
 
-  function createThreadSpinner() {
-    const overlay = document.createElement('div');
-    overlay.setAttribute(THREAD_SPINNER_ATTR, 'true');
-    overlay.className = 'flex shrink-0 items-center justify-end absolute right-0 top-0 z-10 flex h-full min-w-[52px] items-center justify-end gap-2 pr-1';
+  function getMainSurface() {
+    return document.querySelector('main.main-surface') || document.querySelector('main');
+  }
 
-    const slot = document.createElement('span');
-    slot.className = 'flex h-5 min-w-5 items-center justify-center';
-    const spinner = document.createElement('div');
-    spinner.className = 'relative flex size-5 shrink-0 items-center justify-center text-token-foreground/70';
-    const animated = document.createElement('div');
-    animated.className = 'animate-spin inline-flex h-fit w-fit items-center justify-center leading-none contain-layout contain-paint contain-style';
-    animated.style.animationDelay = '-540ms';
-    animated.style.animationDuration = '2000ms';
+  function getThreadConversationElement() {
+    return document.querySelector('[data-thread-find-target="conversation"]');
+  }
+
+  function createThreadSpinnerGraphic() {
     const svg = document.createElementNS('http://www.w3.org/2000/svg', 'svg');
     svg.setAttribute('width', '24');
     svg.setAttribute('height', '24');
@@ -647,11 +696,140 @@ function Get-CodexSidebarPagingPayload {
 
     svg.appendChild(fadedPath);
     svg.appendChild(activePath);
+    return svg;
+  }
+
+  function createThreadSpinner() {
+    const overlay = document.createElement('div');
+    overlay.setAttribute(THREAD_SPINNER_ATTR, 'true');
+    overlay.className = 'flex shrink-0 items-center justify-end absolute right-0 top-0 z-10 flex h-full min-w-[52px] items-center justify-end gap-2 pr-1';
+
+    const slot = document.createElement('span');
+    slot.className = 'flex h-5 min-w-5 items-center justify-center';
+    const spinner = document.createElement('div');
+    spinner.className = 'relative flex size-5 shrink-0 items-center justify-center text-token-foreground/70';
+    const animated = document.createElement('div');
+    animated.className = 'animate-spin inline-flex h-fit w-fit items-center justify-center leading-none contain-layout contain-paint contain-style';
+    animated.style.animationDelay = '-540ms';
+    animated.style.animationDuration = '2000ms';
+    const svg = createThreadSpinnerGraphic();
     animated.appendChild(svg);
     spinner.appendChild(animated);
     slot.appendChild(spinner);
     overlay.appendChild(slot);
     return overlay;
+  }
+
+  function createThreadNavigationOverlay() {
+    const overlay = document.createElement('div');
+    overlay.setAttribute(THREAD_NAVIGATION_OVERLAY_ATTR, 'true');
+    overlay.setAttribute('role', 'status');
+    overlay.setAttribute('aria-label', 'Loading thread');
+    overlay.className = 'pointer-events-none absolute inset-0 z-20 flex items-center justify-center text-token-foreground/80';
+
+    const animated = document.createElement('div');
+    animated.className = 'animate-spin inline-flex h-fit w-fit items-center justify-center leading-none contain-layout contain-paint contain-style';
+    animated.style.animationDuration = '2000ms';
+    const graphic = createThreadSpinnerGraphic();
+    graphic.setAttribute('class', 'size-6 shrink-0');
+    animated.appendChild(graphic);
+    overlay.appendChild(animated);
+    return overlay;
+  }
+
+  let threadNavigationState = null;
+  let threadNavigationTimer = 0;
+  let threadNavigationSequence = 0;
+
+  function clearThreadNavigationLoading(sequence) {
+    if (!threadNavigationState || (sequence && threadNavigationState.sequence !== sequence)) return;
+    if (threadNavigationTimer) {
+      window.clearTimeout(threadNavigationTimer);
+      threadNavigationTimer = 0;
+    }
+    threadNavigationState.overlay?.remove();
+    threadNavigationState = null;
+  }
+
+  function isThreadNavigationReady(state) {
+    if (normalizeThreadId(getActiveThreadId()) !== state.targetThreadId) return false;
+    if (performance.now() - state.startedAt < THREAD_NAVIGATION_MIN_DISPLAY_MS) return false;
+
+    const conversation = getThreadConversationElement();
+    const conversationText = normalizeText(conversation?.innerText || '');
+    if (conversation && conversation !== state.initialConversation) {
+      return conversationText.length > 0;
+    }
+    if (conversationText && conversationText !== state.initialConversationText) return true;
+
+    return !conversation && performance.now() - state.startedAt >= 350;
+  }
+
+  function checkThreadNavigationLoading(sequence) {
+    if (!threadNavigationState || threadNavigationState.sequence !== sequence) return;
+
+    const elapsed = performance.now() - threadNavigationState.startedAt;
+    if (isThreadNavigationReady(threadNavigationState) || elapsed >= THREAD_NAVIGATION_TIMEOUT_MS) {
+      clearThreadNavigationLoading(sequence);
+      return;
+    }
+
+    threadNavigationTimer = window.setTimeout(() => checkThreadNavigationLoading(sequence), 50);
+  }
+
+  function startThreadNavigationLoading(threadId) {
+    const targetThreadId = normalizeThreadId(threadId);
+    if (!targetThreadId || targetThreadId === normalizeThreadId(getActiveThreadId())) return;
+    if (threadNavigationState?.targetThreadId === targetThreadId) return;
+
+    const mainSurface = getMainSurface();
+    if (!mainSurface) return;
+
+    clearThreadNavigationLoading();
+    const overlay = createThreadNavigationOverlay();
+    mainSurface.appendChild(overlay);
+    const sequence = ++threadNavigationSequence;
+    threadNavigationState = {
+      sequence,
+      targetThreadId,
+      initialConversation: getThreadConversationElement(),
+      initialConversationText: normalizeText(getThreadConversationElement()?.innerText || ''),
+      startedAt: performance.now(),
+      overlay
+    };
+    checkThreadNavigationLoading(sequence);
+  }
+
+  function getThreadNavigationRowFromEvent(event) {
+    const target = event?.target;
+    if (!(target instanceof Element)) return null;
+
+    const row = target.closest('[data-app-action-sidebar-thread-id]');
+    if (!row) return null;
+    const isSyntheticRow = Boolean(row.closest('[' + SYNTHETIC_ROW_ATTR + '="threads"]'));
+    const isNativeRow = row.hasAttribute('data-app-action-sidebar-thread-row');
+    if (!isSyntheticRow && !isNativeRow) return null;
+
+    // Native rows expose pin/archive controls inside the same clickable wrapper.
+    if (target.closest('button[aria-label]') && !target.closest('[data-thread-title-trigger="true"]')) return null;
+    return row;
+  }
+
+  function handleThreadNavigationEvent(event) {
+    const row = getThreadNavigationRowFromEvent(event);
+    if (!row) return;
+
+    const threadId = normalizeThreadId(
+      row.getAttribute('data-codex-plus-thread-id') || getThreadIdForRow(row)
+    );
+    startThreadNavigationLoading(threadId);
+  }
+
+  function startThreadNavigationLoadingMonitor() {
+    if (window.__CODEX_PLUS_THREAD_NAVIGATION_LOADING_MONITOR) return;
+    window.__CODEX_PLUS_THREAD_NAVIGATION_LOADING_MONITOR = true;
+    document.addEventListener('pointerup', handleThreadNavigationEvent, true);
+    document.addEventListener('click', handleThreadNavigationEvent, true);
   }
 
   function getSyntheticThreadButton(row) {
@@ -697,6 +875,7 @@ function Get-CodexSidebarPagingPayload {
   function getNativeThreadUnreadState(row) {
     const statusState = getReactThreadStatusState(row);
     if (!statusState || typeof statusState.type !== 'string') return null;
+    if (statusState.unread === undefined && statusState.unreadCount === undefined) return null;
     return Boolean(statusState.unread || Number(statusState.unreadCount || 0) > 0);
   }
 
@@ -728,8 +907,20 @@ function Get-CodexSidebarPagingPayload {
     const source = getThreadUnreadIndicator(nativeRow);
     const threadId = normalizeThreadId(row.getAttribute('data-codex-plus-thread-id') || getThreadIdForRow(row));
     const nativeUnread = nativeRow ? getNativeThreadUnreadState(nativeRow) : null;
+    const liveUnreadKnown = liveRecord?.unreadStateKnown === true;
+    const liveUnread = liveUnreadKnown
+      ? Boolean(liveRecord?.hasUnreadTurn || Number(liveRecord?.unreadCount || 0) > 0)
+      : null;
+    const authoritativeUnread = nativeUnread !== null ? nativeUnread : liveUnread;
     if (threadId && nativeUnread !== null) {
       if (nativeUnread) {
+        nativeThreadUnreadStateCache.add(threadId);
+      } else {
+        nativeThreadUnreadStateCache.delete(threadId);
+      }
+    }
+    if (threadId && liveUnread !== null && nativeUnread === null) {
+      if (liveUnread) {
         nativeThreadUnreadStateCache.add(threadId);
       } else {
         nativeThreadUnreadStateCache.delete(threadId);
@@ -738,15 +929,18 @@ function Get-CodexSidebarPagingPayload {
     if (nativeRow && !source && threadId) {
       nativeThreadUnreadIndicatorCache.delete(threadId);
     }
+    if (authoritativeUnread === false) {
+      if (existing) existing.remove();
+      if (threadId) {
+        nativeThreadUnreadIndicatorCache.delete(threadId);
+        nativeThreadUnreadStateCache.delete(threadId);
+      }
+      return;
+    }
     const cached = !nativeRow && threadId ? nativeThreadUnreadIndicatorCache.get(threadId) : null;
     const cachedUnread = Boolean(threadId && nativeThreadUnreadStateCache.has(threadId));
-    const liveUnread = Boolean(
-      nativeUnread
-      || cachedUnread
-      || liveRecord?.hasUnreadTurn
-      || Number(liveRecord?.unreadCount || 0) > 0
-    );
-    if (!source && !cached && !liveUnread) {
+    const hasUnread = Boolean(authoritativeUnread === true || cachedUnread);
+    if (!source && !cached && !hasUnread) {
       if (existing) existing.remove();
       return;
     }
@@ -2087,6 +2281,7 @@ function Get-CodexSidebarPagingPayload {
       }
     }, 50);
   };
+  requestSidebarRefresh = schedule;
 
   window.setInterval(schedule, 500);
 
@@ -2106,6 +2301,8 @@ function Get-CodexSidebarPagingPayload {
     apply,
     observer
   };
+
+  startThreadNavigationLoadingMonitor();
 
   if (document.readyState === 'loading') {
     document.addEventListener('DOMContentLoaded', start, { once: true });
