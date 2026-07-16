@@ -1613,6 +1613,15 @@ function Get-CodexSidebarPagingPayload {
       const hasThreadRows = rows.some((row) => Boolean(getThreadIdForRow(row)));
       if (!hasProjectRows && !hasThreadRows) continue;
 
+      if (hasProjectRows) {
+        for (const row of rows) {
+          if (!getProjectIdForRow(row)) continue;
+          for (const hoverCard of Array.from(row.querySelectorAll('[data-hover-card-open-immediately]'))) {
+            hoverCard.removeAttribute('data-hover-card-open-immediately');
+          }
+        }
+      }
+
       sortSidebarRows(list, rows, hasProjectRows ? 'projects' : 'threads');
     }
   }
