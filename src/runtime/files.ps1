@@ -14,6 +14,7 @@ function Install-CodexRtlRuntimeFiles {
         'src/shared/asar.ps1',
         'src/codex/rtl-shared.ps1',
         'src/codex/detection.ps1',
+        'src/codex/new-window-button.ps1',
         'src/codex/rtl-payload.ps1',
         'src/codex/rtl-payload-Plan.ps1',
         'src/codex/context-badge.ps1',
@@ -44,7 +45,7 @@ function Install-CodexRtlRuntimeFiles {
         }
     }
 
-    foreach ($obsoleteItem in @('src/runtime/project-order.ps1')) {
+    foreach ($obsoleteItem in @('src/runtime/project-order.ps1', 'src/codex/new-session-button.ps1')) {
         $obsoletePath = Join-Path $runtimeRoot $obsoleteItem
         if (Test-Path -LiteralPath $obsoletePath) {
             Remove-Item -LiteralPath $obsoletePath -Force

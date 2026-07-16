@@ -352,6 +352,20 @@ function Get-CodexNextWindowTitleOrdinal {
         if ($ordinal -gt $maxOrdinal) {
             $maxOrdinal = $ordinal
         }
+
+        try {
+            foreach ($windowHandle in @(Get-CodexVisibleWindowHandles -ProcessId $process.ProcessId)) {
+                $windowTitle = Get-CodexNativeWindowTitle -WindowHandle $windowHandle
+                $titleMatch = [regex]::Match([string]$windowTitle, '^(d+)\.Codex$')
+                if ($titleMatch.Success) {
+                    $windowOrdinal = [int]$titleMatch.Groups[1].Value
+                    if ($windowOrdinal -gt $maxOrdinal) {
+                        $maxOrdinal = $windowOrdinal
+                    }
+                }
+            }
+        } catch {
+        }
     }
 
     return [Math]::Max($managedBrowserProcesses.Count, $maxOrdinal) + 1
@@ -392,6 +406,66 @@ public static class CodexPlusNativeWindowTitle {
     return [CodexPlusNativeWindowTitle]::SetWindowText($WindowHandle, $Title)
 }
 
+function Get-CodexNativeWindowTitle {
+    param([Parameter(Mandatory)][IntPtr]$WindowHandle)
+
+    if (-not ('CodexPlusNativeWindows' -as [type])) {
+        Add-Type @'
+using System;
+using System.Collections.Generic;
+using System.Runtime.InteropServices;
+using System.Text;
+
+public static class CodexPlusNativeWindows {
+    private delegate bool EnumWindowsProc(IntPtr hWnd, IntPtr lParam);
+
+    [DllImport("user32.dll")]
+    private static extern bool EnumWindows(EnumWindowsProc callback, IntPtr lParam);
+
+    [DllImport("user32.dll")]
+    private static extern uint GetWindowThreadProcessId(IntPtr hWnd, out uint processId);
+
+    [DllImport("user32.dll")]
+    private static extern bool IsWindowVisible(IntPtr hWnd);
+
+    [DllImport("user32.dll", CharSet = CharSet.Unicode)]
+    private static extern int GetWindowText(IntPtr hWnd, StringBuilder text, int count);
+
+    public static IntPtr[] GetVisibleTopLevelWindows(int processId) {
+        var handles = new List<IntPtr>();
+        EnumWindows((hWnd, lParam) => {
+            uint ownerProcessId;
+            GetWindowThreadProcessId(hWnd, out ownerProcessId);
+            if (ownerProcessId == (uint)processId && IsWindowVisible(hWnd)) {
+                handles.Add(hWnd);
+            }
+            return true;
+        }, IntPtr.Zero);
+        return handles.ToArray();
+    }
+
+    public static string GetWindowTitle(IntPtr hWnd) {
+        var text = new StringBuilder(512);
+        GetWindowText(hWnd, text, text.Capacity);
+        return text.ToString();
+    }
+}
+'@
+    }
+
+    return [CodexPlusNativeWindows]::GetWindowTitle($WindowHandle)
+}
+
+function Get-CodexVisibleWindowHandles {
+    param([Parameter(Mandatory)][int]$ProcessId)
+
+    if (-not ('CodexPlusNativeWindows' -as [type])) {
+        Get-CodexNativeWindowTitle -WindowHandle ([IntPtr]::Zero) | Out-Null
+    }
+
+    return @([CodexPlusNativeWindows]::GetVisibleTopLevelWindows($ProcessId) | ForEach-Object { $_ })
+}
+
 function Update-CodexWindowTitles {
     param(
         [Parameter(Mandatory)][int]$Port,
@@ -408,20 +482,60 @@ function Update-CodexWindowTitles {
     }
 
     $updated = $false
+    if (-not $script:CodexPlusPrimaryWindowHandles) {
+        $script:CodexPlusPrimaryWindowHandles = @{}
+    }
     foreach ($process in $matchingProcesses) {
         $processOrdinal = Get-CodexProcessWindowTitleOrdinal -Process $process
         try {
             $liveProcess = Get-Process -Id $process.ProcessId -ErrorAction Stop
-            if ($liveProcess.MainWindowHandle -eq 0) {
+            if (-not $script:CodexPlusPrimaryWindowHandles.ContainsKey([string]$process.ProcessId) -and $liveProcess.MainWindowHandle -ne 0) {
+                $script:CodexPlusPrimaryWindowHandles[[string]$process.ProcessId] = $liveProcess.MainWindowHandle
+            }
+            $primaryWindowHandle = if ($script:CodexPlusPrimaryWindowHandles.ContainsKey([string]$process.ProcessId)) {
+                [IntPtr]$script:CodexPlusPrimaryWindowHandles[[string]$process.ProcessId]
+            } else {
+                $liveProcess.MainWindowHandle
+            }
+            $windowHandles = @(
+                Get-CodexVisibleWindowHandles -ProcessId $process.ProcessId |
+                    Sort-Object @{ Expression = { if ($_ -eq $primaryWindowHandle) { 0 } else { 1 } } }
+            )
+            if ($windowHandles.Count -eq 0 -and $primaryWindowHandle -ne 0) {
+                $windowHandles = @($primaryWindowHandle)
+            }
+            if ($windowHandles.Count -eq 0) {
                 continue
             }
 
-            $desiredTitle = Get-CodexDesiredWindowTitle -Ordinal $processOrdinal
-            if ([string]$liveProcess.MainWindowTitle -eq $desiredTitle) {
-                continue
-            }
-            if (Set-CodexNativeWindowTitle -WindowHandle $liveProcess.MainWindowHandle -Title $desiredTitle) {
-                $updated = $true
+            $usedOrdinals = @()
+            foreach ($windowHandle in $windowHandles) {
+                $windowOrdinal = if ($windowHandle -eq $primaryWindowHandle) {
+                    $processOrdinal
+                } else {
+                    $currentTitle = Get-CodexNativeWindowTitle -WindowHandle $windowHandle
+                    $titleMatch = [regex]::Match([string]$currentTitle, '^(\d+)\.Codex$')
+                    if ($titleMatch.Success) {
+                        $candidateOrdinal = [int]$titleMatch.Groups[1].Value
+                        if ($candidateOrdinal -gt 0 -and $candidateOrdinal -notin $usedOrdinals) {
+                            $candidateOrdinal
+                        } else {
+                            Get-CodexNextWindowTitleOrdinal
+                        }
+                    } else {
+                        Get-CodexNextWindowTitleOrdinal
+                    }
+                }
+
+                if ($windowOrdinal -gt 0) {
+                    $usedOrdinals += $windowOrdinal
+                }
+                $desiredTitle = Get-CodexDesiredWindowTitle -Ordinal $windowOrdinal
+                if ((Get-CodexNativeWindowTitle -WindowHandle $windowHandle) -ne $desiredTitle) {
+                    if (Set-CodexNativeWindowTitle -WindowHandle $windowHandle -Title $desiredTitle) {
+                        $updated = $true
+                    }
+                }
             }
         } catch {
         }
@@ -698,7 +812,8 @@ function Get-CodexDevToolsTargets {
 
     foreach ($base in @("http://127.0.0.1:$Port", "http://[::1]:$Port")) {
         try {
-            return @(Invoke-RestMethod -Uri "$base/json/list" -UseBasicParsing -TimeoutSec 2)
+            $response = Invoke-RestMethod -Uri "$base/json/list" -UseBasicParsing -TimeoutSec 2
+            return @($response | ForEach-Object { $_ })
         } catch {
             continue
         }
@@ -837,6 +952,10 @@ function Watch-CodexCloseToQuit {
         if ($visibleProcessCount -gt 0) {
             $seenVisibleWindow = $true
             $missingVisibleWindowCount = 0
+            try {
+                Invoke-CodexRtlInjection -Port $Port | Out-Null
+            } catch {
+            }
             Update-CodexWindowTitles -Port $Port -LauncherKey $LauncherKey | Out-Null
         } else {
             $allowNoWindowKill = $seenVisibleWindow
@@ -917,20 +1036,22 @@ function Invoke-CodexCdpCommand {
 function Invoke-CodexRtlInjectionForTarget {
     param(
         [Parameter(Mandatory)]$Target,
-        [Parameter(Mandatory)][string]$Payload
+        [Parameter(Mandatory)][string]$Payload,
+        [switch]$SkipNewDocumentInstall
     )
 
-    $commands = @(
-        (New-CodexCdpCommand -Id 1 -Method 'Page.addScriptToEvaluateOnNewDocument' -Params @{
-            source = $Payload
-            runImmediately = $true
-        }),
-        (New-CodexCdpCommand -Id 2 -Method 'Runtime.evaluate' -Params @{
+    $commands = @()
+    if (-not $SkipNewDocumentInstall) {
+        $commands += New-CodexCdpCommand -Id 1 -Method 'Page.addScriptToEvaluateOnNewDocument' -Params @{
+                source = $Payload
+                runImmediately = $true
+            }
+    }
+    $commands += New-CodexCdpCommand -Id 2 -Method 'Runtime.evaluate' -Params @{
             expression = $Payload
             awaitPromise = $true
             returnByValue = $true
-        })
-    )
+        }
 
     foreach ($command in $commands) {
         Invoke-CodexCdpCommand -WebSocketDebuggerUrl $Target.webSocketDebuggerUrl -Command $command | Out-Null
@@ -939,6 +1060,10 @@ function Invoke-CodexRtlInjectionForTarget {
 
 function Invoke-CodexRtlInjection {
     param([Parameter(Mandatory)][int]$Port)
+
+    if (-not $script:CodexPlusInjectedTargetIds) {
+        $script:CodexPlusInjectedTargetIds = @{}
+    }
 
     $payload = Get-CodexPlusPayloadBundle
     $targets = @(Wait-CodexDevToolsTargets -Port $Port)
@@ -953,7 +1078,12 @@ function Invoke-CodexRtlInjection {
 
     foreach ($target in $targets) {
         try {
-            Invoke-CodexRtlInjectionForTarget -Target $target -Payload $payload
+            $targetId = [string]$target.id
+            $skipNewDocumentInstall = $targetId -and $script:CodexPlusInjectedTargetIds.ContainsKey($targetId)
+            Invoke-CodexRtlInjectionForTarget -Target $target -Payload $payload -SkipNewDocumentInstall:$skipNewDocumentInstall
+            if ($targetId) {
+                $script:CodexPlusInjectedTargetIds[$targetId] = $true
+            }
         } catch {
             Write-Warn "Codex Plus injection failed for target '$($target.title)': $($_.Exception.Message)"
         }

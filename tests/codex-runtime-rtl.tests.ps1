@@ -46,6 +46,7 @@ try {
         'src/shared/prompting.ps1',
         'src/shared/asar.ps1',
         'src/codex/detection.ps1',
+        'src/codex/new-window-button.ps1',
         'src/codex/rtl-payload.ps1',
         'src/codex/split-model-effort-selector.ps1',
         'src/runtime/state.ps1',
@@ -137,11 +138,16 @@ try {
 $installBody = (Get-Command -Name Install-CodexRtlPatch -CommandType Function).ScriptBlock.ToString()
 Assert-True ($installBody.Contains('OwnedArtifacts')) 'Patch flow should persist owned artifacts explicitly.'
 Assert-True ($installBody.Contains('Codex Plus')) 'Patch flow should create sibling Codex Plus shortcuts.'
+Assert-True (-not $installBody.Contains('Install-CodexPlusProtocolHandler')) 'Patch flow should not register an independent Codex Plus launch protocol.'
 Assert-True (-not $installBody.Contains('-AllowRestart')) 'Patch flow should not restart or kill an existing Codex process during install.'
 Assert-True (-not $installBody.Contains('Start-CodexForRtl')) 'Patch flow should not launch Codex during install.'
 Assert-True (-not $installBody.Contains('Invoke-CodexRtlInjection')) 'Patch flow should not inject Codex during install.'
 $launchBody = (Get-Command -Name Launch-CodexRtl -CommandType Function).ScriptBlock.ToString()
 Assert-True ($launchBody.Contains('Start-CodexForRtl')) 'Codex launch should delegate to the approved-verb launch helper.'
+$watchBody = (Get-Command -Name Watch-CodexCloseToQuit -CommandType Function).ScriptBlock.ToString()
+Assert-True ($watchBody.Contains('Invoke-CodexRtlInjection')) 'Codex watchdog should inject the Plus payload into newly created windows.'
+$devToolsBody = (Get-Command -Name Get-CodexDevToolsTargets -CommandType Function).ScriptBlock.ToString()
+Assert-True ($devToolsBody.Contains('ForEach-Object { $_ }')) 'Codex DevTools target enumeration should flatten multiple page targets.'
 $splashIconBody = (Get-Command -Name Get-CodexLaunchSplashIcon -CommandType Function).ScriptBlock.ToString()
 Assert-True ($splashIconBody.Contains('Get-CodexIconLocation')) 'Launch splash should reuse the same icon source as the desktop launcher.'
 Assert-True ($splashIconBody.Contains('Add-Type -AssemblyName System.Drawing')) 'Launch splash icon loading should explicitly load System.Drawing before extracting icons.'
@@ -355,7 +361,6 @@ try {
         'started'
     }
     function Invoke-CodexRtlInjection { param([int]$Port) $true }
-
     Install-CodexRtlPatch
 
     $fallbackStartMenuShortcut = Get-CodexRtlShortcutPath
@@ -897,6 +902,10 @@ $payloadBundle = Get-CodexPlusPayloadBundle
 Assert-True (-not ($payloadBundle.Contains('__CODEX_PLUS_WINDOW_TITLE'))) 'Injected payload bundle should not rewrite the webview title for taskbar labeling.'
 Assert-True ($payloadBundle.Contains('__CODEX_RTL_SHARED_HELPERS')) 'Injected payload bundle should include the shared bidi helper payload.'
 Assert-True ($payloadBundle.Contains('__CODEX_PLUS_SPLIT_MODEL_EFFORT_SELECTOR')) 'Injected payload bundle should include the split model and effort selectors.'
+$newWindowPayload = Get-CodexNewWindowButtonPayload
+Assert-True ($newWindowPayload.Contains('data-codex-plus-shared-window-button')) 'New window payload should expose a dedicated shared-window marker.'
+Assert-True ($newWindowPayload.Contains('open-in-new-window')) 'New window payload should use Codex''s supported open-in-new-window message.'
+Assert-True (-not ($newWindowPayload.Contains('New Plus'))) 'New window payload should not expose the removed independent Plus button.'
 $sharedPayload = Get-CodexRtlSharedPayload
 Assert-True ($sharedPayload.Contains('ensureHelpers')) 'Shared bidi payload should expose the helpers on a shared window namespace.'
 Assert-True ($sharedPayload.Contains('classifyDirection')) 'Shared bidi payload should own the direction classifier used by multiple surfaces.'

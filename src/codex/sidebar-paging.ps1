@@ -853,7 +853,6 @@ function Get-CodexSidebarPagingPayload {
     if (!button) return null;
 
     const indicator = Array.from(button.children).find((candidate) => {
-      if (!candidate.matches?.('div[data-hover-card-open-immediately]')) return false;
       if (!candidate.classList.contains('shrink-0')) return false;
       return Boolean(candidate.querySelector('.icon-xs.relative.scale-50 .absolute.inset-0.rounded-full'));
     }) || null;
@@ -882,7 +881,8 @@ function Get-CodexSidebarPagingPayload {
   function createThreadUnreadIndicator() {
     const indicator = document.createElement('div');
     indicator.className = 'flex shrink-0 items-center justify-end absolute right-0 top-0 z-10 flex h-full min-w-[52px] items-center justify-end gap-2 pr-1 group-hover:hidden group-has-[:focus-visible]:hidden';
-    indicator.setAttribute('data-hover-card-open-immediately', 'true');
+    indicator.setAttribute(THREAD_UNREAD_INDICATOR_ATTR, 'true');
+    indicator.setAttribute('aria-hidden', 'true');
 
     const slot = document.createElement('span');
     slot.className = 'flex h-5 min-w-5 items-center justify-center';

@@ -373,5 +373,6 @@ function Get-CodexPlusPayloadBundle {
         Get-CodexContextBadgePayload
         Get-CodexSplitModelEffortSelectorPayload
         Get-CodexSidebarPagingPayload
+        Get-CodexNewWindowButtonPayload
     ) -join "`n"
 }
