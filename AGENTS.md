@@ -7,4 +7,5 @@
 - Treat `skills/codex-debugging/` as the repo-owned source of Codex Plus debugging guidance for this project.
 - Use `scratch/` for temporary throwaway files and local experiments.
 - When the use write C it mean commit.
+- On Windows, run PowerShell-based tests and scripts with `powershell.exe` first; use `pwsh.exe` only if Windows PowerShell is unavailable.
 must read skills\codex-debugging\SKILL.md first before doing anything related to codex plus.
