@@ -210,11 +210,16 @@ function Get-CodexSidebarPagingPayload {
 
   function getWorkingThreadIds() {
     const workingThreadIds = new Set();
+    const liveStatusKnownThreadIds = new Set();
     const catalog = getLiveSidebarCatalog(true);
     for (const record of catalog?.records?.values?.() || []) {
       const threadId = normalizeThreadId(record?.id || record?.key);
-      const statusType = getLiveThreadStatus(record)?.type;
-      if (threadId && isWorkingThreadStatus(getLiveThreadStatus(record))) {
+      const liveStatus = getLiveThreadStatus(record);
+      const statusType = liveStatus?.type;
+      if (threadId && statusType) {
+        liveStatusKnownThreadIds.add(threadId);
+      }
+      if (threadId && isWorkingThreadStatus(liveStatus)) {
         workingThreadIds.add(threadId);
       } else if (threadId && statusType && statusType !== 'notLoaded') {
         nativeThreadWorkingCache.delete(threadId);
@@ -222,7 +227,9 @@ function Get-CodexSidebarPagingPayload {
     }
 
     for (const threadId of nativeThreadWorkingCache) {
-      workingThreadIds.add(threadId);
+      if (!liveStatusKnownThreadIds.has(threadId)) {
+        workingThreadIds.add(threadId);
+      }
     }
 
     for (const row of getNativeThreadRows()) {
@@ -239,7 +246,7 @@ function Get-CodexSidebarPagingPayload {
         nativeThreadUnreadStateCache.delete(threadId);
       }
 
-      if (statusState?.type === 'loading') {
+      if (statusState?.type === 'loading' && !liveStatusKnownThreadIds.has(threadId)) {
         nativeThreadWorkingCache.add(threadId);
         workingThreadIds.add(threadId);
       } else {
@@ -928,7 +935,10 @@ function Get-CodexSidebarPagingPayload {
     const liveUnread = liveUnreadKnown
       ? Boolean(liveRecord?.hasUnreadTurn || Number(liveRecord?.unreadCount || 0) > 0)
       : null;
-    const authoritativeUnread = nativeUnread !== null ? nativeUnread : liveUnread;
+    // The live conversation catalog is the current source of truth. The native
+    // sidebar row can briefly retain an old unread flag while Codex reconciles
+    // the opened thread, which otherwise makes the dot flicker back on.
+    const authoritativeUnread = liveUnread !== null ? liveUnread : nativeUnread;
     if (threadId && nativeUnread !== null) {
       if (nativeUnread) {
         nativeThreadUnreadStateCache.add(threadId);
@@ -1630,17 +1640,36 @@ function Get-CodexSidebarPagingPayload {
       const hasThreadRows = rows.some((row) => Boolean(getThreadIdForRow(row)));
       if (!hasProjectRows && !hasThreadRows) continue;
 
-      if (hasProjectRows) {
-        for (const row of rows) {
-          if (!getProjectIdForRow(row)) continue;
-          for (const hoverCard of Array.from(row.querySelectorAll('[data-hover-card-open-immediately]'))) {
-            hoverCard.removeAttribute('data-hover-card-open-immediately');
-          }
-        }
-      }
+      if (hasProjectRows) suppressProjectHoverCards(rows);
 
       sortSidebarRows(list, rows, hasProjectRows ? 'projects' : 'threads');
     }
+  }
+
+  function suppressProjectHoverCards(rows) {
+    for (const row of rows || []) {
+      if (!getProjectIdForRow(row)) continue;
+      for (const hoverCard of Array.from(row.querySelectorAll('[data-hover-card-open-immediately]'))) {
+        hoverCard.removeAttribute('data-hover-card-open-immediately');
+      }
+      // Codex can mount the card before the next refresh; remove that local
+      // card as well so hovering a project never leaves a popup behind.
+      for (const card of Array.from(row.querySelectorAll('[role="tooltip"], [data-radix-popper-content-wrapper]'))) {
+        card.remove();
+      }
+    }
+  }
+
+  function installProjectHoverGuard() {
+    if (window.__CODEX_PLUS_PROJECT_HOVER_GUARD) return;
+    const blockProjectHover = (event) => {
+      const target = event.target instanceof Element ? event.target : null;
+      if (!target?.closest('[data-app-action-sidebar-project-row]')) return;
+      event.stopPropagation();
+    };
+    document.addEventListener('mouseover', blockProjectHover, true);
+    document.addEventListener('pointerover', blockProjectHover, true);
+    window.__CODEX_PLUS_PROJECT_HOVER_GUARD = true;
   }
 
   function getProjectTimestampMap() {
@@ -2263,6 +2292,7 @@ function Get-CodexSidebarPagingPayload {
         const visibleCount = Math.min(rows.length, getVisibleCount(rows, spec));
         writeLoaded(list, Math.max(0, Math.min(readLoaded(list), Math.max(0, rows.length - visibleCount))));
         renderSidebarSection(list, visibleCount, spec.key);
+        if (spec.key === 'projects') suppressProjectHoverCards(getSidebarRows(list));
       }
       sortUnmanagedSidebarLists();
       syncSyntheticThreadActiveState();
@@ -2314,6 +2344,7 @@ function Get-CodexSidebarPagingPayload {
   const observer = new MutationObserver(schedule);
   const start = () => {
     disconnect();
+    installProjectHoverGuard();
     try {
       applying = true;
       apply();
