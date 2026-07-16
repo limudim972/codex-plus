@@ -12,6 +12,7 @@ function Install-CodexRtlRuntimeFiles {
         'src/shared/logging.ps1',
         'src/shared/prompting.ps1',
         'src/shared/asar.ps1',
+        'src/codex/rtl-shared.ps1',
         'src/codex/detection.ps1',
         'src/codex/rtl-payload.ps1',
         'src/codex/rtl-payload-Plan.ps1',

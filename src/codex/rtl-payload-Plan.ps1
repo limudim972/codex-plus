@@ -48,6 +48,20 @@ function Get-CodexRtlPayloadPlan {
     '[class*="Code"]'
   ].join(',');
   const INLINE_STYLE_ID = 'data-codex-plus-plan-rtl-style';
+  const RTL_SHARED = window.__CODEX_RTL_SHARED_HELPERS;
+  const RTL_RE = RTL_SHARED.RTL_RE;
+  const LTR_RE = RTL_SHARED.LTR_RE;
+  const STRONG_RE = RTL_SHARED.STRONG_RE;
+  const normalizeText = RTL_SHARED.normalizeText;
+  function stripDiagnosticPrefix(text) {
+    return RTL_SHARED.stripDiagnosticPrefix(text);
+  }
+  function getMeaningfulText(input) {
+    return RTL_SHARED.getMeaningfulText(input, INLINE_TECHNICAL_SELECTOR);
+  }
+  function classifyDirection(input) {
+    return RTL_SHARED.classifyDirection(input, INLINE_TECHNICAL_SELECTOR);
+  }
 
   function shouldSkipElement(element) {
     return Boolean(element.closest(SKIP_SELECTOR));
@@ -121,6 +135,15 @@ function Get-CodexRtlPayloadPlan {
     }
   }
 
+  function hasNestedTextBlock(element) {
+    for (const child of element.querySelectorAll(TEXT_BLOCK_SELECTOR)) {
+      if (child !== element && !shouldSkipElement(child) && child.innerText && child.innerText.trim()) {
+        return true;
+      }
+    }
+    return false;
+  }
+
   function ensureInlineStyle(scopeDoc) {
     if (!scopeDoc || !scopeDoc.head) return;
     if (scopeDoc.head.querySelector('style[' + INLINE_STYLE_ID + ']')) return;
@@ -146,6 +169,10 @@ function Get-CodexRtlPayloadPlan {
       '  padding-inline-start: 0;',
       '  padding-inline-end: 1rem;',
       '}',
+      '[data-codex-plus-plan-rtl="rtl"] [dir="rtl"],',
+      '[data-codex-plus-plan-rtl="rtl"] [dir="ltr"] {',
+      '  unicode-bidi: isolate !important;',
+      '}',
       'li[data-codex-plus-plan-rtl="rtl"] > ' + TASK_CHECKBOX_SELECTOR + ',',
       'li[data-codex-plus-plan-rtl="rtl"] ' + TASK_CHECKBOX_SELECTOR + ' {',
       '  direction: ltr !important;',
@@ -162,17 +189,14 @@ function Get-CodexRtlPayloadPlan {
       if (panel.getAttribute('data-codex-plus-plan-surface') !== 'plan') {
         panel.setAttribute('data-codex-plus-plan-surface', 'plan');
       }
-      if (panel.getAttribute('dir') !== 'rtl') {
-        panel.setAttribute('dir', 'rtl');
+      if (panel.getAttribute('dir') !== 'auto') {
+        panel.setAttribute('dir', 'auto');
       }
-      if (panel.getAttribute('data-codex-plus-plan-rtl') !== 'rtl') {
-        panel.setAttribute('data-codex-plus-plan-rtl', 'rtl');
+      if (panel.getAttribute('data-codex-plus-plan-rtl') !== 'plan') {
+        panel.setAttribute('data-codex-plus-plan-rtl', 'plan');
       }
-      if (panel.style.direction !== 'rtl') {
-        panel.style.direction = 'rtl';
-      }
-      if (panel.style.textAlign !== 'right') {
-        panel.style.textAlign = 'right';
+      if (panel.style.textAlign !== 'start') {
+        panel.style.textAlign = 'start';
       }
       if (panel.style.unicodeBidi !== 'plaintext') {
         panel.style.unicodeBidi = 'plaintext';
@@ -181,23 +205,31 @@ function Get-CodexRtlPayloadPlan {
 
       for (const list of panel.querySelectorAll(LIST_CONTAINER_SELECTOR)) {
         if (shouldSkipElement(list)) continue;
-        applyBlockDirection(list, 'rtl');
+        applyBlockDirection(list, classifyDirection(list));
         for (const item of list.querySelectorAll(':scope > ' + LIST_ITEM_SELECTOR)) {
           if (shouldSkipElement(item)) continue;
-          applyBlockDirection(item, 'rtl');
+          const itemDirection = classifyDirection(item);
+          const listDirection = classifyDirection(list);
+          const direction = itemDirection === 'neutral' ? listDirection : itemDirection;
+          applyBlockDirection(item, direction, { forceLtr: listDirection === 'rtl' });
           processInlineTechnicalIslands(item);
         }
       }
 
       for (const blockquote of panel.querySelectorAll(BLOCKQUOTE_SELECTOR)) {
         if (shouldSkipElement(blockquote)) continue;
-        applyBlockDirection(blockquote, 'rtl');
+        applyBlockDirection(blockquote, classifyDirection(blockquote));
         processInlineTechnicalIslands(blockquote);
       }
 
       for (const block of panel.querySelectorAll(TEXT_BLOCK_SELECTOR)) {
         if (block.closest(SKIP_SELECTOR) || block.closest('pre')) continue;
-        applyBlockDirection(block, 'rtl');
+        if (block.closest(LIST_CONTAINER_SELECTOR + ',' + BLOCKQUOTE_SELECTOR)) continue;
+        if (hasNestedTextBlock(block)) {
+          cleanupOwnedDirection(block);
+          continue;
+        }
+        applyBlockDirection(block, classifyDirection(block));
       }
     }
   }

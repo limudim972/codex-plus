@@ -5,10 +5,6 @@ function Get-CodexRtlPayload {
     window.__CODEX_RTL_FIX_CODEX.observer.disconnect();
   }
 
-  const RTL_RE = /[\u0590-\u05FF\u0600-\u06FF\u0750-\u077F\u08A0-\u08FF\uFB1D-\uFDFF\uFE70-\uFEFF]/g;
-  const LTR_RE = /[A-Za-z\u00C0-\u024F]/g;
-  const STRONG_RE = /[\u0590-\u05FF\u0600-\u06FF\u0750-\u077F\u08A0-\u08FF\uFB1D-\uFDFF\uFE70-\uFEFFA-Za-z\u00C0-\u024F]/;
-
   const CONVERSATION_SELECTOR = '[data-thread-find-target="conversation"]';
   const USER_BUBBLE_SELECTOR = '[data-user-message-bubble="true"]';
   const TITLE_SELECTOR = [
@@ -66,45 +62,19 @@ function Get-CodexRtlPayload {
   ].join(',');
 
   const INLINE_STYLE_ID = 'data-codex-rtl-fix-style';
-
+  const RTL_SHARED = window.__CODEX_RTL_SHARED_HELPERS;
+  const RTL_RE = RTL_SHARED.RTL_RE;
+  const LTR_RE = RTL_SHARED.LTR_RE;
+  const STRONG_RE = RTL_SHARED.STRONG_RE;
+  const normalizeText = RTL_SHARED.normalizeText;
   function stripDiagnosticPrefix(text) {
-    return text
-      .replace(/^[A-Z]\d{2}\.\s*[^:\n]{1,80}:\s*/u, '')
-      .replace(/^\d{1,3}\.\s*[^:\n]{1,80}:\s*/u, '')
-      .trim();
+    return RTL_SHARED.stripDiagnosticPrefix(text);
   }
-
-  function normalizeText(text) {
-    return String(text || '').replace(/\s+/g, ' ').trim();
-  }
-
   function getMeaningfulText(input) {
-    if (!input) return '';
-    if (typeof input === 'string') return stripDiagnosticPrefix(normalizeText(input));
-
-    const clone = input.cloneNode(true);
-    for (const technical of clone.querySelectorAll('pre, ' + INLINE_TECHNICAL_SELECTOR + ', svg, canvas, input, button, select, option')) {
-      technical.remove();
-    }
-    return stripDiagnosticPrefix(normalizeText(clone.innerText || clone.textContent || ''));
+    return RTL_SHARED.getMeaningfulText(input, INLINE_TECHNICAL_SELECTOR);
   }
-
   function classifyDirection(input) {
-    const normalized = getMeaningfulText(input);
-    if (!normalized) return 'neutral';
-
-    const rtlCount = (normalized.match(RTL_RE) || []).length;
-    const ltrCount = (normalized.match(LTR_RE) || []).length;
-
-    if (rtlCount === 0) return 'ltr';
-
-    const firstStrong = (normalized.match(STRONG_RE) || [''])[0];
-    const firstStrongIsRtl = Boolean(firstStrong && firstStrong.match(RTL_RE));
-
-    if (firstStrongIsRtl) return 'rtl';
-    if (rtlCount >= 3 && rtlCount >= ltrCount * 0.25) return 'rtl';
-
-    return 'ltr';
+    return RTL_SHARED.classifyDirection(input, INLINE_TECHNICAL_SELECTOR);
   }
 
   function shouldSkipElement(element) {
@@ -397,6 +367,7 @@ function Get-CodexRtlPayload {
 
 function Get-CodexPlusPayloadBundle {
     @(
+        Get-CodexRtlSharedPayload
         Get-CodexRtlPayload
         Get-CodexRtlPayloadPlan
         Get-CodexContextBadgePayload

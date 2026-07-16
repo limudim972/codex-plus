@@ -895,14 +895,22 @@ Assert-True (-not ($sidebarPagingPayload.Contains('data-codex-plus-thread-timest
 
 $payloadBundle = Get-CodexPlusPayloadBundle
 Assert-True (-not ($payloadBundle.Contains('__CODEX_PLUS_WINDOW_TITLE'))) 'Injected payload bundle should not rewrite the webview title for taskbar labeling.'
+Assert-True ($payloadBundle.Contains('__CODEX_RTL_SHARED_HELPERS')) 'Injected payload bundle should include the shared bidi helper payload.'
 Assert-True ($payloadBundle.Contains('__CODEX_PLUS_SPLIT_MODEL_EFFORT_SELECTOR')) 'Injected payload bundle should include the split model and effort selectors.'
+$sharedPayload = Get-CodexRtlSharedPayload
+Assert-True ($sharedPayload.Contains('ensureHelpers')) 'Shared bidi payload should expose the helpers on a shared window namespace.'
+Assert-True ($sharedPayload.Contains('classifyDirection')) 'Shared bidi payload should own the direction classifier used by multiple surfaces.'
+$planPayload = Get-CodexRtlPayloadPlan
+Assert-True ($planPayload.Contains('__CODEX_RTL_SHARED_HELPERS')) 'Plan payload should consume the shared bidi helpers instead of redefining its own classifier.'
+Assert-True ($planPayload.Contains("textAlign !== 'start'")) 'Plan payload should keep the plan surface aligned to the natural block start edge.'
+Assert-True ($planPayload.Contains('hasNestedTextBlock')) 'Plan payload should avoid flattening nested mixed-direction blocks.'
 
 $nodeCommand = Get-Command -Name node -ErrorAction SilentlyContinue
 if ($nodeCommand) {
     $payloadTempPath = Join-Path ([System.IO.Path]::GetTempPath()) ("codex-rtl-payload-{0}.js" -f ([guid]::NewGuid().ToString('N')))
     $runnerTempPath = Join-Path ([System.IO.Path]::GetTempPath()) ("codex-rtl-runner-{0}.js" -f ([guid]::NewGuid().ToString('N')))
     try {
-        Set-Content -LiteralPath $payloadTempPath -Value $payload -Encoding UTF8
+        Set-Content -LiteralPath $payloadTempPath -Value ($sharedPayload + "`n" + $payload) -Encoding UTF8
         Set-Content -LiteralPath $runnerTempPath -Encoding UTF8 -Value @'
 const fs = require('fs');
 const vm = require('vm');
