@@ -2,7 +2,7 @@ function Get-CodexRtlPayload {
     @'
 (function () {
   if (window.__CODEX_RTL_FIX_CODEX && window.__CODEX_RTL_FIX_CODEX.observer) {
-    window.__CODEX_RTL_FIX_CODEX.observer.disconnect();
+    return;
   }
 
   const CONVERSATION_SELECTOR = '[data-thread-find-target="conversation"]';

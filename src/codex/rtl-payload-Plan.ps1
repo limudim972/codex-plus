@@ -1,6 +1,10 @@
 function Get-CodexRtlPayloadPlan {
     @'
 (function () {
+  if (window.__CODEX_PLUS_RTL_PLAN && window.__CODEX_PLUS_RTL_PLAN.observer) {
+    return;
+  }
+
   const PLAN_PANEL_SELECTOR = '[role="tabpanel"][aria-label="Plan"][data-tab-id="plan"]';
   const LIST_CONTAINER_SELECTOR = 'ol, ul';
   const LIST_ITEM_SELECTOR = 'li';

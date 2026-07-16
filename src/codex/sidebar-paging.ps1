@@ -1,6 +1,10 @@
 function Get-CodexSidebarPagingPayload {
     @'
 (function () {
+  if (window.__CODEX_PLUS_SIDEBAR_PAGING && window.__CODEX_PLUS_SIDEBAR_PAGING.observer) {
+    return;
+  }
+
   const SECTION_SELECTOR = '[class*="group/nav-section-title"]';
   const SIDEBAR_ROOT_SELECTOR = '[data-app-action-sidebar-scroll]';
   const PAGE_SIZE = 3;
@@ -35,6 +39,9 @@ function Get-CodexSidebarPagingPayload {
   let liveCatalogCache = null;
   let liveCatalogThreadSignature = '';
   let liveCatalogLastRefreshMs = 0;
+  let lastLiveSidebarCatalog = null;
+  let lastLiveSidebarCatalogAt = 0;
+  const LIVE_CATALOG_GAP_GRACE_MS = 2000;
   let liveCatalogSubscriptionScope = null;
   let liveCatalogSubscriptions = [];
   let requestSidebarRefresh = () => {};
@@ -584,7 +591,12 @@ function Get-CodexSidebarPagingPayload {
 
   function getLiveSidebarCatalog(forceScan) {
     const scope = getAppScopeFromSidebar();
-    if (!scope) return null;
+    const fallback = () => {
+      return lastLiveSidebarCatalog && Date.now() - lastLiveSidebarCatalogAt < LIVE_CATALOG_GAP_GRACE_MS
+        ? lastLiveSidebarCatalog
+        : null;
+    };
+    if (!scope) return fallback();
 
     if (liveCatalogScope !== scope) {
       liveCatalogScope = scope;
@@ -595,7 +607,7 @@ function Get-CodexSidebarPagingPayload {
     }
 
     const stateResult = getLiveThreadCatalogState(scope);
-    if (!stateResult) return null;
+    if (!stateResult) return fallback();
 
     subscribeToLiveThreadBindings(scope, stateResult.cachedBindings);
 
@@ -605,7 +617,7 @@ function Get-CodexSidebarPagingPayload {
       cachedBindings: stateResult.cachedBindings
     };
     refreshLiveThreadBindings(catalog, Boolean(forceScan));
-    return {
+    const result = {
       scope,
       state: stateResult.state,
       threadKeys: Array.isArray(stateResult.state.threadKeys)
@@ -615,6 +627,11 @@ function Get-CodexSidebarPagingPayload {
       projectGroups: Array.isArray(stateResult.state.projectGroups) ? stateResult.state.projectGroups : [],
       cachedBindings: stateResult.cachedBindings
     };
+    if (result.threadKeys.length > 0 && result.records.size > 0) {
+      lastLiveSidebarCatalog = result;
+      lastLiveSidebarCatalogAt = Date.now();
+    }
+    return result;
   }
 
   function getLiveThreadRecordById(catalog, threadId) {

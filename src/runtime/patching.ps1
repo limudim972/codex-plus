@@ -158,7 +158,6 @@ function Launch-CodexRtl {
         Save-CodexRtlState -State $state
     }
     Start-CodexForRtl -Inspection $installInfo -Port $port -LauncherKey $LauncherKey | Out-Null
-    Start-CodexCloseWatchdog -Port $port -LauncherKey $LauncherKey
     Invoke-CodexRtlInjection -Port $port | Out-Null
     Wait-CodexWindowTitleSync -Port $port -LauncherKey $LauncherKey | Out-Null
 }

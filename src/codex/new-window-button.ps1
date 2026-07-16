@@ -1,6 +1,8 @@
 function Get-CodexNewWindowButtonPayload {
     @'
 (function () {
+  if (window.__CODEX_PLUS_NEW_WINDOW_BUTTON) return;
+
   const HEADER_SELECTOR = '.app-header-tint';
   const MENU_GROUP_SELECTOR = 'button[aria-label="Help"]';
   const BUTTON_ATTR = 'data-codex-plus-shared-window-button';
@@ -42,6 +44,7 @@ function Get-CodexNewWindowButtonPayload {
   }
 
   install();
+  window.__CODEX_PLUS_NEW_WINDOW_BUTTON = true;
   new MutationObserver(install).observe(document.documentElement, { childList: true, subtree: true });
 })();
 '@

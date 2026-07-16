@@ -112,6 +112,7 @@ Assert-True ($launcherScript.Contains('instanceKey = launcherKey & "-"')) 'VBS l
 Assert-True ($launcherScript.Contains('Chr(34)')) 'VBS launcher should build the quoted patch path using Chr(34).'
 Assert-True ($launcherScript -match 'command = "powershell\.exe .* -File " & Chr\(34\) & ".*" & Chr\(34\) & " -LaunchCodexRtl"') 'VBS launcher should concatenate the quoted patch path safely.'
 Assert-True ($launcherScript.Contains(', 0, False')) 'VBS launcher should hide the window and not wait.'
+Assert-Equal 1 ([regex]::Matches($launcherScript, '-StartCloseWatchdog').Count) 'VBS launcher should start exactly one close watchdog.'
 
 $tmpIconRoot = Join-Path ([System.IO.Path]::GetTempPath()) ("codex-icon-test-{0}" -f ([guid]::NewGuid()))
 New-Item -ItemType Directory -Force -Path (Join-Path $tmpIconRoot 'app\resources') | Out-Null
@@ -992,6 +993,10 @@ for (const [expected, input] of cases) {
 $cdpBody = (Get-Command -Name Invoke-CodexRtlInjectionForTarget -CommandType Function).ScriptBlock.ToString()
 Assert-True ($cdpBody.Contains('Page.addScriptToEvaluateOnNewDocument')) 'Injection should install the payload for future documents.'
 Assert-True ($cdpBody.Contains('Runtime.evaluate')) 'Injection should also evaluate the payload in the current document.'
+
+$injectionSource = Get-Content -Raw (Join-Path $repoRoot 'src\runtime\launch.ps1')
+Assert-True ($injectionSource.Contains('CodexPlusInjectedTargetIds.ContainsKey')) 'Injection should remember targets that already received the payload.'
+Assert-True ($injectionSource.Contains('continue')) 'Injection should skip targets that already received the payload.'
 
 $cdpCommandBody = (Get-Command -Name Invoke-CodexCdpCommand -CommandType Function).ScriptBlock.ToString()
 Assert-True ($cdpCommandBody.Contains('while (-not $result.EndOfMessage)')) 'CDP command responses should keep reading until EndOfMessage.'

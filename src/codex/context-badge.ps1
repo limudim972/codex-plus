@@ -1,6 +1,10 @@
 function Get-CodexContextBadgePayload {
     @'
 (function () {
+  if (window.__CODEX_PLUS_CONTEXT_BADGE && window.__CODEX_PLUS_CONTEXT_BADGE.observer) {
+    return;
+  }
+
   const BADGE_ID = 'data-codex-plus-context-badge';
   const BADGE_HOST_ID = 'data-codex-plus-context-badge-host';
   const TITLE_SELECTOR = [

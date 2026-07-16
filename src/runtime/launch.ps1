@@ -1079,8 +1079,11 @@ function Invoke-CodexRtlInjection {
     foreach ($target in $targets) {
         try {
             $targetId = [string]$target.id
-            $skipNewDocumentInstall = $targetId -and $script:CodexPlusInjectedTargetIds.ContainsKey($targetId)
-            Invoke-CodexRtlInjectionForTarget -Target $target -Payload $payload -SkipNewDocumentInstall:$skipNewDocumentInstall
+            if ($targetId -and $script:CodexPlusInjectedTargetIds.ContainsKey($targetId)) {
+                continue
+            }
+
+            Invoke-CodexRtlInjectionForTarget -Target $target -Payload $payload
             if ($targetId) {
                 $script:CodexPlusInjectedTargetIds[$targetId] = $true
             }

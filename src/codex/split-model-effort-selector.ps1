@@ -2,7 +2,7 @@ function Get-CodexSplitModelEffortSelectorPayload {
     @'
 (function () {
   const existing = window.__CODEX_PLUS_SPLIT_MODEL_EFFORT_SELECTOR;
-  if (existing && typeof existing.destroy === 'function') existing.destroy();
+  if (existing && typeof existing.apply === 'function') return;
 
   const HOST_ATTR = 'data-codex-plus-split-model-effort-selector';
   const STYLE_ATTR = 'data-codex-plus-split-model-effort-style';
