@@ -144,6 +144,9 @@ function Get-CodexRtlPayload {
       'li[data-codex-rtl-fix="rtl"] ' + TASK_CHECKBOX_SELECTOR + ' {',
       '  direction: ltr !important;',
       '  unicode-bidi: isolate !important;',
+      '}',
+      '#above-composer-queue-portal:has([class*="input-validation-error-background"]) {',
+      '  display: none !important;',
       '}'
     ].join('\n');
     document.head.appendChild(style);
