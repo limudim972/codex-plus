@@ -33,6 +33,8 @@ function Get-CodexSidebarPagingPayload {
   const BUTTON_CLASS = 'border-token-border no-drag cursor-interaction flex items-center gap-1 border whitespace-nowrap select-none focus:outline-none disabled:cursor-not-allowed disabled:opacity-40 rounded-full text-token-muted-foreground enabled:hover:bg-transparent data-[state=open]:bg-transparent hover:text-token-foreground border-transparent px-2 py-0.5 text-sm leading-[18px] text-token-description-foreground hover:text-token-foreground -ml-[9px]';
   const LEGACY_TIMESTAMP_SUFFIX_SELECTOR = 'span[aria-hidden="true"].pointer-events-none.select-none.whitespace-nowrap.text-token-description-foreground';
   let internalNavigationModulesPromise = null;
+  const startupThreadPreloadPromises = new Map();
+  let startupThreadPreloadStarted = false;
   const nativeThreadTitleCache = new Map();
   let liveCatalogScope = null;
   let liveCatalogStateBinding = null;
@@ -1082,6 +1084,42 @@ function Get-CodexSidebarPagingPayload {
       if (projectId) return 'project:' + projectId;
     }
     return 'flat-chats';
+  }
+
+  async function preloadStartupThreads() {
+    if (startupThreadPreloadStarted) return;
+
+    const list = document.querySelector('[' + SYNTHETIC_LIST_ATTR + '="threads"]');
+    if (!list) return;
+
+    const activeThreadId = getActiveThreadId();
+    const workingThreadIds = getWorkingThreadIds();
+    const threadIds = getSidebarRows(list)
+      .filter((row) => !row.hidden)
+      .slice(0, 3)
+      .map((row) => normalizeThreadId(row.getAttribute('data-codex-plus-thread-id')))
+      .filter((threadId) => threadId && threadId !== activeThreadId && !workingThreadIds.has(threadId));
+    if (threadIds.length === 0) return;
+    startupThreadPreloadStarted = true;
+
+    const scope = getAppScopeFromSidebar();
+    const modules = await getInternalNavigationModules();
+    if (!scope || !modules?.appServer?.c || typeof modules.appServer.Et !== 'function') return;
+
+    const manager = scope.get(modules.appServer.c, 'local');
+    if (!manager || typeof manager.activateThreadSummary !== 'function') return;
+
+    await Promise.all(threadIds.map(async (threadId) => {
+      if (startupThreadPreloadPromises.has(threadId)) {
+        return startupThreadPreloadPromises.get(threadId);
+      }
+      const preload = Promise.resolve().then(() => {
+        modules.appServer.Et(scope, threadId, 'local');
+        manager.activateThreadSummary(threadId);
+      }).catch(() => {});
+      startupThreadPreloadPromises.set(threadId, preload);
+      return preload;
+    }));
   }
 
   async function navigateThreadThroughCodex(threadRow) {
@@ -2354,6 +2392,7 @@ function Get-CodexSidebarPagingPayload {
       applying = false;
       observe();
     }
+    window.setTimeout(preloadStartupThreads, 0);
   };
 
   window.__CODEX_PLUS_SIDEBAR_PAGING = {
