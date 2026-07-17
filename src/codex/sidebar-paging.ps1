@@ -1048,6 +1048,11 @@ function Get-CodexSidebarPagingPayload {
       return;
     }
 
+    // Refreshes are frequent while the conversation catalog and native sidebar
+    // reconcile. Keep the current node when the unread state is still true;
+    // replacing it on every refresh causes the dot to visibly flicker.
+    if (existing && hasUnread) return;
+
     const button = getSyntheticThreadButton(row);
     if (!button) return;
 
