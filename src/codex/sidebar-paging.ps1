@@ -1652,23 +1652,25 @@ function Get-CodexSidebarPagingPayload {
       for (const hoverCard of Array.from(row.querySelectorAll('[data-hover-card-open-immediately]'))) {
         hoverCard.removeAttribute('data-hover-card-open-immediately');
       }
-      // Codex can mount the card before the next refresh; remove that local
-      // card as well so hovering a project never leaves a popup behind.
+      // Codex can mount the card before the next refresh; hide that local
+      // card visually without deleting React-owned DOM.
       for (const card of Array.from(row.querySelectorAll('[role="tooltip"], [data-radix-popper-content-wrapper]'))) {
-        card.remove();
+        card.style.setProperty('display', 'none', 'important');
+      }
+    }
+    for (const card of Array.from(document.querySelectorAll('[role="tooltip"]'))) {
+      if (card.querySelector('[class*="project-hover-card-row"]')) {
+        card.style.setProperty('display', 'none', 'important');
       }
     }
   }
 
   function installProjectHoverGuard() {
     if (window.__CODEX_PLUS_PROJECT_HOVER_GUARD) return;
-    const blockProjectHover = (event) => {
-      const target = event.target instanceof Element ? event.target : null;
-      if (!target?.closest('[data-app-action-sidebar-project-row]')) return;
-      event.stopPropagation();
-    };
-    document.addEventListener('mouseover', blockProjectHover, true);
-    document.addEventListener('pointerover', blockProjectHover, true);
+    const style = document.createElement('style');
+    style.id = 'codex-plus-project-hover-suppression';
+    style.textContent = '[role="tooltip"]:has([class*="project-hover-card-row"]) { display: none !important; }';
+    (document.head || document.documentElement).appendChild(style);
     window.__CODEX_PLUS_PROJECT_HOVER_GUARD = true;
   }
 
