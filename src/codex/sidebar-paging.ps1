@@ -26,6 +26,7 @@ function Get-CodexSidebarPagingPayload {
   const THREAD_BASE_LABEL_ATTR = 'data-codex-plus-thread-base-label';
   const THREAD_TIMESTAMP_ATTR = 'data-codex-plus-thread-timestamp-label';
   const NATIVE_TIMESTAMP_ELEMENT_ATTR = 'data-codex-plus-native-timestamp';
+  const PROJECT_WINDOW_MARKER = 'data-codex-plus-project-window';
   const THREAD_UNREAD_INDICATOR_ATTR = 'data-codex-plus-thread-unread-indicator';
   const THREAD_UPDATED_ATTR = 'data-codex-plus-thread-updated-ms';
   const THREADS_HEADER_ATTR = 'data-codex-plus-sidebar-threads-header';
@@ -256,6 +257,79 @@ function Get-CodexSidebarPagingPayload {
       }
     }
     return workingThreadIds;
+  }
+
+  function getProjectWindowContext() {
+    try {
+      const parseParams = (params) => {
+        const id = normalizeText(params.get('codexPlusProjectId'));
+        const name = normalizeText(params.get('codexPlusProjectName'));
+        return id && name ? { id, name } : null;
+      };
+      const direct = parseParams(new URLSearchParams(window.location.search));
+      if (direct) {
+        window.__CODEX_PLUS_PROJECT_WINDOW_CONTEXT = direct;
+        return direct;
+      }
+
+      const startupRoute = new URLSearchParams(window.location.search).get('initialRoute') || '';
+      let decodedRoute = startupRoute;
+      try { decodedRoute = decodeURIComponent(startupRoute); } catch {}
+
+      try {
+        const pending = JSON.parse(localStorage.getItem('codexPlusPendingProjectWindows') || '[]');
+        const matchIndex = pending.findIndex((entry) => {
+          const route = normalizeText(entry?.startupPath);
+          return route && (
+            route === startupRoute
+            || route === decodedRoute
+            || (!startupRoute && route === '/')
+          );
+        });
+        if (matchIndex >= 0) {
+          const match = pending[matchIndex];
+          pending.splice(matchIndex, 1);
+          localStorage.setItem('codexPlusPendingProjectWindows', JSON.stringify(pending));
+          const pendingContext = parseParams(new URLSearchParams(
+            'codexPlusProjectId=' + encodeURIComponent(match.codexPlusProjectId || '')
+              + '&codexPlusProjectName=' + encodeURIComponent(match.codexPlusProjectName || '')
+          ));
+          if (pendingContext) {
+            window.__CODEX_PLUS_PROJECT_WINDOW_CONTEXT = pendingContext;
+            const homeUrl = new URL(window.location.href);
+            homeUrl.searchParams.set('initialRoute', '/');
+            window.history.replaceState(window.history.state, '', homeUrl.toString());
+            return pendingContext;
+          }
+        }
+      } catch {}
+
+      if (!startupRoute) return null;
+
+      const context = parseParams(new URLSearchParams(new URL(decodedRoute, window.location.origin).search));
+      if (!context) return null;
+
+      window.__CODEX_PLUS_PROJECT_WINDOW_CONTEXT = context;
+      if (context && decodedRoute.startsWith('/')) {
+        const homeUrl = new URL(window.location.href);
+        homeUrl.searchParams.set('initialRoute', '/');
+        window.history.replaceState(window.history.state, '', homeUrl.toString());
+      }
+      return context;
+    } catch {
+      return null;
+    }
+  }
+
+  const projectWindowContext = getProjectWindowContext();
+  if (projectWindowContext) {
+    const projectWindowTitle = 'Codex Plus Project: ' + projectWindowContext.name;
+    const reinforceProjectWindowMetadata = () => {
+      document.documentElement?.setAttribute(PROJECT_WINDOW_MARKER, projectWindowContext.id);
+      if (document.title !== projectWindowTitle) document.title = projectWindowTitle;
+    };
+    reinforceProjectWindowMetadata();
+    window.setInterval(reinforceProjectWindowMetadata, 250);
   }
 
   function getReactFiberFromSubtree(element) {
@@ -1263,7 +1337,7 @@ function Get-CodexSidebarPagingPayload {
     );
   }
 
-  function syncThreadToggleButton(button, collapsed) {
+  function syncThreadToggleButton(button, collapsed, headingLabel = 'Threads') {
     if (!button) return;
     const nextLabel = collapsed ? 'Show Threads list' : 'Hide Threads list';
     const nextExpanded = collapsed ? 'false' : 'true';
@@ -1292,8 +1366,9 @@ function Get-CodexSidebarPagingPayload {
       button.removeAttribute('data-state');
     }
     const labelSpan = button.querySelector('span');
-    if (labelSpan && normalizeText(labelSpan.textContent) !== 'Threads') {
-      labelSpan.textContent = 'Threads';
+    const normalizedHeadingLabel = normalizeText(headingLabel) || 'Threads';
+    if (labelSpan && normalizeText(labelSpan.textContent) !== normalizedHeadingLabel) {
+      labelSpan.textContent = normalizedHeadingLabel;
     }
     const icon = button.querySelector('svg');
     if (icon) {
@@ -1530,6 +1605,7 @@ function Get-CodexSidebarPagingPayload {
     const title = normalizeText(entry?.displayTitle || entry?.title);
     if (!title) return '';
     if (entry?.kind === 'project') {
+      if (projectWindowContext) return title;
       const projectTitle = normalizeText(entry?.projectTitle) || 'project';
       return title + ' (' + projectTitle + ')';
     }
@@ -2070,6 +2146,13 @@ function Get-CodexSidebarPagingPayload {
       const title = nativeThreadTitleMap.get(id) || normalizeText(record.title);
       const lastModifiedMs = getLiveThreadTimestampMs(record, catalog);
       if (!id || !title || !cwd || lastModifiedMs <= 0) continue;
+      if (
+        projectWindowContext
+        && (
+          kind !== 'project'
+          || normalizeProjectId(projectGroup?.projectId || cwd) !== normalizeProjectId(projectWindowContext.id)
+        )
+      ) continue;
 
       const signature = [id, cwd, title, kind].join('|').toLowerCase();
       if (seen.has(signature)) continue;
@@ -2102,7 +2185,7 @@ function Get-CodexSidebarPagingPayload {
     }
 
     const recentThreadEntries = getRecentThreadEntries();
-    if (recentThreadEntries.length === 0) {
+    if (recentThreadEntries.length === 0 && !projectWindowContext) {
       removeSyntheticSection('threads');
       return null;
     }
@@ -2139,6 +2222,9 @@ function Get-CodexSidebarPagingPayload {
     let header = shell.querySelector('[' + THREADS_HEADER_ATTR + ']');
     let sectionContainer = shell.querySelector('[' + THREADS_CONTAINER_ATTR + ']');
     let listElement = shell.querySelector('[' + SYNTHETIC_LIST_ATTR + ']');
+    const threadsHeadingLabel = projectWindowContext
+      ? projectWindowContext.name + ' threads'
+      : 'Threads';
 
     if (!header || !sectionContainer || !listElement) {
       shell.innerHTML = '';
@@ -2148,13 +2234,13 @@ function Get-CodexSidebarPagingPayload {
       const headerButton = header.querySelector('button[data-app-action-sidebar-section-toggle]') || header.querySelector('button');
       if (headerButton) {
         // Keep the project-style section toggle signature (`group/section-toggle`) in the payload.
-        syncThreadToggleButton(headerButton, false);
+        syncThreadToggleButton(headerButton, false, threadsHeadingLabel);
       }
       while (header.children.length > 1) {
         header.lastElementChild.remove();
       }
       if (headerButton) {
-        syncThreadToggleButton(headerButton, false);
+        syncThreadToggleButton(headerButton, false, threadsHeadingLabel);
       }
 
       shell.appendChild(header);
@@ -2179,12 +2265,12 @@ function Get-CodexSidebarPagingPayload {
     const collapseButton = shell.querySelector('[' + ACTION_ATTR + '="collapse-list"]');
     if (collapseButton && sectionContainer) {
       const collapsed = sectionContainer.hidden || shell.getAttribute(COLLAPSED_ATTR) === 'true';
-      syncThreadToggleButton(collapseButton, collapsed);
+      syncThreadToggleButton(collapseButton, collapsed, projectWindowContext ? projectWindowContext.name + ' threads' : 'Threads');
       bindSingleActivation(collapseButton, (event) => {
         const nextCollapsed = !sectionContainer.hidden;
         sectionContainer.hidden = nextCollapsed;
         shell.setAttribute(COLLAPSED_ATTR, nextCollapsed ? 'true' : 'false');
-        syncThreadToggleButton(collapseButton, nextCollapsed);
+        syncThreadToggleButton(collapseButton, nextCollapsed, projectWindowContext ? projectWindowContext.name + ' threads' : 'Threads');
         event.preventDefault();
         event.stopPropagation();
         event.stopImmediatePropagation();
@@ -2324,7 +2410,18 @@ function Get-CodexSidebarPagingPayload {
     const wasObserving = observing;
     if (wasObserving) disconnect();
     try {
+      if (projectWindowContext) {
+        document.documentElement?.setAttribute(PROJECT_WINDOW_MARKER, projectWindowContext.id);
+        document.title = 'Codex Plus Project: ' + projectWindowContext.name;
+      }
       for (const spec of SECTION_SPECS) {
+        if (projectWindowContext && spec.key === 'projects') {
+          const projectList = resolveSidebarSectionList(spec);
+          const projectHeading = getSidebarSectionTitle(document, 'Projects');
+          const projectShell = projectHeading?.parentElement || projectList?.parentElement;
+          if (projectShell) projectShell.hidden = true;
+          continue;
+        }
         const list = spec.synthetic ? ensureSyntheticThreadsSection() : resolveSidebarSectionList(spec);
         if (!list) continue;
 

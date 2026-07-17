@@ -44,6 +44,16 @@ function Get-CodexContextBadgePayload {
     return percentMatch ? percentMatch[1] : '';
   }
 
+  function readWindowTitle(scopeDoc) {
+    const runtimeTitle = normalizeText(window.__CODEX_PLUS_NATIVE_WINDOW_TITLE);
+    if (runtimeTitle) return runtimeTitle;
+    const projectContext = window.__CODEX_PLUS_PROJECT_WINDOW_CONTEXT;
+    if (projectContext?.name) return normalizeText(projectContext.name);
+    const title = normalizeText(scopeDoc?.title);
+    if (title.startsWith('Codex Plus Project:')) return normalizeText(title.slice('Codex Plus Project:'.length));
+    return title;
+  }
+
   function ensureBadge(scopeDoc) {
     if (!scopeDoc) return;
 
@@ -86,7 +96,8 @@ function Get-CodexContextBadgePayload {
     }
 
     const percent = readContextPercent(scopeDoc);
-    const nextText = stripBidiMarks(percent ? 'Plus ' + percent : 'Plus');
+    const title = readWindowTitle(scopeDoc);
+    const nextText = stripBidiMarks(['Plus', title, percent].filter(Boolean).join(' '));
     if (badge.textContent !== nextText) {
       badge.textContent = nextText;
     }

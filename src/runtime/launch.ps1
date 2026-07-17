@@ -356,7 +356,7 @@ function Get-CodexNextWindowTitleOrdinal {
         try {
             foreach ($windowHandle in @(Get-CodexVisibleWindowHandles -ProcessId $process.ProcessId)) {
                 $windowTitle = Get-CodexNativeWindowTitle -WindowHandle $windowHandle
-                $titleMatch = [regex]::Match([string]$windowTitle, '^(d+)\.Codex$')
+                $titleMatch = [regex]::Match([string]$windowTitle, '^(\d+)\..+$')
                 if ($titleMatch.Success) {
                     $windowOrdinal = [int]$titleMatch.Groups[1].Value
                     if ($windowOrdinal -gt $maxOrdinal) {
@@ -372,7 +372,14 @@ function Get-CodexNextWindowTitleOrdinal {
 }
 
 function Get-CodexDesiredWindowTitle {
-    param([int]$Ordinal = 0)
+    param([int]$Ordinal = 0, [AllowEmptyString()][string]$ProjectName = '')
+
+    if (-not [string]::IsNullOrWhiteSpace($ProjectName)) {
+        if ($Ordinal -gt 0) {
+            return "$Ordinal.$ProjectName"
+        }
+        return $ProjectName
+    }
 
     if ($Ordinal -gt 0) {
         return "$Ordinal.Codex"
@@ -485,6 +492,36 @@ function Update-CodexWindowTitles {
     if (-not $script:CodexPlusPrimaryWindowHandles) {
         $script:CodexPlusPrimaryWindowHandles = @{}
     }
+    if (-not $script:CodexPlusWindowProjectNames) {
+        $script:CodexPlusWindowProjectNames = @{}
+    }
+    if (-not $script:CodexPlusProjectWindowOrder) {
+        $script:CodexPlusProjectWindowOrder = @()
+    }
+    $devToolsTargets = @(Get-CodexDevToolsTargets -Port $Port | Where-Object { Test-CodexDevToolsTarget -Target $_ })
+    $projectTargetNames = @()
+    $projectTargetNamesById = @{}
+    foreach ($target in $devToolsTargets) {
+        try {
+            $probe = New-CodexCdpCommand -Id 1 -Method 'Runtime.evaluate' -Params @{
+                expression = "window.__CODEX_PLUS_PROJECT_WINDOW_CONTEXT?.name || ''"
+                returnByValue = $true
+            }
+            $probeJson = @(Invoke-CodexCdpCommand -WebSocketDebuggerUrl $target.webSocketDebuggerUrl -Command $probe |
+                Where-Object { $_ -is [string] } |
+                Select-Object -Last 1)
+            if ($probeJson.Count -eq 0) { continue }
+            $probeResult = $probeJson[0] | ConvertFrom-Json
+            $projectTargetName = [string]$probeResult.result.result.value
+            if (-not [string]::IsNullOrWhiteSpace($projectTargetName)) {
+                $projectTargetNames += $projectTargetName.Trim()
+                if ($target.id) {
+                    $projectTargetNamesById[[string]$target.id] = $projectTargetName.Trim()
+                }
+            }
+        } catch {
+        }
+    }
     foreach ($process in $matchingProcesses) {
         $processOrdinal = Get-CodexProcessWindowTitleOrdinal -Process $process
         try {
@@ -508,29 +545,88 @@ function Update-CodexWindowTitles {
                 continue
             }
 
+            $secondaryWindowHandles = @($windowHandles | Where-Object { $_ -ne $primaryWindowHandle })
+            $projectHandleSlots = if ($projectTargetNames.Count -eq $windowHandles.Count) {
+                @($windowHandles)
+            } elseif ($projectTargetNames.Count -lt $windowHandles.Count) {
+                @($secondaryWindowHandles)
+            } else {
+                @($windowHandles)
+            }
+            if ($projectTargetNames.Count -gt 0) {
+                $knownProjectHandleCount = @($projectHandleSlots | Where-Object {
+                    $script:CodexPlusWindowProjectNames.ContainsKey([string]$_)
+                }).Count
+                $unassignedProjectHandles = @($projectHandleSlots | Where-Object {
+                    -not $script:CodexPlusWindowProjectNames.ContainsKey([string]$_)
+                })
+                for ($projectIndex = 0; $projectIndex -lt $unassignedProjectHandles.Count; $projectIndex++) {
+                    $targetIndex = $knownProjectHandleCount + $projectIndex
+                    if ($targetIndex -ge $projectTargetNames.Count) { break }
+                    $script:CodexPlusWindowProjectNames[[string]$unassignedProjectHandles[$projectIndex]] = $projectTargetNames[$targetIndex]
+                }
+            }
+
+            foreach ($projectHandle in @($windowHandles | Where-Object {
+                $script:CodexPlusWindowProjectNames.ContainsKey([string]$_)
+            })) {
+                $projectHandleKey = [string]$projectHandle
+                if ($script:CodexPlusProjectWindowOrder -notcontains $projectHandleKey) {
+                    $script:CodexPlusProjectWindowOrder += $projectHandleKey
+                }
+            }
+            $visibleProjectHandleKeys = @($windowHandles | Where-Object {
+                $script:CodexPlusWindowProjectNames.ContainsKey([string]$_)
+            } | ForEach-Object { [string]$_ })
+            $script:CodexPlusProjectWindowOrder = @($script:CodexPlusProjectWindowOrder | Where-Object {
+                $visibleProjectHandleKeys -contains $_
+            })
+            $projectWindowCount = $script:CodexPlusProjectWindowOrder.Count
+
             $usedOrdinals = @()
             foreach ($windowHandle in $windowHandles) {
-                $windowOrdinal = if ($windowHandle -eq $primaryWindowHandle) {
-                    $processOrdinal
+                $windowHandleKey = [string]$windowHandle
+                $isProjectWindow = $script:CodexPlusWindowProjectNames.ContainsKey($windowHandleKey)
+                $projectName = if ($isProjectWindow) {
+                    [string]$script:CodexPlusWindowProjectNames[$windowHandleKey]
                 } else {
-                    $currentTitle = Get-CodexNativeWindowTitle -WindowHandle $windowHandle
-                    $titleMatch = [regex]::Match([string]$currentTitle, '^(\d+)\.Codex$')
-                    if ($titleMatch.Success) {
-                        $candidateOrdinal = [int]$titleMatch.Groups[1].Value
-                        if ($candidateOrdinal -gt 0 -and $candidateOrdinal -notin $usedOrdinals) {
-                            $candidateOrdinal
+                    ''
+                }
+                if ($isProjectWindow) {
+                    $projectPosition = [Array]::IndexOf([string[]]$script:CodexPlusProjectWindowOrder, $windowHandleKey)
+                    $windowOrdinal = if ($projectWindowCount -gt 1) { $projectPosition + 1 } else { 0 }
+                } else {
+                    $windowOrdinal = if ($windowHandle -eq $primaryWindowHandle) {
+                        $processOrdinal
+                    } else {
+                        $currentTitle = Get-CodexNativeWindowTitle -WindowHandle $windowHandle
+                        $titleMatch = [regex]::Match([string]$currentTitle, '^(\d+)\.Codex$')
+                        if ($titleMatch.Success) {
+                            $candidateOrdinal = [int]$titleMatch.Groups[1].Value
+                            if ($candidateOrdinal -gt 0 -and $candidateOrdinal -notin $usedOrdinals) {
+                                $candidateOrdinal
+                            } else {
+                                Get-CodexNextWindowTitleOrdinal
+                            }
                         } else {
                             Get-CodexNextWindowTitleOrdinal
                         }
-                    } else {
-                        Get-CodexNextWindowTitleOrdinal
                     }
                 }
 
-                if ($windowOrdinal -gt 0) {
+                if (-not $isProjectWindow -and $windowOrdinal -gt 0) {
                     $usedOrdinals += $windowOrdinal
                 }
-                $desiredTitle = Get-CodexDesiredWindowTitle -Ordinal $windowOrdinal
+                $currentWindowTitle = Get-CodexNativeWindowTitle -WindowHandle $windowHandle
+                $projectMatch = if (-not $isProjectWindow) {
+                    [regex]::Match([string]$currentWindowTitle, '^Codex Plus Project:\s*(.+)$')
+                } else {
+                    $null
+                }
+                if (-not $isProjectWindow -and $projectMatch.Success) {
+                    $script:CodexPlusWindowProjectNames[[string]$windowHandle] = $projectMatch.Groups[1].Value.Trim()
+                }
+                $desiredTitle = Get-CodexDesiredWindowTitle -Ordinal $windowOrdinal -ProjectName $projectName
                 if ((Get-CodexNativeWindowTitle -WindowHandle $windowHandle) -ne $desiredTitle) {
                     if (Set-CodexNativeWindowTitle -WindowHandle $windowHandle -Title $desiredTitle) {
                         $updated = $true
@@ -919,7 +1015,7 @@ function Watch-CodexCloseToQuit {
     param(
         [Parameter(Mandatory)][int]$Port,
         [AllowEmptyString()][string]$LauncherKey,
-        [int]$PollSeconds = 1,
+        [int]$PollMilliseconds = 250,
         [int]$GracePolls = 3,
         [int]$StartupWaitSeconds = 30,
         [int]$NoWindowKillAfterSeconds = 12
@@ -938,7 +1034,7 @@ function Watch-CodexCloseToQuit {
         )
         if ($matchingProcesses.Count -eq 0) {
             if ((-not $seenMatchingProcess) -and ([DateTime]::UtcNow -lt $startupDeadline)) {
-                Start-Sleep -Seconds $PollSeconds
+                Start-Sleep -Milliseconds $PollMilliseconds
                 continue
             }
             return
@@ -974,7 +1070,7 @@ function Watch-CodexCloseToQuit {
             return
         }
 
-        Start-Sleep -Seconds $PollSeconds
+        Start-Sleep -Milliseconds $PollMilliseconds
     }
 }
 
@@ -1087,6 +1183,10 @@ function Invoke-CodexRtlInjection {
             if ($targetId) {
                 $script:CodexPlusInjectedTargetIds[$targetId] = $true
             }
+            # A newly opened project target exposes its project context as soon as
+            # this injection completes. Sync native titles before moving on to
+            # other targets so the taskbar does not wait for the whole batch.
+            Update-CodexWindowTitles -Port $Port | Out-Null
         } catch {
             Write-Warn "Codex Plus injection failed for target '$($target.title)': $($_.Exception.Message)"
         }

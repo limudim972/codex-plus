@@ -593,6 +593,8 @@ $windowOrdinalProcess = [pscustomobject]@{
 Assert-Equal 3 (Get-CodexProcessWindowTitleOrdinal -Process $windowOrdinalProcess) 'Managed process metadata should surface the assigned taskbar title ordinal.'
 Assert-True (Test-CodexProcessIsCodexPlusManaged -Process $windowOrdinalProcess) 'Managed Codex Plus processes should be recognized from the profile root.'
 Assert-Equal '1.Codex' (Get-CodexDesiredWindowTitle -Ordinal 1) 'Desired taskbar titles should prefix Codex with the ordinal.'
+Assert-Equal 'codex-plus' (Get-CodexDesiredWindowTitle -ProjectName 'codex-plus') 'The first project window should initially use only the project name.'
+Assert-Equal '2.codex-plus' (Get-CodexDesiredWindowTitle -Ordinal 2 -ProjectName 'codex-plus') 'Project windows should use the project name after the unique ordinal.'
 
 $script:MockCodexProcesses = @(
     [pscustomobject]@{
@@ -828,6 +830,19 @@ Assert-True ($sidebarPagingPayload.Contains('hover:bg-token-list-hover-backgroun
 Assert-True ($sidebarPagingPayload.Contains('displayTitle')) 'Synthetic Threads labels should come from the live catalog display title.'
 Assert-True ($sidebarPagingPayload.Contains("return title + ' (task)'")) 'Synthetic task threads should show a task suffix after the title.'
 Assert-True ($sidebarPagingPayload.Contains("return title + ' (' + projectTitle + ')'")) 'Synthetic project threads should show the project name after the title.'
+Assert-True ($sidebarPagingPayload.Contains("if (projectWindowContext) return title")) 'Project-window thread labels should omit the project suffix without adding a task suffix.'
+Assert-True ($sidebarPagingPayload.Contains('getProjectWindowContext')) 'Sidebar paging should detect project-window context.'
+Assert-True ($sidebarPagingPayload.Contains('codexPlusProjectId')) 'Sidebar paging should read the project id from the startup URL.'
+Assert-True ($sidebarPagingPayload.Contains("kind !== 'project'")) 'Project windows should exclude projectless task threads.'
+Assert-True ($sidebarPagingPayload.Contains('normalizeProjectId(projectGroup?.projectId || cwd) !== normalizeProjectId(projectWindowContext.id)')) 'Project windows should filter threads to the selected project.'
+Assert-True ($sidebarPagingPayload.Contains("get('initialRoute')")) 'Sidebar paging should read encoded startup routes.'
+Assert-True ($sidebarPagingPayload.Contains("homeUrl.searchParams.set('initialRoute', '/')")) 'Project windows should normalize their carrier route back to the home route.'
+Assert-True ($sidebarPagingPayload.Contains('__CODEX_PLUS_PROJECT_WINDOW_CONTEXT')) 'Project context should remain available to the menu action after route normalization.'
+Assert-True ($sidebarPagingPayload.Contains('reinforceProjectWindowMetadata')) 'Project-window metadata should remain visible to native title synchronization.'
+Assert-True ($sidebarPagingPayload.Contains('codexPlusPendingProjectWindows')) 'Project windows should claim queued context from the shared Plus session.'
+Assert-True ($sidebarPagingPayload.Contains("projectWindowContext.name + ' threads'")) 'Project windows should name the synthetic section after the project.'
+Assert-True ($sidebarPagingPayload.Contains("spec.key === 'projects'")) 'Project windows should hide the native Projects section.'
+Assert-True ($sidebarPagingPayload.Contains("recentThreadEntries.length === 0 && !projectWindowContext")) 'Project windows should keep their named Threads section when the project has no threads.'
 Assert-True ($sidebarPagingPayload.Contains('data-codex-plus-thread-id')) 'Synthetic Threads rows should retain the source thread id for click proxying.'
 Assert-True ($sidebarPagingPayload.Contains('return entries.sort((left, right) => right.lastModifiedMs - left.lastModifiedMs);')) 'Synthetic Threads should mirror the full live thread catalog without a recent-items cap.'
 Assert-True ($sidebarPagingPayload.Contains('data-app-action-sidebar-thread-title')) 'Synthetic Threads should target the live Codex thread title element.'
@@ -906,7 +921,22 @@ Assert-True ($payloadBundle.Contains('__CODEX_PLUS_SPLIT_MODEL_EFFORT_SELECTOR')
 $newWindowPayload = Get-CodexNewWindowButtonPayload
 Assert-True ($newWindowPayload.Contains('data-codex-plus-shared-window-button')) 'New window payload should expose a dedicated shared-window marker.'
 Assert-True ($newWindowPayload.Contains('open-in-new-window')) 'New window payload should use Codex''s supported open-in-new-window message.'
+Assert-True ($newWindowPayload.Contains('data-codex-plus-project-window-button')) 'New window payload should add a project-row new-window action.'
+Assert-True ($newWindowPayload.Contains('codexPlusProjectId')) 'New window payload should carry the project id.'
+Assert-True ($newWindowPayload.Contains('codexPlusProjectName')) 'New window payload should carry the project name.'
+Assert-True ($newWindowPayload.Contains("return '/';")) 'Project new-window payload should use the native bridge home route.'
+Assert-True ($newWindowPayload.Contains('codexPlusPendingProjectWindows')) 'Project context should be queued through the shared Plus session.'
+Assert-True ($newWindowPayload.Contains('currentProjectContext')) 'Menu new-window action should resolve the current project.'
+Assert-True ($newWindowPayload.Contains('__CODEX_PLUS_PROJECT_WINDOW_CLICK_GUARD')) 'Project new-window actions should survive native row rerenders through delegated click handling.'
 Assert-True (-not ($newWindowPayload.Contains('New Plus'))) 'New window payload should not expose the removed independent Plus button.'
+$launchSource = Get-Content -Raw (Join-Path $repoRoot 'src\runtime\launch.ps1')
+Assert-True ($launchSource.Contains('[int]$PollMilliseconds = 250')) 'The close watchdog should poll frequently so taskbar titles update quickly.'
+Assert-True ($launchSource.Contains('A newly opened project target exposes its project context')) 'Native titles should be synchronized after each newly injected target.'
+$contextBadgePayload = Get-CodexContextBadgePayload
+Assert-True ($contextBadgePayload.Contains('readWindowTitle')) 'Context badge should read the current window title context.'
+Assert-True ($contextBadgePayload.Contains('__CODEX_PLUS_NATIVE_WINDOW_TITLE')) 'Context badge should display the synchronized native window title.'
+Assert-True ($contextBadgePayload.Contains('__CODEX_PLUS_PROJECT_WINDOW_CONTEXT')) 'Context badge should include the project title in project windows.'
+Assert-True ($contextBadgePayload.Contains("['Plus', title, percent]")) 'Context badge should display Plus, title, and usage when available.'
 $sharedPayload = Get-CodexRtlSharedPayload
 Assert-True ($sharedPayload.Contains('ensureHelpers')) 'Shared bidi payload should expose the helpers on a shared window namespace.'
 Assert-True ($sharedPayload.Contains('classifyDirection')) 'Shared bidi payload should own the direction classifier used by multiple surfaces.'
