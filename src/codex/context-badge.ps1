@@ -17,6 +17,7 @@ function Get-CodexContextBadgePayload {
   const TOOLTIP_TRIGGER_SELECTOR = '[aria-label^="Context usage:"]';
   const CONVERSATION_SELECTOR = '[data-thread-find-target="conversation"]';
   const PLAN_PANEL_SELECTOR = '[role="tabpanel"][aria-label="Plan"][data-tab-id="plan"]';
+  let statusText = '';
 
   function normalizeText(text) {
     return String(text || '').replace(/\s+/g, ' ').trim();
@@ -97,7 +98,7 @@ function Get-CodexContextBadgePayload {
 
     const percent = readContextPercent(scopeDoc);
     const title = readWindowTitle(scopeDoc);
-    const nextText = stripBidiMarks(['Plus', title, percent].filter(Boolean).join(' '));
+    const nextText = stripBidiMarks(['Plus', title, statusText, percent].filter(Boolean).join(' '));
     if (badge.textContent !== nextText) {
       badge.textContent = nextText;
     }
@@ -154,7 +155,15 @@ function Get-CodexContextBadgePayload {
 
   window.__CODEX_PLUS_CONTEXT_BADGE = {
     apply,
-    observer
+    observer,
+    setStatus(nextStatus) {
+      statusText = normalizeText(nextStatus);
+      apply();
+    },
+    clearStatus() {
+      statusText = '';
+      apply();
+    }
   };
 
   if (document.readyState === 'loading') {

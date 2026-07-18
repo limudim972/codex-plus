@@ -63,6 +63,8 @@ function Get-CodexNewWindowButtonPayload {
   function launchSharedWindow(context) {
     const bridge = window.electronBridge?.sendMessageFromView;
     if (typeof bridge !== 'function') return;
+    const projectName = context?.name ? String(context.name).replace(/\s+/g, ' ').trim() : '';
+    window.__CODEX_PLUS_CONTEXT_BADGE?.setStatus('- Launching ' + (projectName ? projectName + ' ' : '') + 'window');
     const path = context?.id && context?.name ? getProjectStartupPath(context) : '/';
     if (context?.id && context?.name) {
       try {
@@ -71,7 +73,11 @@ function Get-CodexNewWindowButtonPayload {
         localStorage.setItem(PENDING_PROJECT_WINDOWS_KEY, JSON.stringify(pending.slice(-20)));
       } catch {}
     }
-    Promise.resolve(window.electronBridge.sendMessageFromView({ type: 'open-in-new-window', path })).catch(() => {});
+    const launchRequest = Promise.resolve(window.electronBridge.sendMessageFromView({ type: 'open-in-new-window', path }));
+    launchRequest.catch(() => {
+      window.__CODEX_PLUS_CONTEXT_BADGE?.clearStatus();
+    });
+    window.setTimeout(() => window.__CODEX_PLUS_CONTEXT_BADGE?.clearStatus(), 5000);
   }
 
   function installProjectButtons() {

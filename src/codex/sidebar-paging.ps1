@@ -849,6 +849,7 @@ function Get-CodexSidebarPagingPayload {
     }
     threadNavigationState.overlay?.remove();
     threadNavigationState = null;
+    window.__CODEX_PLUS_CONTEXT_BADGE?.clearStatus();
   }
 
   function isThreadNavigationReady(state) {
@@ -897,6 +898,7 @@ function Get-CodexSidebarPagingPayload {
       startedAt: performance.now(),
       overlay
     };
+    window.__CODEX_PLUS_CONTEXT_BADGE?.setStatus('- Loading thread');
     checkThreadNavigationLoading(sequence);
   }
 
@@ -1180,13 +1182,20 @@ function Get-CodexSidebarPagingPayload {
       .filter((threadId) => threadId && threadId !== activeThreadId && !workingThreadIds.has(threadId));
     if (threadIds.length === 0) return;
     startupThreadPreloadStarted = true;
+    window.__CODEX_PLUS_CONTEXT_BADGE?.setStatus('- Preloading threads');
 
     const scope = getAppScopeFromSidebar();
     const modules = await getInternalNavigationModules();
-    if (!scope || !modules?.appServer?.c || typeof modules.appServer.Et !== 'function') return;
+    if (!scope || !modules?.appServer?.c || typeof modules.appServer.Et !== 'function') {
+      window.__CODEX_PLUS_CONTEXT_BADGE?.clearStatus();
+      return;
+    }
 
     const manager = scope.get(modules.appServer.c, 'local');
-    if (!manager || typeof manager.activateThreadSummary !== 'function') return;
+    if (!manager || typeof manager.activateThreadSummary !== 'function') {
+      window.__CODEX_PLUS_CONTEXT_BADGE?.clearStatus();
+      return;
+    }
 
     await Promise.all(threadIds.map(async (threadId) => {
       if (startupThreadPreloadPromises.has(threadId)) {
@@ -1199,6 +1208,7 @@ function Get-CodexSidebarPagingPayload {
       startupThreadPreloadPromises.set(threadId, preload);
       return preload;
     }));
+    window.__CODEX_PLUS_CONTEXT_BADGE?.clearStatus();
   }
 
   async function navigateThreadThroughCodex(threadRow) {

@@ -862,6 +862,8 @@ Assert-True ($sidebarPagingPayload.Contains('getReactThreadStatusState')) 'Synth
 Assert-True ($sidebarPagingPayload.Contains('getReactFiberCandidates')) 'Synthetic Threads should inspect all live React fibers in a native row.'
 Assert-True ($sidebarPagingPayload.Contains('getNativeThreadRows')) 'Synthetic Threads should discover native rows from the live sidebar DOM.'
 Assert-True ($sidebarPagingPayload.Contains('data-codex-plus-thread-navigation-overlay')) 'Thread navigation should expose a dedicated main-surface loading overlay.'
+Assert-True ($sidebarPagingPayload.Contains("setStatus('- Loading thread')")) 'Thread loading should publish its status to the badge.'
+Assert-True ($sidebarPagingPayload.Contains("setStatus('- Preloading threads')")) 'Thread-list preloading should publish its status to the badge.'
 Assert-True ($sidebarPagingPayload.Contains('createThreadNavigationOverlay')) 'Thread navigation should render the spinner in the main conversation area.'
 Assert-True ($sidebarPagingPayload.Contains('startThreadNavigationLoadingMonitor')) 'Thread navigation should monitor native and synthetic thread activation.'
 Assert-True ($sidebarPagingPayload.Contains('isThreadNavigationReady')) 'Thread navigation should remove the spinner after the target conversation renders.'
@@ -928,6 +930,7 @@ Assert-True ($newWindowPayload.Contains("return '/';")) 'Project new-window payl
 Assert-True ($newWindowPayload.Contains('codexPlusPendingProjectWindows')) 'Project context should be queued through the shared Plus session.'
 Assert-True ($newWindowPayload.Contains('currentProjectContext')) 'Menu new-window action should resolve the current project.'
 Assert-True ($newWindowPayload.Contains('__CODEX_PLUS_PROJECT_WINDOW_CLICK_GUARD')) 'Project new-window actions should survive native row rerenders through delegated click handling.'
+Assert-True ($newWindowPayload.Contains("setStatus('- Launching '")) 'New-window launch should publish its status to the badge.'
 Assert-True (-not ($newWindowPayload.Contains('New Plus'))) 'New window payload should not expose the removed independent Plus button.'
 $launchSource = Get-Content -Raw (Join-Path $repoRoot 'src\runtime\launch.ps1')
 Assert-True ($launchSource.Contains('[int]$PollMilliseconds = 250')) 'The close watchdog should poll frequently so taskbar titles update quickly.'
@@ -936,7 +939,8 @@ $contextBadgePayload = Get-CodexContextBadgePayload
 Assert-True ($contextBadgePayload.Contains('readWindowTitle')) 'Context badge should read the current window title context.'
 Assert-True ($contextBadgePayload.Contains('__CODEX_PLUS_NATIVE_WINDOW_TITLE')) 'Context badge should display the synchronized native window title.'
 Assert-True ($contextBadgePayload.Contains('__CODEX_PLUS_PROJECT_WINDOW_CONTEXT')) 'Context badge should include the project title in project windows.'
-Assert-True ($contextBadgePayload.Contains("['Plus', title, percent]")) 'Context badge should display Plus, title, and usage when available.'
+Assert-True ($contextBadgePayload.Contains("['Plus', title, statusText, percent]")) 'Context badge should display Plus, status, title, and usage when available.'
+Assert-True ($contextBadgePayload.Contains('setStatus(nextStatus)')) 'Context badge should expose a live status setter.'
 $sharedPayload = Get-CodexRtlSharedPayload
 Assert-True ($sharedPayload.Contains('ensureHelpers')) 'Shared bidi payload should expose the helpers on a shared window namespace.'
 Assert-True ($sharedPayload.Contains('classifyDirection')) 'Shared bidi payload should own the direction classifier used by multiple surfaces.'
