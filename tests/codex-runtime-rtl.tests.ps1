@@ -835,7 +835,7 @@ Assert-True ($projectSelectorGuardPayload.Contains("closest('[' + LOCKED_ATTR + 
 
 $sidebarPagingPayload = Get-CodexSidebarPagingPayload
 Assert-True ($sidebarPagingPayload.Contains("key: 'threads'")) 'Sidebar paging should define the synthetic Threads section.'
-Assert-True ($sidebarPagingPayload.Contains("title: 'Threads'")) 'Sidebar paging should render a Threads heading.'
+Assert-True ($sidebarPagingPayload.Contains("title: 'Recents'")) 'Sidebar paging should render a Recents heading.'
 Assert-True ($sidebarPagingPayload.Contains("minVisibleCount: 3")) 'Sidebar paging should keep at least three thread rows visible by default.'
 Assert-True ($sidebarPagingPayload.Contains('getProjectTimestampMsForRow')) 'Sidebar paging should resolve project timestamps from live state.'
 Assert-True ($sidebarPagingPayload.Contains('getRemoteProjectTimestampMsForRow')) 'Sidebar paging should fall back to remote project timestamps from React props.'

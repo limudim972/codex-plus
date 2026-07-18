@@ -14,6 +14,7 @@ function Get-CodexSidebarPagingPayload {
   const SYNTHETIC_ROW_ATTR = 'data-codex-plus-sidebar-synthetic-row';
   const SOURCE_LIST_ATTR = 'data-codex-plus-source-list-label';
   const SOURCE_TEXT_ATTR = 'data-codex-plus-source-row-text';
+  const SOURCE_PROJECT_ID_ATTR = 'data-codex-plus-source-project-id';
   const NAVIGATION_PENDING_ATTR = 'data-codex-plus-thread-navigation-pending';
   const THREAD_SPINNER_ATTR = 'data-codex-plus-thread-spinner';
   const THREAD_NAVIGATION_OVERLAY_ATTR = 'data-codex-plus-thread-navigation-overlay';
@@ -54,7 +55,7 @@ function Get-CodexSidebarPagingPayload {
   const nativeThreadWorkingCache = new Set();
 
   const SECTION_SPECS = [
-    { key: 'threads', title: 'Threads', minVisibleCount: 3, synthetic: true },
+    { key: 'threads', title: 'Recents', minVisibleCount: 3, synthetic: true },
     { key: 'projects', title: 'Projects', minVisibleCount: 2 },
     { key: 'tasks', labels: ['Tasks', 'Chats'], minVisibleCount: 3 }
   ];
@@ -343,9 +344,16 @@ function Get-CodexSidebarPagingPayload {
     if (!context?.id || !context?.name || projectWindowContext) return false;
     projectWindowContext = context;
     window.__CODEX_PLUS_PROJECT_WINDOW_CONTEXT = context;
-    const projectWindowTitle = 'Codex Plus Project: ' + projectWindowContext.name;
     const reinforceProjectWindowMetadata = () => {
+      const projectRow = findProjectRowById(projectWindowContext.id);
+      const liveName = projectRow ? getProjectLabelForRow(projectRow) : '';
+      if (liveName && liveName !== projectWindowContext.name) {
+        projectWindowContext = { ...projectWindowContext, name: liveName };
+        window.__CODEX_PLUS_PROJECT_WINDOW_CONTEXT = projectWindowContext;
+        requestSidebarRefresh();
+      }
       document.documentElement?.setAttribute(PROJECT_WINDOW_MARKER, projectWindowContext.id);
+      const projectWindowTitle = 'Codex Plus Project: ' + projectWindowContext.name;
       if (document.title !== projectWindowTitle) document.title = projectWindowTitle;
     };
     reinforceProjectWindowMetadata();
@@ -1188,7 +1196,9 @@ function Get-CodexSidebarPagingPayload {
     return internalNavigationModulesPromise;
   }
 
-  function getThreadNavigationLocation(sourceListLabel) {
+  function getThreadNavigationLocation(sourceListLabel, sourceProjectId) {
+    const directProjectId = normalizeProjectId(sourceProjectId);
+    if (directProjectId) return 'project:' + directProjectId;
     const projectLabel = getProjectLabelFromSourceList(sourceListLabel);
     if (projectLabel) {
       const projectRow = findProjectRowByLabel(projectLabel);
@@ -1271,7 +1281,7 @@ function Get-CodexSidebarPagingPayload {
       modules.navigation.t(
         scope,
         hostId + ':' + threadId,
-        getThreadNavigationLocation(threadRow.getAttribute(SOURCE_LIST_ATTR))
+        getThreadNavigationLocation(threadRow.getAttribute(SOURCE_LIST_ATTR), threadRow.getAttribute(SOURCE_PROJECT_ID_ATTR))
       );
       return true;
     } catch {
@@ -1385,7 +1395,8 @@ function Get-CodexSidebarPagingPayload {
 
   function syncThreadToggleButton(button, collapsed, headingLabel = 'Threads') {
     if (!button) return;
-    const nextLabel = collapsed ? 'Show Threads list' : 'Hide Threads list';
+    const normalizedHeadingLabel = normalizeText(headingLabel) || 'Threads';
+    const nextLabel = collapsed ? 'Show ' + normalizedHeadingLabel + ' list' : 'Hide ' + normalizedHeadingLabel + ' list';
     const nextExpanded = collapsed ? 'false' : 'true';
     if (button.getAttribute(ACTION_ATTR) !== 'collapse-list') {
       button.setAttribute(ACTION_ATTR, 'collapse-list');
@@ -1412,7 +1423,6 @@ function Get-CodexSidebarPagingPayload {
       button.removeAttribute('data-state');
     }
     const labelSpan = button.querySelector('span');
-    const normalizedHeadingLabel = normalizeText(headingLabel) || 'Threads';
     if (labelSpan && normalizeText(labelSpan.textContent) !== normalizedHeadingLabel) {
       labelSpan.textContent = normalizedHeadingLabel;
     }
@@ -1522,6 +1532,13 @@ function Get-CodexSidebarPagingPayload {
       || null;
   }
 
+  function findProjectRowById(projectId) {
+    const normalizedProjectId = normalizeProjectId(projectId);
+    if (!normalizedProjectId) return null;
+    return Array.from(document.querySelectorAll('[data-app-action-sidebar-project-row]'))
+      .find((row) => normalizeProjectId(getProjectIdForRow(row)) === normalizedProjectId) || null;
+  }
+
   function expandSourceProject(sourceListLabel) {
     const projectLabel = getProjectLabelFromSourceList(sourceListLabel);
     const projectRow = findProjectRowByLabel(projectLabel);
@@ -1564,13 +1581,14 @@ function Get-CodexSidebarPagingPayload {
       .find((row) => normalizeThreadId(getThreadIdForRow(row)) === normalizedThreadId) || null;
   }
 
-  function wireSyntheticThreadRow(row, sourceListLabel, sourceRowText) {
+  function wireSyntheticThreadRow(row, sourceListLabel, sourceRowText, sourceProjectId) {
     if (!row) return;
     if (row.getAttribute('data-codex-plus-thread-wired') === 'true') {
       return;
     }
     row.setAttribute(SOURCE_LIST_ATTR, sourceListLabel);
     row.setAttribute(SOURCE_TEXT_ATTR, sourceRowText);
+    if (sourceProjectId) row.setAttribute(SOURCE_PROJECT_ID_ATTR, sourceProjectId);
 
     const invokeSourceRow = (event) => {
       if (row.getAttribute(NAVIGATION_PENDING_ATTR) === 'true') {
@@ -2253,7 +2271,7 @@ function Get-CodexSidebarPagingPayload {
       clone.setAttribute(SYNTHETIC_ROW_ATTR, 'threads');
       clone.setAttribute(THREAD_UPDATED_ATTR, String(entry.lastModifiedMs));
       setThreadLabel(clone, label, stripThreadTimestampSuffix(label), entry.lastModifiedMs);
-      wireSyntheticThreadRow(clone, entry.sourceListLabel || 'Tasks', entry.sourceRowText || entry.title);
+      wireSyntheticThreadRow(clone, entry.sourceListLabel || 'Tasks', entry.sourceRowText || entry.title, entry.projectId);
       threadRows.push({
         row: clone,
         timestampMs: entry.lastModifiedMs,
@@ -2274,7 +2292,7 @@ function Get-CodexSidebarPagingPayload {
     let listElement = shell.querySelector('[' + SYNTHETIC_LIST_ATTR + ']');
     const threadsHeadingLabel = projectWindowContext
       ? projectWindowContext.name + ' threads'
-      : 'Threads';
+      : 'Recents';
 
     if (!header || !sectionContainer || !listElement) {
       shell.innerHTML = '';
@@ -2300,7 +2318,7 @@ function Get-CodexSidebarPagingPayload {
       const scroller = document.createElement('div');
       listElement = document.createElement('div');
       listElement.setAttribute('role', 'list');
-      listElement.setAttribute('aria-label', 'Threads');
+      listElement.setAttribute('aria-label', 'Recents');
       listElement.setAttribute(SYNTHETIC_LIST_ATTR, 'threads');
       scroller.appendChild(listElement);
       sectionContainer.appendChild(scroller);
@@ -2315,16 +2333,21 @@ function Get-CodexSidebarPagingPayload {
     const collapseButton = shell.querySelector('[' + ACTION_ATTR + '="collapse-list"]');
     if (collapseButton && sectionContainer) {
       const collapsed = sectionContainer.hidden || shell.getAttribute(COLLAPSED_ATTR) === 'true';
-      syncThreadToggleButton(collapseButton, collapsed, projectWindowContext ? projectWindowContext.name + ' threads' : 'Threads');
+      syncThreadToggleButton(collapseButton, collapsed, projectWindowContext ? projectWindowContext.name + ' threads' : 'Recents');
       bindSingleActivation(collapseButton, (event) => {
         const nextCollapsed = !sectionContainer.hidden;
         sectionContainer.hidden = nextCollapsed;
         shell.setAttribute(COLLAPSED_ATTR, nextCollapsed ? 'true' : 'false');
-        syncThreadToggleButton(collapseButton, nextCollapsed, projectWindowContext ? projectWindowContext.name + ' threads' : 'Threads');
+        syncThreadToggleButton(collapseButton, nextCollapsed, projectWindowContext ? projectWindowContext.name + ' threads' : 'Recents');
         event.preventDefault();
         event.stopPropagation();
         event.stopImmediatePropagation();
       });
+    }
+
+    if (!projectWindowContext) {
+      const visibleHeaderLabel = shell.querySelector('[' + THREADS_HEADER_ATTR + '] button span');
+      if (visibleHeaderLabel) visibleHeaderLabel.textContent = 'Recents';
     }
 
     if (shell.parentElement !== projectsShell.parentElement || shell.nextSibling !== projectsShell) {

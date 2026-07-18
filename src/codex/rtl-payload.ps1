@@ -145,7 +145,7 @@ function Get-CodexRtlPayload {
       '  direction: ltr !important;',
       '  unicode-bidi: isolate !important;',
       '}',
-      '#above-composer-queue-portal:has([class*="input-validation-error-background"]) {',
+      '[class*="bg-token-input-validation-error-background"]:has(.text-xs.font-semibold) {',
       '  display: none !important;',
       '}'
     ].join('\n');
@@ -374,6 +374,7 @@ function Get-CodexPlusPayloadBundle {
         Get-CodexRtlPayload
         Get-CodexRtlPayloadPlan
         Get-CodexContextBadgePayload
+        Get-CodexFullAccessReminderHiderPayload
         Get-CodexSplitModelEffortSelectorPayload
         Get-CodexProjectSelectorGuardPayload
         Get-CodexSidebarPagingPayload

@@ -29,6 +29,7 @@ foreach ($module in @(
     'src/codex/rtl-payload.ps1',
     'src/codex/rtl-payload-Plan.ps1',
     'src/codex/context-badge.ps1',
+    'src/codex/full-access-reminder-hider.ps1',
     'src/codex/split-model-effort-selector.ps1',
     'src/codex/project-selector-guard.ps1',
     'src/codex/sidebar-paging.ps1',
