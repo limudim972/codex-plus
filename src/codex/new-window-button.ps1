@@ -55,7 +55,7 @@ function Get-CodexNewWindowButtonPayload {
   }
 
   function getProjectStartupPath(context) {
-    // The native bridge accepts the home route only. Project metadata is carried
+    // The native bridge accepts the home route. Project metadata is carried
     // through the shared Plus-session queue and claimed by the new window.
     return '/';
   }
@@ -69,7 +69,12 @@ function Get-CodexNewWindowButtonPayload {
     if (context?.id && context?.name) {
       try {
         const pending = JSON.parse(localStorage.getItem(PENDING_PROJECT_WINDOWS_KEY) || '[]');
-        pending.push({ codexPlusProjectId: context.id, codexPlusProjectName: context.name, startupPath: path });
+        pending.push({
+          codexPlusProjectId: context.id,
+          codexPlusProjectName: context.name,
+          startupPath: path,
+          createdAt: Date.now()
+        });
         localStorage.setItem(PENDING_PROJECT_WINDOWS_KEY, JSON.stringify(pending.slice(-20)));
       } catch {}
     }

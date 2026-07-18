@@ -23,6 +23,7 @@ $expectedFunctions = @(
     'Find-CodexDir',
     'Get-CodexInstallInfo',
     'Get-CodexRtlPayload',
+    'Get-CodexProjectSelectorGuardPayload',
     'Get-CodexNewWindowButtonPayload',
     'Install-CodexRtlPatch',
     'Restore-CodexRtlPatch',

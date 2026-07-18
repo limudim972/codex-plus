@@ -1,17 +1,31 @@
 param(
     [Parameter(Mandatory)]
     [int]$Port,
-    [string]$Expression = 'document.title'
+    [string]$Expression = 'document.title',
+    [string]$Title,
+    [string]$Url,
+    [string]$Id
 )
 
 function Get-CodexDevToolsPage {
-    param([Parameter(Mandatory)][int]$Port)
+    param(
+        [Parameter(Mandatory)][int]$Port,
+        [string]$Title,
+        [string]$Url,
+        [string]$Id
+    )
 
     $list = Invoke-RestMethod -Uri "http://127.0.0.1:$Port/json/list" -UseBasicParsing
     $pages = if ($list -is [System.Array]) { $list } else { $list.value }
-    $page = $pages | Where-Object { $_.type -eq 'page' -and $_.url -like 'app://*' } | Select-Object -First 1
+    $page = $pages |
+        Where-Object { $_.type -eq 'page' -and $_.url -like 'app://*' } |
+        Where-Object { [string]::IsNullOrWhiteSpace($Title) -or $_.title -eq $Title } |
+        Where-Object { [string]::IsNullOrWhiteSpace($Url) -or $_.url -eq $Url } |
+        Where-Object { [string]::IsNullOrWhiteSpace($Id) -or $_.id -eq $Id } |
+        Select-Object -First 1
     if (-not $page) {
-        throw "No debugger target found on port $Port"
+        $filter = if ($Id) { " id '$Id'" } elseif ($Title) { " title '$Title'" } elseif ($Url) { " URL '$Url'" } else { '' }
+        throw "No debugger target found on port $Port$filter"
     }
     return $page
 }
@@ -83,6 +97,6 @@ function Invoke-CodexDevToolsExpression {
     }
 }
 
-$page = Get-CodexDevToolsPage -Port $Port
+$page = Get-CodexDevToolsPage -Port $Port -Title $Title -Url $Url -Id $Id
 $response = Invoke-CodexDevToolsExpression -WebSocketDebuggerUrl $page.webSocketDebuggerUrl -Expression $Expression
 $response | ConvertTo-Json -Depth 20

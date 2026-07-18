@@ -4,25 +4,15 @@ param(
     [Parameter(Mandatory)]
     [double]$X,
     [Parameter(Mandatory)]
-    [double]$Y,
-    [string]$Title,
-    [string]$Id
+    [double]$Y
 )
 
 function Get-CodexDevToolsPage {
-    param(
-        [Parameter(Mandatory)][int]$Port,
-        [string]$Title,
-        [string]$Id
-    )
+    param([Parameter(Mandatory)][int]$Port)
 
     $list = Invoke-RestMethod -Uri "http://127.0.0.1:$Port/json/list" -UseBasicParsing
     $pages = if ($list -is [System.Array]) { $list } else { $list.value }
-    $page = $pages |
-        Where-Object { $_.type -eq 'page' -and $_.url -like 'app://*' } |
-        Where-Object { [string]::IsNullOrWhiteSpace($Title) -or $_.title -eq $Title } |
-        Where-Object { [string]::IsNullOrWhiteSpace($Id) -or $_.id -eq $Id } |
-        Select-Object -First 1
+    $page = $pages | Where-Object { $_.type -eq 'page' -and $_.url -like 'app://*' } | Select-Object -First 1
     if (-not $page) {
         throw "No debugger target found on port $Port"
     }
@@ -87,15 +77,11 @@ function Invoke-CodexDevToolsCommand {
     }
 }
 
-$page = Get-CodexDevToolsPage -Port $Port -Title $Title -Id $Id
-foreach ($eventType in @('mousePressed', 'mouseReleased')) {
-    Invoke-CodexDevToolsCommand -WebSocketDebuggerUrl $page.webSocketDebuggerUrl -Method 'Input.dispatchMouseEvent' -Params @{
-        type = $eventType
-        x = $X
-        y = $Y
-        button = 'left'
-        clickCount = 1
-    } | Out-Null
-}
+$page = Get-CodexDevToolsPage -Port $Port
+Invoke-CodexDevToolsCommand -WebSocketDebuggerUrl $page.webSocketDebuggerUrl -Method 'Input.dispatchMouseEvent' -Params @{
+    type = 'mouseMoved'
+    x = $X
+    y = $Y
+} | Out-Null
 
-Write-Output "Dispatched mouse click at ($X, $Y) on port $Port."
+Write-Output "Dispatched mouse move to ($X, $Y) on port $Port."

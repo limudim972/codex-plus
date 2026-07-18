@@ -49,6 +49,7 @@ try {
         'src/codex/new-window-button.ps1',
         'src/codex/rtl-payload.ps1',
         'src/codex/split-model-effort-selector.ps1',
+        'src/codex/project-selector-guard.ps1',
         'src/runtime/state.ps1',
         'src/runtime/files.ps1',
         'src/runtime/shortcuts.ps1',
@@ -815,6 +816,23 @@ Assert-True ($splitSelectorPayload.Contains('hideNativeTrigger')) 'Split selecto
 Assert-True ($splitSelectorPayload.Contains('data-codex-plus-native-selector-hidden')) 'Split selector should mark the hidden native trigger for runtime verification.'
 Assert-True (-not ($splitSelectorPayload.Contains('role="dialog"'))) 'Split selector should not open a custom popup panel.'
 
+$projectSelectorGuardPayload = Get-CodexProjectSelectorGuardPayload
+Assert-True ($projectSelectorGuardPayload.Contains('data-composer-navigation-target="workspace-project"')) 'Project selector guard should target the native composer project control.'
+Assert-True ($projectSelectorGuardPayload.Contains('__CODEX_PLUS_PROJECT_WINDOW_CONTEXT')) 'Project selector guard should use the current project-window context.'
+Assert-True ($projectSelectorGuardPayload.Contains('onPointerDown')) 'Project selector guard should open the native project menu through its React control.'
+Assert-True ($projectSelectorGuardPayload.Contains("dispatchEvent(new MouseEvent('click'")) 'Project selector guard should select the current project through the native menu item.'
+Assert-True ($projectSelectorGuardPayload.Contains('data-codex-plus-project-selector-locked')) 'Project selector guard should publish a locked-state marker.'
+Assert-True ($projectSelectorGuardPayload.Contains('pointer-events: none')) 'Project selector guard should make the current project control non-clickable.'
+Assert-True ($projectSelectorGuardPayload.Contains('aria-label="Choose project"')) 'Project selector guard should identify the empty project state.'
+Assert-True ($projectSelectorGuardPayload.Contains('content: "Task"')) 'Project selector guard should visually label the empty project state as Task.'
+Assert-True ($projectSelectorGuardPayload.Contains('font-size: 0 !important')) 'Project selector guard should hide the native Choose project text without changing the DOM text.'
+Assert-True ($projectSelectorGuardPayload.Contains("installStyle();`n    const context = projectWindowContext();")) 'Project selector guard should keep the Task label style active outside project windows.'
+Assert-True ($projectSelectorGuardPayload.Contains('data-clear-project-button')) 'Project selector guard should target the project clear control.'
+Assert-True ($projectSelectorGuardPayload.Contains('CLEAR_PROJECT_SELECTOR')) 'Project selector guard should keep the project clear control non-interactive.'
+Assert-True ($projectSelectorGuardPayload.Contains('PROJECT_WINDOW_CLEAR_SELECTOR')) 'Project selector guard should scope clear-control hiding to project windows.'
+Assert-True ($projectSelectorGuardPayload.Contains('display: none !important')) 'Project selector guard should hide the project clear X.'
+Assert-True ($projectSelectorGuardPayload.Contains("closest('[' + LOCKED_ATTR + '=""true""],[' + PENDING_ATTR + '=""true""],' + CLEAR_PROJECT_SELECTOR)")) 'Project selector guard should block clear-project events before native state changes.'
+
 $sidebarPagingPayload = Get-CodexSidebarPagingPayload
 Assert-True ($sidebarPagingPayload.Contains("key: 'threads'")) 'Sidebar paging should define the synthetic Threads section.'
 Assert-True ($sidebarPagingPayload.Contains("title: 'Threads'")) 'Sidebar paging should render a Threads heading.'
@@ -827,12 +845,17 @@ Assert-True ($sidebarPagingPayload.Contains('timestampElement.parentElement !== 
 Assert-True ($sidebarPagingPayload.Contains('sectionList.insertBefore(row, pager)')) 'Sidebar sorting should reorder the actual DOM rows before the pager.'
 Assert-True ($sidebarPagingPayload.Contains('sortUnmanagedSidebarLists')) 'Sidebar sorting should cover lists outside the primary Projects and Tasks sections.'
 Assert-True ($sidebarPagingPayload.Contains('hover:bg-token-list-hover-background')) 'Synthetic Threads fallback rows should keep hover styling.'
+Assert-True ($sidebarPagingPayload.Contains('[data-app-action-sidebar-project-row]:hover { background-color: transparent !important; }')) 'Project names should not show a hover background.'
+Assert-True ($sidebarPagingPayload.Contains('[data-radix-popper-content-wrapper]:has([class*="project-hover-card-row"])')) 'Project hover cards should remain suppressed across their popper wrapper.'
 Assert-True ($sidebarPagingPayload.Contains('displayTitle')) 'Synthetic Threads labels should come from the live catalog display title.'
 Assert-True ($sidebarPagingPayload.Contains("return title + ' (task)'")) 'Synthetic task threads should show a task suffix after the title.'
 Assert-True ($sidebarPagingPayload.Contains("return title + ' (' + projectTitle + ')'")) 'Synthetic project threads should show the project name after the title.'
 Assert-True ($sidebarPagingPayload.Contains("if (projectWindowContext) return title")) 'Project-window thread labels should omit the project suffix without adding a task suffix.'
 Assert-True ($sidebarPagingPayload.Contains('getProjectWindowContext')) 'Sidebar paging should detect project-window context.'
 Assert-True ($sidebarPagingPayload.Contains('codexPlusProjectId')) 'Sidebar paging should read the project id from the startup URL.'
+Assert-True ($sidebarPagingPayload.Contains('PAGE_START_TIME')) 'Project windows should distinguish the newly created page from the existing main page.'
+Assert-True ($sidebarPagingPayload.Contains('tryClaimPendingProjectWindowContext')) 'Project windows should retry the shared context claim after startup.'
+Assert-True ($sidebarPagingPayload.Contains('adoptProjectWindowContext')) 'Project windows should apply project metadata when the handoff becomes visible.'
 Assert-True ($sidebarPagingPayload.Contains("kind !== 'project'")) 'Project windows should exclude projectless task threads.'
 Assert-True ($sidebarPagingPayload.Contains('normalizeProjectId(projectGroup?.projectId || cwd) !== normalizeProjectId(projectWindowContext.id)')) 'Project windows should filter threads to the selected project.'
 Assert-True ($sidebarPagingPayload.Contains("get('initialRoute')")) 'Sidebar paging should read encoded startup routes.'
@@ -920,6 +943,7 @@ $payloadBundle = Get-CodexPlusPayloadBundle
 Assert-True (-not ($payloadBundle.Contains('__CODEX_PLUS_WINDOW_TITLE'))) 'Injected payload bundle should not rewrite the webview title for taskbar labeling.'
 Assert-True ($payloadBundle.Contains('__CODEX_RTL_SHARED_HELPERS')) 'Injected payload bundle should include the shared bidi helper payload.'
 Assert-True ($payloadBundle.Contains('__CODEX_PLUS_SPLIT_MODEL_EFFORT_SELECTOR')) 'Injected payload bundle should include the split model and effort selectors.'
+Assert-True ($payloadBundle.Contains('__CODEX_PLUS_PROJECT_SELECTOR_GUARD')) 'Injected payload bundle should include the project selector guard.'
 $newWindowPayload = Get-CodexNewWindowButtonPayload
 Assert-True ($newWindowPayload.Contains('data-codex-plus-shared-window-button')) 'New window payload should expose a dedicated shared-window marker.'
 Assert-True ($newWindowPayload.Contains('open-in-new-window')) 'New window payload should use Codex''s supported open-in-new-window message.'
@@ -927,6 +951,7 @@ Assert-True ($newWindowPayload.Contains('data-codex-plus-project-window-button')
 Assert-True ($newWindowPayload.Contains('codexPlusProjectId')) 'New window payload should carry the project id.'
 Assert-True ($newWindowPayload.Contains('codexPlusProjectName')) 'New window payload should carry the project name.'
 Assert-True ($newWindowPayload.Contains("return '/';")) 'Project new-window payload should use the native bridge home route.'
+Assert-True ($newWindowPayload.Contains('createdAt: Date.now()')) 'Project new-window payload should timestamp the handoff for the newly created page.'
 Assert-True ($newWindowPayload.Contains('codexPlusPendingProjectWindows')) 'Project context should be queued through the shared Plus session.'
 Assert-True ($newWindowPayload.Contains('currentProjectContext')) 'Menu new-window action should resolve the current project.'
 Assert-True ($newWindowPayload.Contains('__CODEX_PLUS_PROJECT_WINDOW_CLICK_GUARD')) 'Project new-window actions should survive native row rerenders through delegated click handling.'

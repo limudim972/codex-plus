@@ -48,6 +48,7 @@ function Get-CodexSidebarPagingPayload {
   let liveCatalogSubscriptionScope = null;
   let liveCatalogSubscriptions = [];
   let requestSidebarRefresh = () => {};
+  const PAGE_START_TIME = Number(window.performance?.timeOrigin || Date.now());
   const nativeThreadUnreadIndicatorCache = new Map();
   const nativeThreadUnreadStateCache = new Set();
   const nativeThreadWorkingCache = new Set();
@@ -268,6 +269,17 @@ function Get-CodexSidebarPagingPayload {
       };
       const direct = parseParams(new URLSearchParams(window.location.search));
       if (direct) {
+        try {
+          const pending = JSON.parse(localStorage.getItem('codexPlusPendingProjectWindows') || '[]');
+          const matchIndex = pending.findIndex((entry) => (
+            normalizeText(entry?.codexPlusProjectId) === direct.id
+            && normalizeText(entry?.codexPlusProjectName) === direct.name
+          ));
+          if (matchIndex >= 0) {
+            pending.splice(matchIndex, 1);
+            localStorage.setItem('codexPlusPendingProjectWindows', JSON.stringify(pending));
+          }
+        } catch {}
         window.__CODEX_PLUS_PROJECT_WINDOW_CONTEXT = direct;
         return direct;
       }
@@ -280,11 +292,15 @@ function Get-CodexSidebarPagingPayload {
         const pending = JSON.parse(localStorage.getItem('codexPlusPendingProjectWindows') || '[]');
         const matchIndex = pending.findIndex((entry) => {
           const route = normalizeText(entry?.startupPath);
+          const createdAt = Number(entry?.createdAt || 0);
+          const isNewWindowRequest = createdAt > 0
+            && PAGE_START_TIME >= createdAt - 1000
+            && PAGE_START_TIME - createdAt <= 60000;
           return route && (
             route === startupRoute
             || route === decodedRoute
             || (!startupRoute && route === '/')
-          );
+          ) && isNewWindowRequest;
         });
         if (matchIndex >= 0) {
           const match = pending[matchIndex];
@@ -321,15 +337,30 @@ function Get-CodexSidebarPagingPayload {
     }
   }
 
-  const projectWindowContext = getProjectWindowContext();
-  if (projectWindowContext) {
+  let projectWindowContext = null;
+  let projectWindowMetadataInterval = null;
+  function adoptProjectWindowContext(context) {
+    if (!context?.id || !context?.name || projectWindowContext) return false;
+    projectWindowContext = context;
+    window.__CODEX_PLUS_PROJECT_WINDOW_CONTEXT = context;
     const projectWindowTitle = 'Codex Plus Project: ' + projectWindowContext.name;
     const reinforceProjectWindowMetadata = () => {
       document.documentElement?.setAttribute(PROJECT_WINDOW_MARKER, projectWindowContext.id);
       if (document.title !== projectWindowTitle) document.title = projectWindowTitle;
     };
     reinforceProjectWindowMetadata();
-    window.setInterval(reinforceProjectWindowMetadata, 250);
+    if (projectWindowMetadataInterval) window.clearInterval(projectWindowMetadataInterval);
+    projectWindowMetadataInterval = window.setInterval(reinforceProjectWindowMetadata, 250);
+    return true;
+  }
+
+  adoptProjectWindowContext(getProjectWindowContext());
+
+  function tryClaimPendingProjectWindowContext() {
+    if (projectWindowContext) return;
+    if (adoptProjectWindowContext(getProjectWindowContext())) {
+      requestSidebarRefresh();
+    }
   }
 
   function getReactFiberFromSubtree(element) {
@@ -1798,7 +1829,11 @@ function Get-CodexSidebarPagingPayload {
     if (window.__CODEX_PLUS_PROJECT_HOVER_GUARD) return;
     const style = document.createElement('style');
     style.id = 'codex-plus-project-hover-suppression';
-    style.textContent = '[role="tooltip"]:has([class*="project-hover-card-row"]) { display: none !important; }';
+    style.textContent = [
+      '[role="tooltip"]:has([class*="project-hover-card-row"]),',
+      '[data-radix-popper-content-wrapper]:has([class*="project-hover-card-row"]) { display: none !important; }',
+      '[data-app-action-sidebar-project-row]:hover { background-color: transparent !important; }'
+    ].join('\n');
     (document.head || document.documentElement).appendChild(style);
     window.__CODEX_PLUS_PROJECT_HOVER_GUARD = true;
   }
@@ -2492,6 +2527,7 @@ function Get-CodexSidebarPagingPayload {
   requestSidebarRefresh = schedule;
 
   window.setInterval(schedule, 500);
+  window.setInterval(tryClaimPendingProjectWindowContext, 250);
 
   const observer = new MutationObserver(schedule);
   const start = () => {

@@ -375,6 +375,7 @@ function Get-CodexPlusPayloadBundle {
         Get-CodexRtlPayloadPlan
         Get-CodexContextBadgePayload
         Get-CodexSplitModelEffortSelectorPayload
+        Get-CodexProjectSelectorGuardPayload
         Get-CodexSidebarPagingPayload
         Get-CodexNewWindowButtonPayload
     ) -join "`n"
