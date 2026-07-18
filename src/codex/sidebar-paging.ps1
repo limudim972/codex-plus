@@ -1350,14 +1350,15 @@ function Get-CodexSidebarPagingPayload {
     const timestampMs = Number(updatedMs || 0);
     if (timestampMs <= 0) return '';
 
-    try {
-      return new Intl.DateTimeFormat(undefined, {
-        dateStyle: 'short',
-        timeStyle: 'short'
-      }).format(new Date(timestampMs));
-    } catch {
-      return '';
-    }
+    const elapsedMs = Math.max(0, Date.now() - timestampMs);
+    const elapsedMinutes = Math.floor(elapsedMs / 60000);
+    if (elapsedMinutes < 1) return '0m';
+    if (elapsedMinutes < 60) return elapsedMinutes + 'm';
+
+    const elapsedHours = Math.floor(elapsedMinutes / 60);
+    if (elapsedHours < 24) return elapsedHours + 'h';
+
+    return Math.floor(elapsedHours / 24) + 'd';
   }
 
   function getThreadBaseLabel(row) {
