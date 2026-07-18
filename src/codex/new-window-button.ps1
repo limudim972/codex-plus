@@ -1,13 +1,17 @@
 function Get-CodexNewWindowButtonPayload {
     @'
 (function () {
-  if (window.__CODEX_PLUS_NEW_WINDOW_BUTTON) return;
-
   const HEADER_SELECTOR = '.app-header-tint';
   const MENU_GROUP_SELECTOR = 'button[aria-label="Help"]';
   const BUTTON_ATTR = 'data-codex-plus-shared-window-button';
   const PROJECT_BUTTON_ATTR = 'data-codex-plus-project-window-button';
   const PENDING_PROJECT_WINDOWS_KEY = 'codexPlusPendingProjectWindows';
+
+  // A previous payload can leave the global flag set after its DOM nodes are
+  // removed by a native React rerender. Reconcile from the actual DOM instead
+  // of permanently disabling installation based on that stale flag.
+  if (window.__CODEX_PLUS_NEW_WINDOW_BUTTON
+      && document.querySelector('[' + BUTTON_ATTR + '], [' + PROJECT_BUTTON_ATTR + ']')) return;
 
   function getMenuGroup() {
     const helpButton = document.querySelector(HEADER_SELECTOR + ' ' + MENU_GROUP_SELECTOR);
