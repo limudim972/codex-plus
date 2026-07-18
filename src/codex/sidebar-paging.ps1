@@ -842,6 +842,7 @@ function Get-CodexSidebarPagingPayload {
     const overlay = document.createElement('div');
     overlay.setAttribute(THREAD_SPINNER_ATTR, 'true');
     overlay.className = 'flex shrink-0 items-center justify-end absolute right-0 top-0 z-10 flex h-full min-w-[52px] items-center justify-end gap-2 pr-1';
+    positionSyntheticStatusIndicator(overlay);
 
     const slot = document.createElement('span');
     slot.className = 'flex h-5 min-w-5 items-center justify-center';
@@ -1012,6 +1013,62 @@ function Get-CodexSidebarPagingPayload {
     return indicator;
   }
 
+  function positionSyntheticStatusIndicator(indicator) {
+    if (!indicator?.style) return indicator;
+
+    // Native unread indicators are normally absolutely positioned at the row
+    // edge. A cloned indicator can lose that layout when it is moved into a
+    // synthetic row, which makes the inline timestamp shift left. Keep the
+    // dot out of the title flex row so timestamps share one right edge.
+    indicator.style.position = 'absolute';
+    indicator.style.top = '0px';
+    indicator.style.right = '0px';
+    indicator.style.left = 'auto';
+    indicator.style.height = '100%';
+    indicator.style.minWidth = '52px';
+    indicator.style.display = 'flex';
+    indicator.style.alignItems = 'center';
+    indicator.style.justifyContent = 'flex-end';
+    indicator.style.paddingRight = '4px';
+    indicator.style.zIndex = '10';
+    indicator.style.pointerEvents = 'none';
+    return indicator;
+  }
+
+  function positionNativeThreadStatusSlot(row) {
+    if (!row) return;
+
+    for (const nativeRow of Array.from(row.querySelectorAll('[data-app-action-sidebar-thread-row]'))) {
+      const statusSlot = Array.from(nativeRow.querySelectorAll('*')).find((candidate) => {
+        return candidate.classList.contains('shrink-0')
+          && candidate.classList.contains('group-hover:hidden')
+          && candidate.getBoundingClientRect().width > 0;
+      });
+      if (!statusSlot || !statusSlot.parentElement) continue;
+
+      // Native working/unread slots can reserve 24px even when their visible
+      // child is hidden. Overlay the slot so that it cannot move the timestamp.
+      const contentRow = statusSlot.parentElement;
+      contentRow.style.position = 'relative';
+      statusSlot.style.position = 'absolute';
+      statusSlot.style.top = '0px';
+      statusSlot.style.right = '0px';
+      statusSlot.style.height = '100%';
+    }
+  }
+
+  function installNativeThreadStatusSlotStyle() {
+    const styleId = 'codex-plus-thread-status-slot-style';
+    if (document.getElementById(styleId)) return;
+
+    const style = document.createElement('style');
+    style.id = styleId;
+    style.textContent = '[data-app-action-sidebar-thread-row] [class~="shrink-0"][class~="group-hover:hidden"] {'
+      + 'position: absolute !important; top: 0 !important; right: 0 !important; height: 100% !important;'
+      + '}';
+    (document.head || document.documentElement).appendChild(style);
+  }
+
   function getNativeThreadUnreadState(row) {
     const statusState = getReactThreadStatusState(row);
     if (!statusState || typeof statusState.type !== 'string') return null;
@@ -1097,9 +1154,9 @@ function Get-CodexSidebarPagingPayload {
     const button = getSyntheticThreadButton(row);
     if (!button) return;
 
-    const next = keepSyntheticUnreadIndicatorVisible(
+    const next = positionSyntheticStatusIndicator(keepSyntheticUnreadIndicatorVisible(
       (source || cached || createThreadUnreadIndicator()).cloneNode(true)
-    );
+    ));
     next.setAttribute(THREAD_UNREAD_INDICATOR_ATTR, 'true');
     if (existing) {
       existing.replaceWith(next);
@@ -1311,7 +1368,24 @@ function Get-CodexSidebarPagingPayload {
 
   function getRemoteProjectTimestampMsForRow(row) {
     const group = getProjectGroupFromRow(row);
-    return toTimestampMs(group?.cloudEnvironment?.created_at);
+    const environment = group?.cloudEnvironment;
+    return Math.max(
+      toTimestampMs(environment?.updated_at),
+      toTimestampMs(environment?.modified_at),
+      toTimestampMs(environment?.created_at)
+    );
+  }
+
+  function getDisplayedModifiedTimestampMs(row) {
+    const label = normalizeText(textOf(getThreadTitleElement(row)) || textOf(row));
+    const match = label.match(/\[(\d+)(m|h|d)\]$/i);
+    if (!match) return 0;
+
+    const amount = Number(match[1] || 0);
+    const unitMs = match[2].toLowerCase() === 'm'
+      ? 60000
+      : (match[2].toLowerCase() === 'h' ? 3600000 : 86400000);
+    return Math.max(0, Date.now() - amount * unitMs);
   }
 
   function getLiveThreadTimestampMs(record, catalog) {
@@ -1706,6 +1780,7 @@ function Get-CodexSidebarPagingPayload {
       if (timestampText && titleHost) {
         // Keep thread and task timestamps inset like project rows instead of pushing them to the edge.
         titleHost.classList.toggle('pr-6', isThreadSidebarRow(row));
+        positionNativeThreadStatusSlot(row);
         if (!timestampElement) {
           timestampElement = row.ownerDocument.createElement('span');
           timestampElement.setAttribute(NATIVE_TIMESTAMP_ELEMENT_ATTR, 'true');
@@ -1766,9 +1841,15 @@ function Get-CodexSidebarPagingPayload {
   }
 
   function getSidebarRowTimestampMs(row, sortKey) {
-    return sortKey === 'projects'
-      ? getProjectTimestampMsForRow(row)
-      : getThreadTimestampMsForRow(row);
+    if (sortKey === 'projects') {
+      // The Projects list also contains the threads displayed inside each
+      // expanded project. Use the project activity timestamp for project rows
+      // and the thread timestamp for those nested thread rows.
+      return getProjectIdForRow(row)
+        ? getProjectTimestampMsForRow(row)
+        : getThreadTimestampMsForRow(row);
+    }
+    return getThreadTimestampMsForRow(row);
   }
 
   function getSidebarRowSortLabel(row) {
@@ -1868,11 +1949,25 @@ function Get-CodexSidebarPagingPayload {
       if (timestampMs > current) map.set(projectId, timestampMs);
     };
 
+    // Recents is the live, already-sorted activity feed. Prefer its newest
+    // project thread because project row ids and working-directory paths are
+    // not always represented consistently across local and cloud projects.
+    for (const entry of getRecentThreadEntries()) {
+      if (entry?.kind !== 'project' || entry.lastModifiedMs <= 0) continue;
+      updateProjectTimestamp(normalizeProjectId(entry.projectId), entry.lastModifiedMs);
+      updateProjectTimestamp(normalizeProjectId(entry.cwd), entry.lastModifiedMs);
+    }
+
     for (const group of catalog.projectGroups) {
       const projectId = normalizeProjectId(group?.projectId || group?.path);
       if (!projectId) continue;
 
-      updateProjectTimestamp(projectId, toTimestampMs(group?.cloudEnvironment?.created_at));
+      const environment = group?.cloudEnvironment;
+      updateProjectTimestamp(projectId, Math.max(
+        toTimestampMs(environment?.updated_at),
+        toTimestampMs(environment?.modified_at),
+        toTimestampMs(environment?.created_at)
+      ));
       for (const threadKey of Array.isArray(group?.threadKeys) ? group.threadKeys : []) {
         const record = catalog.records.get(normalizeLiveThreadKey(threadKey));
         updateProjectTimestamp(projectId, getLiveThreadTimestampMs(record, catalog));
@@ -1887,17 +1982,59 @@ function Get-CodexSidebarPagingPayload {
     return map;
   }
 
-  function getProjectTimestampMsForRow(row) {
-    const explicit = Number(row?.getAttribute(THREAD_UPDATED_ATTR) || '0');
-    if (explicit > 0) return explicit;
+  function getRecentProjectTimestampByTitle() {
+    const map = new Map();
 
-    const projectId = normalizeProjectId(getProjectIdForRow(row));
-    if (projectId) {
-      const projectTimestamp = Number(getProjectTimestampMap().get(projectId) || 0);
-      if (projectTimestamp > 0) return projectTimestamp;
+    const addRelativeTimestamp = (title, amount, unit) => {
+      const normalizedTitle = normalizeText(title).toLowerCase();
+      if (!normalizedTitle) return;
+      const unitMs = unit.toLowerCase() === 'm'
+        ? 60000
+        : (unit.toLowerCase() === 'h' ? 3600000 : 86400000);
+      const timestampMs = Math.max(0, Date.now() - Number(amount || 0) * unitMs);
+      map.set(normalizedTitle, Math.max(Number(map.get(normalizedTitle) || 0), timestampMs));
+    };
+
+    for (const list of getSidebarSectionLists(document, (label) => label === 'Recents')) {
+      for (const row of getSidebarRows(list)) {
+        const rowText = textOf(row);
+        const projectMatch = rowText.match(/\(([^()]+)\)\s*\[(\d+)\s*(m|h|d)\]\s*$/i);
+        if (projectMatch) {
+          addRelativeTimestamp(projectMatch[1], projectMatch[2], projectMatch[3]);
+        }
+      }
     }
 
-    return getRemoteProjectTimestampMsForRow(row);
+    for (const entry of getRecentThreadEntries()) {
+      if (entry?.kind !== 'project' || entry.lastModifiedMs <= 0) continue;
+      const title = normalizeText(entry.projectTitle).toLowerCase();
+      if (!title) continue;
+      const current = Number(map.get(title) || 0);
+      if (entry.lastModifiedMs > current) map.set(title, entry.lastModifiedMs);
+    }
+    return map;
+  }
+
+  function getProjectTimestampMsForRow(row) {
+    const explicit = Number(row?.getAttribute(THREAD_UPDATED_ATTR) || '0');
+    const projectId = normalizeProjectId(getProjectIdForRow(row));
+    let liveTimestamp = 0;
+    if (projectId) {
+      liveTimestamp = Number(getProjectTimestampMap().get(projectId) || 0);
+    }
+    const projectTitle = normalizeText(getProjectLabelForRow(row)).toLowerCase();
+    const recentTitleTimestamp = projectTitle
+      ? Number(getRecentProjectTimestampByTitle().get(projectTitle) || 0)
+      : 0;
+
+    if (recentTitleTimestamp > 0) return recentTitleTimestamp;
+
+    return Math.max(
+      explicit,
+      liveTimestamp,
+      getRemoteProjectTimestampMsForRow(row),
+      getDisplayedModifiedTimestampMs(row)
+    );
   }
 
   function countRecentRows(rows, getTimestampMs) {
@@ -2021,6 +2158,41 @@ function Get-CodexSidebarPagingPayload {
     }
 
     return null;
+  }
+
+  function updateProjectThreadTimestamps() {
+    const entries = getRecentThreadEntries();
+    const byTitle = new Map(entries.map((entry) => [normalizeText(entry.title).toLowerCase(), entry]));
+
+    const bySource = new Map();
+    for (const entry of entries) {
+      const sourceList = normalizeText(entry.sourceListLabel);
+      const sourceText = normalizeText(entry.sourceRowText || entry.title);
+      if (!sourceList || !sourceText) continue;
+      bySource.set(sourceList + '\u0000' + sourceText, entry);
+    }
+
+    for (const list of getSidebarSectionLists(document, (label) => label.startsWith('Scheduled tasks in '))) {
+      const sourceList = normalizeText(list.getAttribute('aria-label'));
+      for (const row of getSidebarRows(list)) {
+        const sourceText = normalizeText(getThreadBaseLabel(row) || textOf(row));
+        const entry = bySource.get(sourceList + '\u0000' + sourceText)
+          || byTitle.get(sourceText.toLowerCase());
+        if (!entry) continue;
+        setThreadLabel(row, sourceText, sourceText, entry.lastModifiedMs);
+        positionNativeThreadStatusSlot(row);
+      }
+    }
+  }
+
+  function updateAllProjectTimestamps() {
+    for (const row of Array.from(document.querySelectorAll('[data-app-action-sidebar-project-row]'))) {
+      const timestampMs = getProjectTimestampMsForRow(row);
+      if (timestampMs <= 0) continue;
+      const baseLabel = getProjectLabelForRow(row) || getThreadBaseLabel(row);
+      if (!baseLabel) continue;
+      setThreadLabel(row, baseLabel, baseLabel, timestampMs);
+    }
   }
 
   function removeSyntheticThreadActions(row) {
@@ -2173,6 +2345,7 @@ function Get-CodexSidebarPagingPayload {
         nativeRowsByThreadId.get(threadId) || null,
         getLiveThreadRecordById(catalog, threadId)
       );
+      positionNativeThreadStatusSlot(row);
       wireSyntheticThreadRow(row, entry.row.getAttribute(SOURCE_LIST_ATTR) || 'Tasks', entry.row.getAttribute(SOURCE_TEXT_ATTR) || getThreadTitleForRow(entry.row));
       orderedRows.push(row);
       if (threadId) {
@@ -2373,6 +2546,13 @@ function Get-CodexSidebarPagingPayload {
       setThreadLabel(row, nextLabel, baseLabel, timestampMs);
     }
 
+    // Timestamp labels are normalized above; sort again so rows with a
+    // timestamp that was only available from rendered/native markup are also
+    // placed correctly in the Projects list.
+    if (sectionKey === 'projects') {
+      sortSidebarRows(sectionList, rows, 'projects');
+    }
+
     let orderedRows = rows;
     let effectiveVisibleCount = visibleCount;
     if (sectionKey === 'threads' && sectionList.hasAttribute(SYNTHETIC_LIST_ATTR)) {
@@ -2484,6 +2664,7 @@ function Get-CodexSidebarPagingPayload {
     const wasObserving = observing;
     if (wasObserving) disconnect();
     try {
+      installNativeThreadStatusSlotStyle();
       if (projectWindowContext) {
         document.documentElement?.setAttribute(PROJECT_WINDOW_MARKER, projectWindowContext.id);
         document.title = 'Codex Plus Project: ' + projectWindowContext.name;
@@ -2505,6 +2686,8 @@ function Get-CodexSidebarPagingPayload {
         renderSidebarSection(list, visibleCount, spec.key);
         if (spec.key === 'projects') suppressProjectHoverCards(getSidebarRows(list));
       }
+      updateAllProjectTimestamps();
+      updateProjectThreadTimestamps();
       sortUnmanagedSidebarLists();
       syncSyntheticThreadActiveState();
     } finally {
