@@ -946,6 +946,7 @@ Assert-True ($payloadBundle.Contains('__CODEX_PLUS_SPLIT_MODEL_EFFORT_SELECTOR')
 Assert-True ($payloadBundle.Contains('__CODEX_PLUS_PROJECT_SELECTOR_GUARD')) 'Injected payload bundle should include the project selector guard.'
 $newWindowPayload = Get-CodexNewWindowButtonPayload
 Assert-True ($newWindowPayload.Contains('data-codex-plus-shared-window-button')) 'New window payload should expose a dedicated shared-window marker.'
+Assert-True ($newWindowPayload.Contains("document.querySelector('[' + BUTTON_ATTR + '], [' + PROJECT_BUTTON_ATTR + ']')")) 'New window payload should recover when its installed flag is stale but the DOM buttons are missing.'
 Assert-True ($newWindowPayload.Contains('open-in-new-window')) 'New window payload should use Codex''s supported open-in-new-window message.'
 Assert-True ($newWindowPayload.Contains('data-codex-plus-project-window-button')) 'New window payload should add a project-row new-window action.'
 Assert-True ($newWindowPayload.Contains('codexPlusProjectId')) 'New window payload should carry the project id.'
