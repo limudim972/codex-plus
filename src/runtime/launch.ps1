@@ -1017,6 +1017,7 @@ function Watch-CodexCloseToQuit {
         [AllowEmptyString()][string]$LauncherKey,
         [int]$PollMilliseconds = 250,
         [int]$GracePolls = 3,
+        [int]$MissingProcessGracePolls = 40,
         [int]$StartupWaitSeconds = 30,
         [int]$NoWindowKillAfterSeconds = 12
     )
@@ -1026,6 +1027,7 @@ function Watch-CodexCloseToQuit {
     $matchingProcessSeenAt = $null
     $seenVisibleWindow = $false
     $missingVisibleWindowCount = 0
+    $missingProcessCount = 0
     while ($true) {
         $matchingProcesses = @(
             Get-CodexDesktopProcesses | Where-Object {
@@ -1037,8 +1039,22 @@ function Watch-CodexCloseToQuit {
                 Start-Sleep -Milliseconds $PollMilliseconds
                 continue
             }
-            return
+            if (-not $seenMatchingProcess) {
+                return
+            }
+
+            # Process discovery can briefly return no rows while Electron replaces
+            # its browser process or WMI/CIM is under load. Exiting on the first
+            # empty sample permanently orphaned otherwise healthy Plus instances,
+            # leaving no watchdog to terminate them after their last window closed.
+            $missingProcessCount++
+            if ($missingProcessCount -ge $MissingProcessGracePolls) {
+                return
+            }
+            Start-Sleep -Milliseconds $PollMilliseconds
+            continue
         }
+        $missingProcessCount = 0
         if (-not $seenMatchingProcess) {
             $seenMatchingProcess = $true
             $matchingProcessSeenAt = [DateTime]::UtcNow

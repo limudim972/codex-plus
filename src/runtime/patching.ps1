@@ -157,6 +157,10 @@ function Launch-CodexRtl {
         $state.UpdatedAt = [DateTimeOffset]::Now.ToString('o')
         Save-CodexRtlState -State $state
     }
+    if (Invoke-CodexLaunchRecoveryCheck) {
+        return
+    }
+    Invoke-CodexGraphicsDriverCheck | Out-Null
     Start-CodexForRtl -Inspection $installInfo -Port $port -LauncherKey $LauncherKey | Out-Null
     Invoke-CodexRtlInjection -Port $port | Out-Null
     Wait-CodexWindowTitleSync -Port $port -LauncherKey $LauncherKey | Out-Null

@@ -28,6 +28,11 @@ $expectedFunctions = @(
     'Install-CodexRtlPatch',
     'Restore-CodexRtlPatch',
     'Launch-CodexRtl',
+    'Get-CodexGraphicsDriverStatus',
+    'Invoke-CodexGraphicsDriverCheck',
+    'Get-CodexProcessSuspensionState',
+    'Get-CodexSuspendedHeadlessProcess',
+    'Invoke-CodexLaunchRecoveryCheck',
     'Show-Menu'
 )
 

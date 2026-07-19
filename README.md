@@ -125,6 +125,24 @@ This creates `dist\CodexPlus-Setup.exe`, a self-extracting installer containing 
 
 The EXE temporarily extracts the embedded scripts during installation and removes them afterward. The original `src/`, `install.ps1`, and `patch.ps1` files are not copied beside the EXE.
 
+## Graphics Driver Check
+
+Codex Plus checks the Windows graphics adapter before launching Codex. If Windows recently recorded a graphics timeout/app hang or reports an unhealthy adapter, Plus asks whether to open the official driver-update page for the detected manufacturer. The same driver/version warning is suppressed for seven days after it is shown, and the check never installs a driver automatically.
+
+Plus also checks for an existing Codex process whose threads remain suspended for at least five seconds while it has no visible window. In that case it stops the new launch and recommends uninstalling Codex, rebooting Windows, and reinstalling it from the Microsoft Store.
+
+## Version Compatibility Gate
+
+After Codex Desktop updates, launch a fresh Codex Plus instance from the current Codex chat. Resolve its new debug port/profile pair, then run:
+
+```powershell
+powershell.exe -NoProfile -File tools\test-codex-version-compatibility.ps1 -Port <new-port> -ExpectedProfile "<new-profile>"
+```
+
+The runner never launches or terminates Codex. It first runs every checked-in offline test, then attaches only to the supplied live instance and verifies the injected globals, sidebar DOM, React app scope, React Router navigator, current bundled navigation modules, local app-server manager, and real synthetic-thread navigation while the source project stays closed.
+
+A complete pass is recorded at `%LOCALAPPDATA%\Codex Plus\compatibility.json` with the installed Codex package version and a fingerprint of the checked-in Codex Plus runtime. A new Codex version or runtime change requires another live pass. Use `-Force` to repeat the live check for the same combination, or `-OfflineOnly` to run only the fast regression suite.
+
 ## Security And Verification
 
 `install.ps1` downloads `patch.ps1` and the module files it needs, then stages them locally before running the patch. `patch.ps1` still pins SHA-256 hashes for every dot-sourced module it loads.

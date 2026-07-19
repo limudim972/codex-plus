@@ -22,6 +22,7 @@ function Install-CodexRtlRuntimeFiles {
         'src/codex/project-selector-guard.ps1',
         'src/codex/sidebar-paging.ps1',
         'src/runtime/state.ps1',
+        'src/runtime/gpu.ps1',
         'src/runtime/files.ps1',
         'src/runtime/shortcuts.ps1',
         'src/runtime/launch.ps1',

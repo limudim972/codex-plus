@@ -148,6 +148,8 @@ $launchBody = (Get-Command -Name Launch-CodexRtl -CommandType Function).ScriptBl
 Assert-True ($launchBody.Contains('Start-CodexForRtl')) 'Codex launch should delegate to the approved-verb launch helper.'
 $watchBody = (Get-Command -Name Watch-CodexCloseToQuit -CommandType Function).ScriptBlock.ToString()
 Assert-True ($watchBody.Contains('Invoke-CodexRtlInjection')) 'Codex watchdog should inject the Plus payload into newly created windows.'
+Assert-True ($watchBody.Contains('MissingProcessGracePolls')) 'Codex watchdog should tolerate transient process-discovery gaps instead of abandoning the instance.'
+Assert-True ($watchBody.Contains('$missingProcessCount = 0')) 'Codex watchdog should reset its transient process-discovery counter after the instance reappears.'
 $devToolsBody = (Get-Command -Name Get-CodexDevToolsTargets -CommandType Function).ScriptBlock.ToString()
 Assert-True ($devToolsBody.Contains('ForEach-Object { $_ }')) 'Codex DevTools target enumeration should flatten multiple page targets.'
 $splashIconBody = (Get-Command -Name Get-CodexLaunchSplashIcon -CommandType Function).ScriptBlock.ToString()
