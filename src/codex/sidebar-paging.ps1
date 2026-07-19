@@ -17,9 +17,12 @@ function Get-CodexSidebarPagingPayload {
   const SOURCE_PROJECT_ID_ATTR = 'data-codex-plus-source-project-id';
   const NAVIGATION_PENDING_ATTR = 'data-codex-plus-thread-navigation-pending';
   const THREAD_SPINNER_ATTR = 'data-codex-plus-thread-spinner';
+  const THREAD_PRELOAD_SPINNER_ATTR = 'data-codex-plus-thread-preload-spinner';
+  const THREAD_PRELOAD_COMPLETE_ATTR = 'data-codex-plus-thread-preload-complete';
   const THREAD_NAVIGATION_OVERLAY_ATTR = 'data-codex-plus-thread-navigation-overlay';
   const THREAD_NAVIGATION_MIN_DISPLAY_MS = 100;
   const THREAD_NAVIGATION_TIMEOUT_MS = 20000;
+  const THREAD_PRELOAD_MIN_DISPLAY_MS = 750;
   const SIDEBAR_REFRESH_DEBOUNCE_MS = 250;
   const SIDEBAR_NAVIGATION_REFRESH_RETRY_MS = 100;
   const SIDEBAR_POLL_INTERVAL_MS = 5000;
@@ -39,6 +42,13 @@ function Get-CodexSidebarPagingPayload {
   const LEGACY_TIMESTAMP_SUFFIX_SELECTOR = 'span[aria-hidden="true"].pointer-events-none.select-none.whitespace-nowrap.text-token-description-foreground';
   let internalNavigationModulesPromise = null;
   let startupThreadNavigationWarmupStarted = false;
+  let startupThreadPreloadStarted = false;
+  const startupThreadPreloadPromises = new Map();
+  const startupThreadPreloadResults = new Map();
+  const startupThreadPreloadActiveIds = new Set();
+  const startupThreadPreloadCompletedIds = new Set();
+  let startupThreadPreloadManager = null;
+  let startupThreadOriginalReadThread = null;
   const nativeThreadTitleCache = new Map();
   let liveCatalogScope = null;
   let liveCatalogStateBinding = null;
@@ -989,6 +999,12 @@ function Get-CodexSidebarPagingPayload {
     const threadId = normalizeThreadId(
       row.getAttribute('data-codex-plus-thread-id') || getThreadIdForRow(row)
     );
+    if (
+      row.closest('[' + SYNTHETIC_ROW_ATTR + '="threads"]')
+      && startupThreadPreloadCompletedIds.has(threadId)
+    ) {
+      return;
+    }
     startThreadNavigationLoading(threadId);
   }
 
@@ -1218,6 +1234,80 @@ function Get-CodexSidebarPagingPayload {
     button.appendChild(createThreadSpinner());
   }
 
+  function createThreadPreloadCompleteIndicator() {
+    const indicator = createThreadSpinner();
+    positionSyntheticPreloadIndicator(indicator);
+    indicator.removeAttribute(THREAD_SPINNER_ATTR);
+    indicator.setAttribute(THREAD_PRELOAD_COMPLETE_ATTR, 'true');
+    indicator.setAttribute('role', 'status');
+    indicator.setAttribute('aria-label', 'Thread preloaded');
+    const animated = indicator.querySelector('.animate-spin');
+    if (animated) {
+      animated.classList.remove('animate-spin');
+      animated.style.animation = 'none';
+      const svg = animated.querySelector('svg');
+      if (svg) svg.replaceChildren();
+      const check = document.createElement('span');
+      check.className = 'text-sm font-semibold leading-none text-token-success';
+      // Keep the source ASCII-only so the installed PowerShell payload cannot
+      // turn the completion mark into mojibake when it crosses the runtime boundary.
+      check.textContent = String.fromCharCode(0x2713);
+      animated.appendChild(check);
+    }
+    return indicator;
+  }
+
+  function syncThreadPreloadIndicator(row, loading, completed) {
+    if (!row) return;
+    const spinner = row.querySelector('[' + THREAD_PRELOAD_SPINNER_ATTR + ']');
+    const complete = row.querySelector('[' + THREAD_PRELOAD_COMPLETE_ATTR + ']');
+    if (loading) {
+      if (complete) complete.remove();
+      if (spinner) return;
+      const button = getSyntheticThreadButton(row);
+      if (!button) return;
+      if (window.getComputedStyle(button).position === 'static') button.classList.add('relative');
+      const next = createThreadSpinner();
+      positionSyntheticPreloadIndicator(next);
+      next.removeAttribute(THREAD_SPINNER_ATTR);
+      next.setAttribute(THREAD_PRELOAD_SPINNER_ATTR, 'true');
+      next.setAttribute('role', 'status');
+      next.setAttribute('aria-label', 'Preloading thread');
+      button.appendChild(next);
+      return;
+    }
+    if (spinner) spinner.remove();
+    if (!completed || complete) return;
+    const button = getSyntheticThreadButton(row);
+    if (button) button.appendChild(createThreadPreloadCompleteIndicator());
+  }
+
+  function positionSyntheticPreloadIndicator(indicator) {
+    if (!indicator?.style) return indicator;
+    indicator.style.position = 'absolute';
+    indicator.style.top = '0px';
+    // Keep the preload status in the dedicated gutter to the left of the
+    // indented synthetic thread label.
+    indicator.style.left = '-24px';
+    indicator.style.right = 'auto';
+    indicator.style.minWidth = '24px';
+    indicator.style.paddingLeft = '4px';
+    indicator.style.paddingRight = '0px';
+    indicator.style.justifyContent = 'flex-start';
+    return indicator;
+  }
+
+  function syncStartupThreadPreloadIndicators() {
+    for (const row of Array.from(document.querySelectorAll('[' + SYNTHETIC_ROW_ATTR + '="threads"]'))) {
+      const threadId = normalizeThreadId(row.getAttribute('data-codex-plus-thread-id'));
+      syncThreadPreloadIndicator(
+        row,
+        Boolean(threadId && startupThreadPreloadActiveIds.has(threadId)),
+        Boolean(threadId && startupThreadPreloadCompletedIds.has(threadId))
+      );
+    }
+  }
+
   function syncSyntheticThreadActiveState() {
     const activeThreadId = getActiveThreadId();
     const workingThreadIds = getWorkingThreadIds();
@@ -1305,6 +1395,173 @@ function Get-CodexSidebarPagingPayload {
     void getInternalNavigationModules();
   }
 
+  function installThreadPreloadReadCache(manager) {
+    if (!manager || typeof manager.readThread !== 'function') return false;
+    if (startupThreadPreloadManager === manager && startupThreadOriginalReadThread) return true;
+    startupThreadPreloadManager = manager;
+    startupThreadOriginalReadThread = manager.readThread.bind(manager);
+    manager.readThread = (threadId, options) => {
+      const normalizedThreadId = normalizeThreadId(threadId);
+      const cached = startupThreadPreloadResults.get(normalizedThreadId);
+      if (cached) return Promise.resolve(cloneThreadPreloadResult(cached));
+      const pending = startupThreadPreloadPromises.get(normalizedThreadId);
+      if (pending) {
+        return pending.then((result) => {
+          return result
+            ? cloneThreadPreloadResult(result)
+            : startupThreadOriginalReadThread(threadId, options);
+        });
+      }
+      return startupThreadOriginalReadThread(threadId, options);
+    };
+    return true;
+  }
+
+  function cloneThreadPreloadResult(result) {
+    if (!result) return result;
+    if (typeof structuredClone === 'function') return structuredClone(result);
+    return JSON.parse(JSON.stringify(result));
+  }
+
+  function waitForThreadPreloadMinimum(startedAt) {
+    const remainingMs = THREAD_PRELOAD_MIN_DISPLAY_MS - (performance.now() - startedAt);
+    return remainingMs > 0
+      ? new Promise((resolve) => window.setTimeout(resolve, remainingMs))
+      : Promise.resolve();
+  }
+
+  function getThreadResumeFunction(modules) {
+    for (const candidate of Object.values(modules?.appServer || {})) {
+      if (typeof candidate !== 'function') continue;
+      const source = String(candidate);
+      if (
+        source.length < 1000
+        && source.includes('.conversationId')
+        && source.includes('Promise.resolve().then')
+        && source.includes('.finally')
+      ) {
+        return candidate;
+      }
+    }
+    return null;
+  }
+
+  function getThreadHydrationManager(modules, scope) {
+    if (!scope) return null;
+    for (const signal of Object.values(modules?.appServer || {})) {
+      if (!signal || (typeof signal !== 'object' && typeof signal !== 'function')) continue;
+      try {
+        const candidate = scope.get(signal, 'local');
+        if (
+          candidate
+          && typeof candidate.getConversation === 'function'
+          && typeof candidate.readThread === 'function'
+          && typeof candidate.getThreadWorkspaceState === 'function'
+          && typeof candidate.getCompleteConversationTurns === 'function'
+        ) {
+          return candidate;
+        }
+      } catch {}
+    }
+    return null;
+  }
+
+  async function preloadStartupThreads() {
+    const list = document.querySelector('[' + SYNTHETIC_LIST_ATTR + '="threads"]');
+    if (!list) return;
+    const threadIds = getSidebarRows(list)
+      .filter((row) => !row.hidden)
+      .map((row) => normalizeThreadId(row.getAttribute('data-codex-plus-thread-id')))
+      .filter((threadId) => (
+        threadId
+        && !startupThreadPreloadCompletedIds.has(threadId)
+        && !startupThreadPreloadActiveIds.has(threadId)
+        && !startupThreadPreloadPromises.has(threadId)
+      ));
+    if (!threadIds.length) return;
+    startupThreadPreloadStarted = true;
+    threadIds.forEach((threadId) => startupThreadPreloadActiveIds.add(threadId));
+    syncStartupThreadPreloadIndicators();
+    window.__CODEX_PLUS_CONTEXT_BADGE?.setStatus('- Preloading ' + threadIds.length + ' threads');
+
+    const modules = await getInternalNavigationModules();
+    const scope = getAppScopeFromSidebar();
+    const summaryManager = scope && modules?.appServer?.c
+      ? scope.get(modules.appServer.c, 'local')
+      : null;
+    const hydrationManager = getThreadHydrationManager(modules, scope);
+    const resumeThread = getThreadResumeFunction(modules);
+    if (
+      !summaryManager
+      || typeof summaryManager.activateThreadSummary !== 'function'
+      || !hydrationManager
+      || typeof resumeThread !== 'function'
+      || !installThreadPreloadReadCache(hydrationManager)
+    ) {
+      threadIds.forEach((threadId) => {
+        startupThreadPreloadActiveIds.delete(threadId);
+      });
+      syncStartupThreadPreloadIndicators();
+      window.__CODEX_PLUS_CONTEXT_BADGE?.setStatus('- Thread preload unavailable');
+      window.setTimeout(() => window.__CODEX_PLUS_CONTEXT_BADGE?.clearStatus(), 2500);
+      return;
+    }
+
+    await Promise.all(threadIds.map((threadId) => {
+      if (startupThreadPreloadPromises.has(threadId)) return startupThreadPreloadPromises.get(threadId);
+      const startedAt = performance.now();
+      const preload = Promise.resolve().then(() => {
+        prepareThreadForActivation(modules, scope, threadId, 'local');
+        summaryManager.activateThreadSummary(threadId);
+        return startupThreadOriginalReadThread(threadId, { includeTurns: true });
+      }).then(async (result) => {
+        if (!result?.thread || !Array.isArray(result.thread.turns)) {
+          throw new Error('Full thread preload did not return turns');
+        }
+        startupThreadPreloadResults.set(threadId, cloneThreadPreloadResult(result));
+        const conversation = hydrationManager.getConversation(threadId);
+        await resumeThread(hydrationManager, {
+          conversationId: threadId,
+          model: null,
+          serviceTier: null,
+          reasoningEffort: null,
+          workspaceRoots: conversation?.cwd ? [conversation.cwd] : ['/'],
+          collaborationMode: conversation?.latestCollaborationMode ?? null
+        });
+        const hydratedConversation = hydrationManager.getConversation(threadId);
+        const hydratedTurns = await hydrationManager.getCompleteConversationTurns(threadId);
+        if (
+          hydratedConversation?.resumeState !== 'resumed'
+          || (
+            result.thread.turns.length > 0
+            && (!Array.isArray(hydratedTurns) || hydratedTurns.length === 0)
+          )
+        ) {
+          throw new Error('Thread preload did not hydrate the conversation state');
+        }
+        await waitForThreadPreloadMinimum(startedAt);
+        startupThreadPreloadCompletedIds.add(threadId);
+        return result;
+      }).catch(() => {
+        startupThreadPreloadResults.delete(threadId);
+        startupThreadPreloadPromises.delete(threadId);
+        return null;
+      }).finally(() => {
+        startupThreadPreloadActiveIds.delete(threadId);
+        syncStartupThreadPreloadIndicators();
+      });
+      startupThreadPreloadPromises.set(threadId, preload);
+      return preload;
+    }));
+    const completedCount = threadIds.filter((threadId) => startupThreadPreloadCompletedIds.has(threadId)).length;
+    window.__CODEX_PLUS_CONTEXT_BADGE?.setStatus(
+      completedCount === threadIds.length
+        ? '- Threads preloaded'
+        : '- Preloaded ' + completedCount + ' of ' + threadIds.length + ' threads'
+    );
+    window.setTimeout(() => window.__CODEX_PLUS_CONTEXT_BADGE?.clearStatus(), 2500);
+  }
+
   async function navigateThreadThroughCodex(threadRow) {
     const threadId = normalizeThreadId(threadRow?.getAttribute('data-codex-plus-thread-id'));
     if (!threadId) return false;
@@ -1319,9 +1576,11 @@ function Get-CodexSidebarPagingPayload {
     if (!routerNavigator || typeof routerNavigator.push !== 'function') return false;
 
     const hostId = 'local';
-    const manager = typeof modules.appServer?.c === 'object'
-      ? scope.get(modules.appServer.c, hostId)
-      : null;
+    const manager = getThreadHydrationManager(modules, scope) || (
+      typeof modules.appServer?.c === 'object'
+        ? scope.get(modules.appServer.c, hostId)
+        : null
+    );
     if (!manager || typeof manager.activateThreadSummary !== 'function') return false;
 
     try {
@@ -2282,6 +2541,7 @@ function Get-CodexSidebarPagingPayload {
     // aligned with the nested project-thread labels by adding the same 24px
     // leading inset to the interactive row.
     button.classList.add('pl-6');
+    button.style.paddingLeft = '24px';
   }
 
   function createSyntheticThreadRow(label, updatedMs, templateRow) {
@@ -2315,6 +2575,7 @@ function Get-CodexSidebarPagingPayload {
     button.setAttribute('aria-roledescription', 'sortable');
     button.className = 'group relative h-[var(--height-token-row)] cursor-interaction rounded-[var(--radius-token-row)] py-row-y text-sm hover:bg-token-list-hover-background focus-visible:outline focus-visible:outline-offset-[-2px] pr-1 pl-[var(--padding-row-cell-x,var(--padding-row-x))]';
     button.classList.add('pl-6');
+    button.style.paddingLeft = '24px';
 
     const outer = document.createElement('div');
     outer.className = 'flex h-full w-full items-center text-sm leading-4';
@@ -2369,6 +2630,7 @@ function Get-CodexSidebarPagingPayload {
       if (threadId) {
         row.setAttribute('data-app-action-sidebar-thread-id', threadId);
       }
+      applySyntheticThreadIndent(row);
       removeSyntheticThreadActions(row);
       syncThreadUnreadIndicator(
         row,
@@ -2683,6 +2945,7 @@ function Get-CodexSidebarPagingPayload {
         const next = Math.min(hiddenRows.length, (current > 0 ? current : 0) + PAGE_SIZE);
         writeLoaded(sectionList, next);
         renderSidebarSection(sectionList, visibleCount, sectionKey);
+        if (sectionKey === 'threads') window.setTimeout(preloadStartupThreads, 0);
         event.preventDefault();
         event.stopPropagation();
         event.stopImmediatePropagation();
@@ -2757,6 +3020,8 @@ function Get-CodexSidebarPagingPayload {
       updateProjectThreadTimestamps();
       sortUnmanagedSidebarLists();
       syncSyntheticThreadActiveState();
+      syncStartupThreadPreloadIndicators();
+      window.setTimeout(preloadStartupThreads, 0);
     } finally {
       if (wasObserving) observe();
     }
@@ -2822,7 +3087,10 @@ function Get-CodexSidebarPagingPayload {
       applying = false;
       observe();
     }
-    window.setTimeout(warmStartupThreadNavigation, 0);
+      window.setTimeout(() => {
+        warmStartupThreadNavigation();
+        preloadStartupThreads();
+      }, 0);
   };
 
   window.__CODEX_PLUS_SIDEBAR_PAGING = {
