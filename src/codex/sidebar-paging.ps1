@@ -205,7 +205,10 @@ function Get-CodexSidebarPagingPayload {
     );
     for (const candidate of Array.from(candidates)) {
       if (candidate.closest('[' + SYNTHETIC_ROW_ATTR + '="threads"]')) continue;
-      const row = candidate.closest('[role="listitem"]') || candidate;
+      // Project thread buttons can be nested inside one project-level
+      // listitem. Prefer the actual thread row so every nested thread keeps
+      // its own id, title, and unread state.
+      const row = candidate.closest('[data-app-action-sidebar-thread-row]') || candidate;
       if (getThreadIdForRow(row)) {
         rows.add(row);
       }
@@ -739,12 +742,21 @@ function Get-CodexSidebarPagingPayload {
       cachedBindings: stateResult.cachedBindings
     };
     refreshLiveThreadBindings(catalog, Boolean(forceScan));
+    const threadKeys = Array.from(new Set([
+      ...(Array.isArray(stateResult.state.threadKeys)
+        ? stateResult.state.threadKeys.map(normalizeLiveThreadKey).filter(Boolean)
+        : []),
+      ...Array.from(liveCatalogCache?.records?.keys?.() || [])
+        .map(normalizeLiveThreadKey)
+        .filter(Boolean)
+    ]));
     const result = {
       scope,
       state: stateResult.state,
-      threadKeys: Array.isArray(stateResult.state.threadKeys)
-        ? stateResult.state.threadKeys.map(normalizeLiveThreadKey).filter(Boolean)
-        : [],
+      // The state key list can lag behind binding-backed conversation records
+      // while a thread changes read/status state. Keep both sources so a real
+      // unread thread is still eligible for the synthetic Recents list.
+      threadKeys,
       records: liveCatalogCache?.records || new Map(),
       projectGroups: Array.isArray(stateResult.state.projectGroups) ? stateResult.state.projectGroups : [],
       cachedBindings: stateResult.cachedBindings
@@ -760,13 +772,24 @@ function Get-CodexSidebarPagingPayload {
     const normalizedThreadId = normalizeThreadId(threadId);
     if (!normalizedThreadId) return null;
 
-    const matches = Array.from(catalog?.records?.values?.() || [])
-      .filter((record) => normalizeThreadId(record?.id || record?.key) === normalizedThreadId);
-    return matches.find((record) => {
+    const matches = Array.from(catalog?.records?.entries?.() || [])
+      .filter(([key, record]) => normalizeThreadId(record?.id || key) === normalizedThreadId);
+    const match = matches.find(([, record]) => {
       return Boolean(record?.hasUnreadTurn)
         || Number(record?.unreadCount || 0) > 0
         || isWorkingThreadStatus(getLiveThreadStatus(record));
     }) || matches[0] || null;
+    if (!match) return null;
+
+    const [key, record] = match;
+    const attentionState = catalog?.state?.threadAttentionStateByKey?.get?.(key);
+    if (attentionState === undefined) return record;
+    return {
+      ...record,
+      unreadStateKnown: true,
+      hasUnreadTurn: attentionState === 'unread',
+      unreadCount: attentionState === 'unread' ? Math.max(1, Number(record?.unreadCount || 0)) : 0
+    };
   }
 
   function getProjectGroupForThreadKey(catalog, threadKey) {
@@ -1757,6 +1780,13 @@ function Get-CodexSidebarPagingPayload {
     return title + ' (task)';
   }
 
+  function isPlaceholderThreadTitle(title) {
+    const normalized = normalizeText(title).toLowerCase();
+    return normalized === 'new chat'
+      || normalized === 'new task'
+      || normalized === 'untitled';
+  }
+
   function setThreadLabel(row, label, baseLabel, updatedMs) {
     if (!row || !label) return;
     const titleElement = getThreadTitleElement(row);
@@ -2262,10 +2292,21 @@ function Get-CodexSidebarPagingPayload {
     removeSyntheticThreadActions(row);
   }
 
+  function applySyntheticThreadIndent(row) {
+    const button = row?.querySelector('[role="button"]');
+    if (!button) return;
+
+    // Recents is rendered outside the project tree. Keep its thread labels
+    // aligned with the nested project-thread labels by adding the same 24px
+    // leading inset to the interactive row.
+    button.classList.add('pl-6');
+  }
+
   function createSyntheticThreadRow(label, updatedMs, templateRow) {
     if (templateRow) {
       const row = templateRow.cloneNode(true);
       sanitizeSyntheticThreadTemplate(row);
+      applySyntheticThreadIndent(row);
       row.removeAttribute('data-app-action-sidebar-thread-id');
       row.removeAttribute('data-app-action-sidebar-project-id');
       row.removeAttribute('aria-current');
@@ -2291,6 +2332,7 @@ function Get-CodexSidebarPagingPayload {
     button.setAttribute('tabindex', '0');
     button.setAttribute('aria-roledescription', 'sortable');
     button.className = 'group relative h-[var(--height-token-row)] cursor-interaction rounded-[var(--radius-token-row)] py-row-y text-sm hover:bg-token-list-hover-background focus-visible:outline focus-visible:outline-offset-[-2px] pr-1 pl-[var(--padding-row-cell-x,var(--padding-row-x))]';
+    button.classList.add('pl-6');
 
     const outer = document.createElement('div');
     outer.className = 'flex h-full w-full items-center text-sm leading-4';
@@ -2391,7 +2433,28 @@ function Get-CodexSidebarPagingPayload {
       const projectTitle = getProjectTitleFromGroup(projectGroup) || projectTitleMap.get(cwd) || '';
       const kind = projectGroup || projectTitle ? 'project' : 'task';
       const id = normalizeThreadId(record.id);
-      const title = nativeThreadTitleMap.get(id) || normalizeText(record.title);
+      const liveTitle = normalizeText(record.title);
+      const nativeTitle = nativeThreadTitleMap.get(id) || '';
+      const attentionState = catalog.state?.threadAttentionStateByKey?.get?.(threadKey);
+      const isUnread = attentionState === 'unread'
+        || (attentionState === undefined && Boolean(
+          record.hasUnreadTurn || Number(record.unreadCount || 0) > 0
+        ));
+      // Codex can keep the native project/task row at its placeholder title
+      // while the opened conversation is already renamed. During that brief
+      // running state the live catalog is the source of truth; once the run
+      // settles, keep preferring the native rendered title as it catches up.
+      const resolvedTitle = liveTitle && (
+        isWorkingThreadStatus(record.threadRuntimeStatus)
+        || !nativeTitle
+        || isPlaceholderThreadTitle(nativeTitle)
+      )
+        ? liveTitle
+        : nativeTitle;
+      // Unloaded project threads can carry authoritative unread state before
+      // Codex mounts their native title. Keep them visible immediately; the
+      // native title cache replaces this fallback as soon as the row mounts.
+      const title = resolvedTitle || (isUnread ? 'Unread thread' : '');
       const lastModifiedMs = getLiveThreadTimestampMs(record, catalog);
       if (!id || !title || !cwd || lastModifiedMs <= 0) continue;
       if (
