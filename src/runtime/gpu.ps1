@@ -62,6 +62,9 @@ function Get-CodexSuspendedHeadlessProcess {
     param([int]$MinimumSeconds = 5)
 
     foreach ($process in @(Get-CodexDesktopProcesses)) {
+        # Electron creates normal hidden ChatGPT.exe children for GPU, renderer,
+        # utility, and crashpad work. Only inspect the parent desktop process.
+        if ([string]$process.CommandLine -match '\s--type=') { continue }
         if (Test-CodexProcessHasVisibleWindow -Process $process) { continue }
         $before = Get-CodexProcessSuspensionState -ProcessId ([int]$process.ProcessId)
         if (-not $before -or -not $before.AllThreadsSuspended) { continue }
