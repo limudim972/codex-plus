@@ -183,7 +183,7 @@ Assert-True ($desktopProcessBody.Contains('-OperationTimeoutSec 3')) 'Desktop pr
 Assert-True ($desktopProcessBody.Contains('catch')) 'Desktop process lookup should fail closed when the WMI query stalls or errors.'
 $sidebarPayload = Get-CodexSidebarPagingPayload
 Assert-True ($sidebarPayload.Contains('appendThreadTimestampToLabel')) 'Sidebar payload should keep the inline modified-time formatter centralized.'
-Assert-True ($sidebarPayload.Contains("dateStyle: 'short'")) 'Sidebar payload should format modified times with a concise locale-aware date.'
+Assert-True ($sidebarPayload.Contains("return elapsedMinutes + 'm'")) 'Sidebar payload should format modified times with concise relative minute labels.'
 Assert-True ($sidebarPayload.Contains('THREAD_BASE_LABEL_ATTR')) 'Sidebar payload should preserve the original row label before appending modified time.'
 Assert-True ($sidebarPayload.Contains('getLiveSidebarCatalog')) 'Sidebar payload should read thread data from the live Codex app state.'
 Assert-True ($sidebarPayload.Contains('cachedBindings')) 'Sidebar payload should discover the live Codex thread bindings structurally.'
