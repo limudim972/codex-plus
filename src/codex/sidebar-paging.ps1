@@ -1253,6 +1253,12 @@ function Get-CodexSidebarPagingPayload {
     return internalNavigationModulesPromise;
   }
 
+  function prepareThreadForActivation(modules, scope, threadId, hostId) {
+    const prepareThread = modules?.appServer?.Et;
+    if (typeof prepareThread !== 'function') return;
+    prepareThread(scope, threadId, hostId);
+  }
+
   function getThreadNavigationLocation(sourceListLabel, sourceProjectId) {
     const directProjectId = normalizeProjectId(sourceProjectId);
     if (directProjectId) return 'project:' + directProjectId;
@@ -1284,7 +1290,7 @@ function Get-CodexSidebarPagingPayload {
 
     const scope = getAppScopeFromSidebar();
     const modules = await getInternalNavigationModules();
-    if (!scope || !modules?.appServer?.c || typeof modules.appServer.Et !== 'function') {
+    if (!scope || !modules?.appServer?.c) {
       window.__CODEX_PLUS_CONTEXT_BADGE?.clearStatus();
       return;
     }
@@ -1300,7 +1306,7 @@ function Get-CodexSidebarPagingPayload {
         return startupThreadPreloadPromises.get(threadId);
       }
       const preload = Promise.resolve().then(() => {
-        modules.appServer.Et(scope, threadId, 'local');
+        prepareThreadForActivation(modules, scope, threadId, 'local');
         manager.activateThreadSummary(threadId);
       }).catch(() => {});
       startupThreadPreloadPromises.set(threadId, preload);
@@ -1329,7 +1335,7 @@ function Get-CodexSidebarPagingPayload {
     if (!manager || typeof manager.activateThreadSummary !== 'function') return false;
 
     try {
-      modules.appServer.Et?.(scope, threadId, hostId);
+      prepareThreadForActivation(modules, scope, threadId, hostId);
       manager.activateThreadSummary(threadId);
       if (typeof manager.getConversation === 'function' && !manager.getConversation(threadId)) {
         return false;

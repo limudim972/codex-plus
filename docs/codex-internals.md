@@ -63,13 +63,15 @@ These describe sidebar selection state. They are not the main conversation URL.
 
 The sidebar navigation module and app-server manager perform separate parts of navigation.
 
-The app-server side is equivalent to:
+The app-server side was originally equivalent to:
 
 ```text
 manager = scope.get(appServer.c, 'local')
 appServer.Et(scope, conversationId, 'local')
 manager.activateThreadSummary(conversationId)
 ```
+
+The minified `Et` export is release-specific and changed from a function to an object in Codex 26.715.3651. Codex Plus therefore treats that preparation call as optional and invokes it only while it is callable. `activateThreadSummary` plus React Router navigation remains sufficient for catalog-backed conversations and must not be blocked by the optional export changing shape.
 
 `manager.getConversation(conversationId)` can be used as a sanity check when available.
 

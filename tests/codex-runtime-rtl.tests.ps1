@@ -881,6 +881,8 @@ Assert-True ($sidebarPagingPayload.Contains('data-codex-plus-thread-navigation-p
 Assert-True ($sidebarPagingPayload.Contains('getAppScopeFromSidebar')) 'Synthetic Threads should locate Codex''s mounted React app scope for direct navigation.'
 Assert-True ($sidebarPagingPayload.Contains('sidebar-thread-navigation')) 'Synthetic Threads should resolve Codex''s internal thread navigation module.'
 Assert-True ($sidebarPagingPayload.Contains('app-server-manager-signals')) 'Synthetic Threads should resolve Codex''s host manager module.'
+Assert-True ($sidebarPagingPayload.Contains("typeof prepareThread !== 'function'")) 'Synthetic Threads should tolerate Codex changing the optional thread-preparation export to a non-function.'
+Assert-True (-not ($sidebarPagingPayload.Contains('modules.appServer.Et?.('))) 'Synthetic Threads should not optional-call a non-callable app-server export.'
 Assert-True ($sidebarPagingPayload.Contains('activateThreadSummary')) 'Synthetic Threads should activate an unloaded native thread summary before navigation.'
 Assert-True ($sidebarPagingPayload.Contains('getReactRouterNavigatorFromSidebar')) 'Synthetic Threads should locate Codex''s internal React Router navigator.'
 Assert-True ($sidebarPagingPayload.Contains("routerNavigator.push('/local/' + threadId)")) 'Synthetic Threads should navigate the main Codex view to the selected local thread.'
