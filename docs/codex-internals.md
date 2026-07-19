@@ -173,6 +173,14 @@ The implementation is in `src/codex/sidebar-paging.ps1`. The installed copy must
 
 The decisive check is: before, the main view shows conversation A; after a real click on the synthetic row for B, the main view shows conversation B.
 
+## Version compatibility gate
+
+`tools/test-codex-version-compatibility.ps1` is the version-aware release gate. It is attach-only: the user launches a fresh Codex Plus instance from the active Codex chat, then supplies that instance's exact debug port and optional profile path. The runner never launches or terminates Codex.
+
+The gate runs all checked-in offline tests, validates the live injected globals and DOM, resolves the current React app scope and Router navigator, imports the release-specific `sidebar-thread-navigation` and `app-server-manager-signals` assets, verifies the local manager contract, and performs a real mouse click on a synthetic thread whose source project is closed. It records `%LOCALAPPDATA%\Codex Plus\compatibility.json` only after the target row becomes active, the main conversation changes to the intended title, and the source project remains closed.
+
+The record includes both the installed Codex package version and a fingerprint of the checked-in runtime sources. Either changing invalidates the previous result and requires a new live pass.
+
 ## Working-thread spinner
 
 Native thread rows expose their React `statusState` through the live row fibers. A thread that is currently working has `statusState.type === "loading"`; this is independent of whether that thread is the currently selected route. The native row may therefore be working while `isActive` is false.
