@@ -116,9 +116,11 @@ function New-CodexLauncherShortcutSpec {
 
     $launcherKey = Get-CodexLauncherIdentity -ShortcutPath $ShortcutPath
     $launcherScript = Get-CodexPlusLauncherScriptPath
+    $desktopPath = Join-Path $env:USERPROFILE 'Desktop\Codex Plus.lnk'
+    $desktopArgument = if ([System.IO.Path]::GetFullPath($ShortcutPath) -ieq [System.IO.Path]::GetFullPath($desktopPath)) { ' "desktop"' } else { '' }
     [pscustomobject]@{
         TargetPath = "$env:SystemRoot\System32\wscript.exe"
-        Arguments = "`"$launcherScript`" `"$launcherKey`""
+        Arguments = "`"$launcherScript`" `"$launcherKey`"$desktopArgument"
         WorkingDirectory = Get-CodexRtlWorkingDirectory
         IconLocation = Get-CodexIconLocation -InstallInfo $InstallInfo
         LauncherKey = $launcherKey

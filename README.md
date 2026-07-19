@@ -127,7 +127,7 @@ The EXE temporarily extracts the embedded scripts during installation and remove
 
 ## Graphics Driver Check
 
-Codex Plus checks the Windows graphics adapter before launching Codex. If Windows recently recorded a graphics timeout/app hang or reports an unhealthy adapter, Plus asks whether to open the official driver-update page for the detected manufacturer. The same driver/version warning is suppressed for seven days after it is shown, and the check never installs a driver automatically.
+Codex Plus checks the current Windows graphics-adapter status before launching from the desktop shortcut. If the adapter is missing or unhealthy, Plus asks whether to open the official driver-update page for the detected manufacturer. The same driver/version warning is suppressed for seven days after it is shown, and the check never installs a driver automatically.
 
 Plus also checks for an existing Codex process whose threads remain suspended for at least five seconds while it has no visible window. In that case it stops the new launch and recommends uninstalling Codex, rebooting Windows, and reinstalling it from the Microsoft Store.
 

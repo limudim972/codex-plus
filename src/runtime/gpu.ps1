@@ -113,20 +113,6 @@ function Get-CodexGraphicsDriverStatus {
             }
         }
 
-        $recentFault = $false
-        try {
-            $recentFault = [bool](Get-WinEvent -FilterHashtable @{
-                LogName = 'Application'
-                StartTime = (Get-Date).AddDays(-7)
-            } -ErrorAction Stop | Where-Object {
-                $_.ProviderName -eq 'Windows Error Reporting' -and
-                $_.Message -match 'Event Name: (LiveKernelEvent|AppHang)' -and
-                $_.Message -match 'P1: (141|117|193|1b0)'
-            } | Select-Object -First 1)
-        } catch {
-            # Event log access is optional; adapter health remains useful by itself.
-        }
-
         $updateUrl = if ($adapter.Name -match 'Radeon|AMD') {
             'https://www.amd.com/en/support/download/drivers.html'
         } elseif ($adapter.Name -match 'NVIDIA|GeForce|Quadro') {
@@ -146,10 +132,8 @@ function Get-CodexGraphicsDriverStatus {
         }
 
         $statusText = [string]$adapter.Status
-        $needsAttention = $statusText -and $statusText -ne 'OK' -or $recentFault
-        $reason = if ($recentFault) {
-            'Windows recently reported a graphics-driver timeout or app hang.'
-        } elseif ($statusText -and $statusText -ne 'OK') {
+        $needsAttention = $statusText -and $statusText -ne 'OK'
+        $reason = if ($statusText -and $statusText -ne 'OK') {
             "Windows reports the adapter status as $statusText."
         } else {
             ''

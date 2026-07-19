@@ -160,7 +160,9 @@ function Launch-CodexRtl {
     if (Invoke-CodexLaunchRecoveryCheck) {
         return
     }
-    Invoke-CodexGraphicsDriverCheck | Out-Null
+    if ($env:CODEX_PLUS_DESKTOP_LAUNCH -eq '1') {
+        Invoke-CodexGraphicsDriverCheck | Out-Null
+    }
     Start-CodexForRtl -Inspection $installInfo -Port $port -LauncherKey $LauncherKey | Out-Null
     Invoke-CodexRtlInjection -Port $port | Out-Null
     Wait-CodexWindowTitleSync -Port $port -LauncherKey $LauncherKey | Out-Null
