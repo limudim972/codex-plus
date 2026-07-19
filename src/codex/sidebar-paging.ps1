@@ -20,6 +20,9 @@ function Get-CodexSidebarPagingPayload {
   const THREAD_NAVIGATION_OVERLAY_ATTR = 'data-codex-plus-thread-navigation-overlay';
   const THREAD_NAVIGATION_MIN_DISPLAY_MS = 100;
   const THREAD_NAVIGATION_TIMEOUT_MS = 20000;
+  const SIDEBAR_REFRESH_DEBOUNCE_MS = 250;
+  const SIDEBAR_NAVIGATION_REFRESH_RETRY_MS = 100;
+  const SIDEBAR_POLL_INTERVAL_MS = 5000;
   const PAGER_ATTR = 'data-codex-plus-sidebar-pager';
   const ACTION_ATTR = 'data-codex-plus-sidebar-action';
   const STATE_ATTR = 'data-codex-plus-sidebar-loaded';
@@ -35,8 +38,7 @@ function Get-CodexSidebarPagingPayload {
   const BUTTON_CLASS = 'border-token-border no-drag cursor-interaction flex items-center gap-1 border whitespace-nowrap select-none focus:outline-none disabled:cursor-not-allowed disabled:opacity-40 rounded-full text-token-muted-foreground enabled:hover:bg-transparent data-[state=open]:bg-transparent hover:text-token-foreground border-transparent px-2 py-0.5 text-sm leading-[18px] text-token-description-foreground hover:text-token-foreground -ml-[9px]';
   const LEGACY_TIMESTAMP_SUFFIX_SELECTOR = 'span[aria-hidden="true"].pointer-events-none.select-none.whitespace-nowrap.text-token-description-foreground';
   let internalNavigationModulesPromise = null;
-  const startupThreadPreloadPromises = new Map();
-  let startupThreadPreloadStarted = false;
+  let startupThreadNavigationWarmupStarted = false;
   const nativeThreadTitleCache = new Map();
   let liveCatalogScope = null;
   let liveCatalogStateBinding = null;
@@ -1294,48 +1296,13 @@ function Get-CodexSidebarPagingPayload {
     return 'flat-chats';
   }
 
-  async function preloadStartupThreads() {
-    if (startupThreadPreloadStarted) return;
-
-    const list = document.querySelector('[' + SYNTHETIC_LIST_ATTR + '="threads"]');
-    if (!list) return;
-
-    const activeThreadId = getActiveThreadId();
-    const workingThreadIds = getWorkingThreadIds();
-    const threadIds = getSidebarRows(list)
-      .filter((row) => !row.hidden)
-      .slice(0, 3)
-      .map((row) => normalizeThreadId(row.getAttribute('data-codex-plus-thread-id')))
-      .filter((threadId) => threadId && threadId !== activeThreadId && !workingThreadIds.has(threadId));
-    if (threadIds.length === 0) return;
-    startupThreadPreloadStarted = true;
-    window.__CODEX_PLUS_CONTEXT_BADGE?.setStatus('- Preloading threads');
-
-    const scope = getAppScopeFromSidebar();
-    const modules = await getInternalNavigationModules();
-    if (!scope || !modules?.appServer?.c) {
-      window.__CODEX_PLUS_CONTEXT_BADGE?.clearStatus();
-      return;
-    }
-
-    const manager = scope.get(modules.appServer.c, 'local');
-    if (!manager || typeof manager.activateThreadSummary !== 'function') {
-      window.__CODEX_PLUS_CONTEXT_BADGE?.clearStatus();
-      return;
-    }
-
-    await Promise.all(threadIds.map(async (threadId) => {
-      if (startupThreadPreloadPromises.has(threadId)) {
-        return startupThreadPreloadPromises.get(threadId);
-      }
-      const preload = Promise.resolve().then(() => {
-        prepareThreadForActivation(modules, scope, threadId, 'local');
-        manager.activateThreadSummary(threadId);
-      }).catch(() => {});
-      startupThreadPreloadPromises.set(threadId, preload);
-      return preload;
-    }));
-    window.__CODEX_PLUS_CONTEXT_BADGE?.clearStatus();
+  function warmStartupThreadNavigation() {
+    if (startupThreadNavigationWarmupStarted) return;
+    startupThreadNavigationWarmupStarted = true;
+    // Importing the private navigation modules removes first-click module
+    // discovery cost. Do not activate conversations here: those operations
+    // continue asynchronously and can compete with or override a real click.
+    void getInternalNavigationModules();
   }
 
   async function navigateThreadThroughCodex(threadRow) {
@@ -1747,6 +1714,21 @@ function Get-CodexSidebarPagingPayload {
       }
     }
     return nativeThreadTitleCache;
+  }
+
+  function getNativePinnedThreadIds() {
+    const pinnedThreadIds = new Set();
+    const rows = new Set(getNativeThreadRows());
+    for (const row of Array.from(document.querySelectorAll('[data-app-action-sidebar-thread-pinned="true"]'))) {
+      if (!row.closest('[' + SYNTHETIC_ROW_ATTR + '="threads"]')) rows.add(row);
+    }
+    for (const row of rows) {
+      const threadId = normalizeThreadId(getThreadIdForRow(row));
+      if (!threadId) continue;
+      const pinned = row.getAttribute('data-app-action-sidebar-thread-pinned') === 'true';
+      if (pinned) pinnedThreadIds.add(threadId);
+    }
+    return pinnedThreadIds;
   }
 
   function getProjectLabelForRow(row) {
@@ -2421,18 +2403,29 @@ function Get-CodexSidebarPagingPayload {
 
     const projectTitleMap = getProjectTitleMap();
     const nativeThreadTitleMap = getNativeThreadTitleMap();
-    const seen = new Set();
-    const entries = [];
+    const nativePinnedThreadIds = getNativePinnedThreadIds();
+    const projectGroupByThreadId = new Map();
+    for (const group of catalog.projectGroups || []) {
+      for (const threadKey of Array.isArray(group?.threadKeys) ? group.threadKeys : []) {
+        const threadId = normalizeThreadId(threadKey);
+        if (threadId && !projectGroupByThreadId.has(threadId)) {
+          projectGroupByThreadId.set(threadId, group);
+        }
+      }
+    }
+    const entriesByThreadId = new Map();
 
     for (const threadKey of catalog.threadKeys) {
       const record = catalog.records.get(threadKey);
       if (!record) continue;
 
       const cwd = normalizeProjectId(record.cwd);
-      const projectGroup = getProjectGroupForThreadKey(catalog, threadKey);
+      const id = normalizeThreadId(record.id);
+      const projectGroup = projectGroupByThreadId.get(id) || getProjectGroupForThreadKey(catalog, threadKey);
       const projectTitle = getProjectTitleFromGroup(projectGroup) || projectTitleMap.get(cwd) || '';
       const kind = projectGroup || projectTitle ? 'project' : 'task';
-      const id = normalizeThreadId(record.id);
+      const isPinned = nativePinnedThreadIds.has(id);
+      if (isPinned) continue;
       const liveTitle = normalizeText(record.title);
       const nativeTitle = nativeThreadTitleMap.get(id) || '';
       const attentionState = catalog.state?.threadAttentionStateByKey?.get?.(threadKey);
@@ -2465,11 +2458,7 @@ function Get-CodexSidebarPagingPayload {
         )
       ) continue;
 
-      const signature = [id, cwd, title, kind].join('|').toLowerCase();
-      if (seen.has(signature)) continue;
-      seen.add(signature);
-
-      entries.push({
+      const entry = {
         id,
         title,
         displayTitle: title,
@@ -2480,10 +2469,19 @@ function Get-CodexSidebarPagingPayload {
         lastModifiedMs,
         sourceListLabel: kind === 'project' ? ('Scheduled tasks in ' + projectTitle) : 'Tasks',
         sourceRowText: title
-      });
+      };
+      const existing = entriesByThreadId.get(id);
+      if (
+        !existing
+        || (kind === 'project' && existing.kind === 'task')
+        || (kind === existing.kind && lastModifiedMs > existing.lastModifiedMs)
+      ) {
+        entriesByThreadId.set(id, entry);
+      }
     }
 
-    return entries.sort((left, right) => right.lastModifiedMs - left.lastModifiedMs);
+    return Array.from(entriesByThreadId.values())
+      .sort((left, right) => right.lastModifiedMs - left.lastModifiedMs);
   }
 
   function ensureSyntheticThreadsSection() {
@@ -2766,6 +2764,7 @@ function Get-CodexSidebarPagingPayload {
 
   let pending = false;
   let applying = false;
+  let scheduleTimer = 0;
   let observing = false;
   let observingRoot = null;
   const observe = () => {
@@ -2787,22 +2786,29 @@ function Get-CodexSidebarPagingPayload {
     observing = false;
     observingRoot = null;
   };
+  const runScheduledApply = () => {
+    scheduleTimer = 0;
+    if (threadNavigationState) {
+      scheduleTimer = window.setTimeout(runScheduledApply, SIDEBAR_NAVIGATION_REFRESH_RETRY_MS);
+      return;
+    }
+
+    pending = false;
+    applying = true;
+    try {
+      apply();
+    } finally {
+      applying = false;
+    }
+  };
   const schedule = () => {
     if (pending || applying) return;
     pending = true;
-    window.setTimeout(() => {
-      pending = false;
-      applying = true;
-      try {
-        apply();
-      } finally {
-        applying = false;
-      }
-    }, 50);
+    scheduleTimer = window.setTimeout(runScheduledApply, SIDEBAR_REFRESH_DEBOUNCE_MS);
   };
   requestSidebarRefresh = schedule;
 
-  window.setInterval(schedule, 500);
+  window.setInterval(schedule, SIDEBAR_POLL_INTERVAL_MS);
   window.setInterval(tryClaimPendingProjectWindowContext, 250);
 
   const observer = new MutationObserver(schedule);
@@ -2816,7 +2822,7 @@ function Get-CodexSidebarPagingPayload {
       applying = false;
       observe();
     }
-    window.setTimeout(preloadStartupThreads, 0);
+    window.setTimeout(warmStartupThreadNavigation, 0);
   };
 
   window.__CODEX_PLUS_SIDEBAR_PAGING = {
