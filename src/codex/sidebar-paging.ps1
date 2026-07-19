@@ -25,7 +25,8 @@ function Get-CodexSidebarPagingPayload {
   const THREAD_PRELOAD_MIN_DISPLAY_MS = 750;
   const SIDEBAR_REFRESH_DEBOUNCE_MS = 250;
   const SIDEBAR_NAVIGATION_REFRESH_RETRY_MS = 100;
-  const SIDEBAR_POLL_INTERVAL_MS = 5000;
+  const SIDEBAR_POLL_INTERVAL_MS = 30000;
+  const USER_ACTIVITY_SETTLE_MS = 500;
   const PAGER_ATTR = 'data-codex-plus-sidebar-pager';
   const ACTION_ATTR = 'data-codex-plus-sidebar-action';
   const STATE_ATTR = 'data-codex-plus-sidebar-loaded';
@@ -60,11 +61,15 @@ function Get-CodexSidebarPagingPayload {
   const LIVE_CATALOG_GAP_GRACE_MS = 2000;
   let liveCatalogSubscriptionScope = null;
   let liveCatalogSubscriptions = [];
+  const dirtyLiveCatalogBindings = new Set();
   let requestSidebarRefresh = () => {};
+  const LIVE_CATALOG_FULL_REFRESH_MS = 30000;
+  const LIVE_CATALOG_FORCE_REFRESH_MS = 5000;
   const PAGE_START_TIME = Number(window.performance?.timeOrigin || Date.now());
   const nativeThreadUnreadIndicatorCache = new Map();
   const nativeThreadUnreadStateCache = new Set();
   const nativeThreadWorkingCache = new Set();
+  let reconciliationCache = null;
 
   const SECTION_SPECS = [
     { key: 'threads', title: 'Recents', minVisibleCount: 3, synthetic: true },
@@ -74,6 +79,25 @@ function Get-CodexSidebarPagingPayload {
 
   function normalizeText(text) {
     return String(text || '').replace(/\s+/g, ' ').trim();
+  }
+
+  function getReconciliationValue(key, createValue) {
+    if (!reconciliationCache) return createValue();
+    if (!reconciliationCache.has(key)) {
+      reconciliationCache.set(key, createValue());
+    }
+    return reconciliationCache.get(key);
+  }
+
+  function getReconciliationRowValue(key, row, createValue) {
+    if (!reconciliationCache || !row) return createValue();
+    let rowCache = reconciliationCache.get(key);
+    if (!rowCache) {
+      rowCache = new WeakMap();
+      reconciliationCache.set(key, rowCache);
+    }
+    if (!rowCache.has(row)) rowCache.set(row, createValue());
+    return rowCache.get(row);
   }
 
   function textOf(element) {
@@ -155,18 +179,22 @@ function Get-CodexSidebarPagingPayload {
 
   function getProjectIdForRow(row) {
     if (!row) return '';
-    const direct = row.getAttribute('data-app-action-sidebar-project-id');
-    if (direct) return direct;
-    const nested = row.querySelector('[data-app-action-sidebar-project-id]');
-    return nested ? nested.getAttribute('data-app-action-sidebar-project-id') : '';
+    return getReconciliationRowValue('projectIdForRow', row, () => {
+      const direct = row.getAttribute('data-app-action-sidebar-project-id');
+      if (direct) return direct;
+      const nested = row.querySelector('[data-app-action-sidebar-project-id]');
+      return nested ? nested.getAttribute('data-app-action-sidebar-project-id') : '';
+    });
   }
 
   function getThreadIdForRow(row) {
     if (!row) return '';
-    const direct = row.getAttribute('data-app-action-sidebar-thread-id');
-    if (direct) return direct;
-    const nested = row.querySelector('[data-app-action-sidebar-thread-id]');
-    return nested ? nested.getAttribute('data-app-action-sidebar-thread-id') : '';
+    return getReconciliationRowValue('threadIdForRow', row, () => {
+      const direct = row.getAttribute('data-app-action-sidebar-thread-id');
+      if (direct) return direct;
+      const nested = row.querySelector('[data-app-action-sidebar-thread-id]');
+      return nested ? nested.getAttribute('data-app-action-sidebar-thread-id') : '';
+    });
   }
 
   // Remote project rows keep their metadata in React props, not in the DOM.
@@ -651,6 +679,26 @@ function Get-CodexSidebarPagingPayload {
     }
     liveCatalogSubscriptions = [];
     liveCatalogSubscriptionScope = null;
+    dirtyLiveCatalogBindings.clear();
+  }
+
+  function refreshLiveThreadBinding(scope, binding) {
+    if (!liveCatalogCache || liveCatalogCache.scope !== scope) return;
+    for (const [key, sourceBinding] of Array.from(liveCatalogCache.bindings.entries())) {
+      if (sourceBinding !== binding) continue;
+      liveCatalogCache.bindings.delete(key);
+      liveCatalogCache.records.delete(key);
+    }
+
+    try {
+      collectLiveThreadValue(
+        liveCatalogCache.records,
+        liveCatalogCache.bindings,
+        scope.get(binding),
+        binding
+      );
+    } catch {
+    }
   }
 
   function subscribeToLiveThreadBindings(scope, cachedBindings) {
@@ -666,7 +714,10 @@ function Get-CodexSidebarPagingPayload {
     liveCatalogSubscriptionScope = scope;
     for (const [binding] of cachedBindings.entries()) {
       try {
-        const unsubscribe = scope.node.store.sub(binding, () => requestSidebarRefresh());
+        const unsubscribe = scope.node.store.sub(binding, () => {
+          dirtyLiveCatalogBindings.add(binding);
+          requestSidebarRefresh();
+        });
         if (typeof unsubscribe === 'function') {
           liveCatalogSubscriptions.push(unsubscribe);
         }
@@ -681,8 +732,9 @@ function Get-CodexSidebarPagingPayload {
       ? state.threadKeys.map(normalizeLiveThreadKey).filter(Boolean)
       : [];
     const threadSignature = threadKeys.join('|');
+    const elapsedSinceFullRefresh = Date.now() - liveCatalogLastRefreshMs;
     const shouldScan = Boolean(
-      forceScan
+      (forceScan && elapsedSinceFullRefresh >= LIVE_CATALOG_FORCE_REFRESH_MS)
       || !liveCatalogCache
       || liveCatalogCache.scope !== scope
       || liveCatalogThreadSignature !== threadSignature
@@ -709,10 +761,19 @@ function Get-CodexSidebarPagingPayload {
       };
       liveCatalogThreadSignature = threadSignature;
       liveCatalogLastRefreshMs = Date.now();
+      dirtyLiveCatalogBindings.clear();
       return;
     }
 
-    if (Date.now() - liveCatalogLastRefreshMs < 250) return;
+    if (dirtyLiveCatalogBindings.size > 0) {
+      for (const binding of dirtyLiveCatalogBindings) {
+        refreshLiveThreadBinding(scope, binding);
+      }
+      dirtyLiveCatalogBindings.clear();
+      return;
+    }
+
+    if (elapsedSinceFullRefresh < LIVE_CATALOG_FULL_REFRESH_MS) return;
 
     for (const [key, binding] of liveCatalogCache.bindings.entries()) {
       let value = null;
@@ -727,6 +788,7 @@ function Get-CodexSidebarPagingPayload {
   }
 
   function getLiveSidebarCatalog(forceScan) {
+    return getReconciliationValue('liveSidebarCatalog', () => {
     const scope = getAppScopeFromSidebar();
     const fallback = () => {
       return lastLiveSidebarCatalog && Date.now() - lastLiveSidebarCatalogAt < LIVE_CATALOG_GAP_GRACE_MS
@@ -778,6 +840,7 @@ function Get-CodexSidebarPagingPayload {
       lastLiveSidebarCatalogAt = Date.now();
     }
     return result;
+    });
   }
 
   function getLiveThreadRecordById(catalog, threadId) {
@@ -1661,14 +1724,16 @@ function Get-CodexSidebarPagingPayload {
 
   function getThreadTitleElement(row) {
     if (!row) return null;
-    const titleElement = row.querySelector('[data-thread-title="true"], .text-fade-truncate');
-    if (titleElement) return titleElement;
+    return getReconciliationRowValue('threadTitleElement', row, () => {
+      const titleElement = row.querySelector('[data-thread-title="true"], .text-fade-truncate');
+      if (titleElement) return titleElement;
 
-    // `data-app-action-sidebar-thread-title` lives on Codex's native row wrapper,
-    // not on the element that lays out the title. Selecting it appends the
-    // timestamp below the row instead of beside the title.
-    return Array.from(row.querySelectorAll('[data-app-action-sidebar-thread-title]'))
-      .find((candidate) => !candidate.hasAttribute('data-app-action-sidebar-thread-row')) || null;
+      // `data-app-action-sidebar-thread-title` lives on Codex's native row wrapper,
+      // not on the element that lays out the title. Selecting it appends the
+      // timestamp below the row instead of beside the title.
+      return Array.from(row.querySelectorAll('[data-app-action-sidebar-thread-title]'))
+        .find((candidate) => !candidate.hasAttribute('data-app-action-sidebar-thread-row')) || null;
+    });
   }
 
   function stripThreadTimestampSuffix(label) {
@@ -1991,18 +2056,21 @@ function Get-CodexSidebarPagingPayload {
   }
 
   function getProjectLabelForRow(row) {
-    const directLabel = normalizeText(row?.getAttribute('data-app-action-sidebar-project-label'));
-    if (directLabel) return stripThreadTimestampSuffix(directLabel);
+    if (!row) return '';
+    return getReconciliationRowValue('projectLabelForRow', row, () => {
+      const directLabel = normalizeText(row.getAttribute('data-app-action-sidebar-project-label'));
+      if (directLabel) return stripThreadTimestampSuffix(directLabel);
 
-    const explicitLabel = row?.querySelector('[data-app-action-sidebar-project-label]');
-    const explicitText = stripThreadTimestampSuffix(normalizeText(textOf(explicitLabel)));
-    if (explicitText) return explicitText;
+      const explicitLabel = row.querySelector('[data-app-action-sidebar-project-label]');
+      const explicitText = stripThreadTimestampSuffix(normalizeText(textOf(explicitLabel)));
+      if (explicitText) return explicitText;
 
-    const projectId = getProjectIdForRow(row);
-    if (!projectId) return '';
-    const normalized = String(projectId).replace(/\\+/g, '/').replace(/\/+$/g, '');
-    const parts = normalized.split('/').filter(Boolean);
-    return parts.length > 0 ? parts[parts.length - 1] : normalized;
+      const projectId = getProjectIdForRow(row);
+      if (!projectId) return '';
+      const normalized = String(projectId).replace(/\\+/g, '/').replace(/\/+$/g, '');
+      const parts = normalized.split('/').filter(Boolean);
+      return parts.length > 0 ? parts[parts.length - 1] : normalized;
+    });
   }
 
   function formatThreadLabel(row, kind, projectTitle, updatedMs) {
@@ -2112,9 +2180,12 @@ function Get-CodexSidebarPagingPayload {
   }
 
   function getThreadTimestampMsForRow(row) {
-    const explicit = Number(row?.getAttribute(THREAD_UPDATED_ATTR) || '0');
-    if (explicit > 0) return explicit;
-    return parseThreadTimestampMs(getThreadIdForRow(row));
+    if (!row) return 0;
+    return getReconciliationRowValue('threadTimestampForRow', row, () => {
+      const explicit = Number(row.getAttribute(THREAD_UPDATED_ATTR) || '0');
+      if (explicit > 0) return explicit;
+      return parseThreadTimestampMs(getThreadIdForRow(row));
+    });
   }
 
   function getSidebarRowTimestampMs(row, sortKey) {
@@ -2130,11 +2201,11 @@ function Get-CodexSidebarPagingPayload {
   }
 
   function getSidebarRowSortLabel(row) {
-    return normalizeText(
+    return getReconciliationRowValue('sidebarRowSortLabel', row, () => normalizeText(
       getThreadBaseLabel(row)
       || getProjectLabelForRow(row)
       || textOf(row)
-    );
+    ));
   }
 
   function sortSidebarRows(sectionList, rows, sortKey) {
@@ -2216,6 +2287,7 @@ function Get-CodexSidebarPagingPayload {
   }
 
   function getProjectTimestampMap() {
+    return getReconciliationValue('projectTimestampMap', () => {
     const map = new Map();
     const catalog = getLiveSidebarCatalog();
     if (!catalog) return map;
@@ -2257,9 +2329,11 @@ function Get-CodexSidebarPagingPayload {
     }
 
     return map;
+    });
   }
 
   function getRecentProjectTimestampByTitle() {
+    return getReconciliationValue('recentProjectTimestampByTitle', () => {
     const map = new Map();
 
     const addRelativeTimestamp = (title, amount, unit) => {
@@ -2290,9 +2364,12 @@ function Get-CodexSidebarPagingPayload {
       if (entry.lastModifiedMs > current) map.set(title, entry.lastModifiedMs);
     }
     return map;
+    });
   }
 
   function getProjectTimestampMsForRow(row) {
+    if (!row) return 0;
+    return getReconciliationRowValue('projectTimestampForRow', row, () => {
     const explicit = Number(row?.getAttribute(THREAD_UPDATED_ATTR) || '0');
     const projectId = normalizeProjectId(getProjectIdForRow(row));
     let liveTimestamp = 0;
@@ -2312,6 +2389,7 @@ function Get-CodexSidebarPagingPayload {
       getRemoteProjectTimestampMsForRow(row),
       getDisplayedModifiedTimestampMs(row)
     );
+    });
   }
 
   function countRecentRows(rows, getTimestampMs) {
@@ -2660,6 +2738,7 @@ function Get-CodexSidebarPagingPayload {
   }
 
   function getRecentThreadEntries() {
+    return getReconciliationValue('recentThreadEntries', () => {
     const catalog = getLiveSidebarCatalog();
     if (!catalog) return [];
 
@@ -2744,11 +2823,14 @@ function Get-CodexSidebarPagingPayload {
 
     return Array.from(entriesByThreadId.values())
       .sort((left, right) => right.lastModifiedMs - left.lastModifiedMs);
+    });
   }
 
   function ensureSyntheticThreadsSection() {
     const projectsHeading = getSidebarSectionTitle(document, 'Projects');
     const projectsShell = getSectionShellFromTitle(projectsHeading);
+    let shell = document.querySelector('[' + SYNTHETIC_SECTION_ATTR + '="threads"]');
+    let listElement = shell?.querySelector('[' + SYNTHETIC_LIST_ATTR + ']') || null;
 
     if (!projectsShell || !projectsHeading) {
       removeSyntheticSection('threads');
@@ -2762,6 +2844,11 @@ function Get-CodexSidebarPagingPayload {
     }
 
     const templateRow = getSyntheticThreadTemplateRow();
+    const existingRowsByThreadId = new Map();
+    for (const row of getSidebarRows(listElement)) {
+      const threadId = normalizeThreadId(getThreadIdForRow(row) || row.getAttribute('data-codex-plus-thread-id'));
+      if (threadId) existingRowsByThreadId.set(threadId, row);
+    }
     const seen = new Set();
     const threadRows = [];
     for (const entry of recentThreadEntries) {
@@ -2769,12 +2856,15 @@ function Get-CodexSidebarPagingPayload {
       if (seen.has(signature)) continue;
       seen.add(signature);
       const label = formatThreadLabelFromCatalog(entry);
-      const clone = createSyntheticThreadRow(label, entry.lastModifiedMs, templateRow);
+      const existingRow = existingRowsByThreadId.get(normalizeThreadId(entry.id));
+      const clone = existingRow || createSyntheticThreadRow(label, entry.lastModifiedMs, templateRow);
       clone.setAttribute('data-codex-plus-thread-id', entry.id);
       clone.setAttribute(SYNTHETIC_ROW_ATTR, 'threads');
       clone.setAttribute(THREAD_UPDATED_ATTR, String(entry.lastModifiedMs));
-      setThreadLabel(clone, label, stripThreadTimestampSuffix(label), entry.lastModifiedMs);
-      wireSyntheticThreadRow(clone, entry.sourceListLabel || 'Tasks', entry.sourceRowText || entry.title, entry.projectId);
+      if (!existingRow) {
+        setThreadLabel(clone, label, stripThreadTimestampSuffix(label), entry.lastModifiedMs);
+        wireSyntheticThreadRow(clone, entry.sourceListLabel || 'Tasks', entry.sourceRowText || entry.title, entry.projectId);
+      }
       threadRows.push({
         row: clone,
         timestampMs: entry.lastModifiedMs,
@@ -2784,7 +2874,6 @@ function Get-CodexSidebarPagingPayload {
 
     threadRows.sort((left, right) => right.timestampMs - left.timestampMs);
 
-    let shell = document.querySelector('[' + SYNTHETIC_SECTION_ATTR + '="threads"]');
     if (!shell) {
       shell = document.createElement('div');
       shell.setAttribute(SYNTHETIC_SECTION_ATTR, 'threads');
@@ -2792,7 +2881,7 @@ function Get-CodexSidebarPagingPayload {
 
     let header = shell.querySelector('[' + THREADS_HEADER_ATTR + ']');
     let sectionContainer = shell.querySelector('[' + THREADS_CONTAINER_ATTR + ']');
-    let listElement = shell.querySelector('[' + SYNTHETIC_LIST_ATTR + ']');
+    listElement = shell.querySelector('[' + SYNTHETIC_LIST_ATTR + ']');
     const threadsHeadingLabel = projectWindowContext
       ? projectWindowContext.name + ' threads'
       : 'Recents';
@@ -2992,6 +3081,8 @@ function Get-CodexSidebarPagingPayload {
 
   function apply() {
     const wasObserving = observing;
+    const previousReconciliationCache = reconciliationCache;
+    reconciliationCache = new Map();
     if (wasObserving) disconnect();
     try {
       installNativeThreadStatusSlotStyle();
@@ -3023,6 +3114,7 @@ function Get-CodexSidebarPagingPayload {
       syncStartupThreadPreloadIndicators();
       window.setTimeout(preloadStartupThreads, 0);
     } finally {
+      reconciliationCache = previousReconciliationCache;
       if (wasObserving) observe();
     }
   }
@@ -3030,6 +3122,7 @@ function Get-CodexSidebarPagingPayload {
   let pending = false;
   let applying = false;
   let scheduleTimer = 0;
+  let lastUserActivityAt = 0;
   let observing = false;
   let observingRoot = null;
   const observe = () => {
@@ -3053,6 +3146,14 @@ function Get-CodexSidebarPagingPayload {
   };
   const runScheduledApply = () => {
     scheduleTimer = 0;
+    const activityAge = window.performance.now() - lastUserActivityAt;
+    if (activityAge < USER_ACTIVITY_SETTLE_MS) {
+      scheduleTimer = window.setTimeout(
+        runScheduledApply,
+        Math.max(25, USER_ACTIVITY_SETTLE_MS - activityAge)
+      );
+      return;
+    }
     if (threadNavigationState) {
       scheduleTimer = window.setTimeout(runScheduledApply, SIDEBAR_NAVIGATION_REFRESH_RETRY_MS);
       return;
@@ -3072,6 +3173,13 @@ function Get-CodexSidebarPagingPayload {
     scheduleTimer = window.setTimeout(runScheduledApply, SIDEBAR_REFRESH_DEBOUNCE_MS);
   };
   requestSidebarRefresh = schedule;
+
+  const markUserActivity = () => {
+    lastUserActivityAt = window.performance.now();
+  };
+  for (const eventType of ['beforeinput', 'keydown', 'wheel', 'touchmove', 'scroll']) {
+    document.addEventListener(eventType, markUserActivity, { capture: true, passive: true });
+  }
 
   window.setInterval(schedule, SIDEBAR_POLL_INTERVAL_MS);
   window.setInterval(tryClaimPendingProjectWindowContext, 250);

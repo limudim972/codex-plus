@@ -250,11 +250,26 @@ function Get-CodexRtlPayloadPlan {
     }, 50);
   };
 
-  const observer = new MutationObserver(schedule);
+  function mutationTouchesPlan(record) {
+    const target = record.target instanceof Element
+      ? record.target
+      : record.target?.parentElement;
+    if (target?.matches(PLAN_PANEL_SELECTOR) || target?.closest(PLAN_PANEL_SELECTOR)) return true;
+    return Array.from(record.addedNodes || []).some((node) => {
+      return node instanceof Element && (
+        node.matches(PLAN_PANEL_SELECTOR) || Boolean(node.querySelector(PLAN_PANEL_SELECTOR))
+      );
+    });
+  }
+
+  const observer = new MutationObserver((records) => {
+    if (records.some(mutationTouchesPlan)) schedule();
+  });
   const observe = () => {
     if (observing || !document.documentElement) return;
     observer.observe(document.documentElement, {
       attributes: true,
+      attributeFilter: ['role', 'aria-label', 'data-tab-id'],
       childList: true,
       subtree: true
     });

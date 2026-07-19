@@ -4,6 +4,8 @@ function Get-CodexNewWindowButtonPayload {
   const HEADER_SELECTOR = '.app-header-tint';
   const MENU_GROUP_SELECTOR = 'button[aria-label="Help"]';
   const BUTTON_ATTR = 'data-codex-plus-shared-window-button';
+  const DASHBOARD_BUTTON_ATTR = 'data-codex-plus-usage-dashboard-button';
+  const DASHBOARD_URL = 'http://127.0.0.1:3000/';
   const PROJECT_BUTTON_ATTR = 'data-codex-plus-project-window-button';
   const PENDING_PROJECT_WINDOWS_KEY = 'codexPlusPendingProjectWindows';
 
@@ -89,6 +91,18 @@ function Get-CodexNewWindowButtonPayload {
     window.setTimeout(() => window.__CODEX_PLUS_CONTEXT_BADGE?.clearStatus(), 5000);
   }
 
+  function openUsageDashboard() {
+    const link = document.createElement('a');
+    link.href = DASHBOARD_URL;
+    link.target = '_blank';
+    link.rel = 'noopener noreferrer';
+    link.textContent = 'Usage Dashboard';
+    link.style.display = 'none';
+    document.body.appendChild(link);
+    link.click();
+    window.setTimeout(() => link.remove(), 1000);
+  }
+
   function installProjectButtons() {
     for (const row of document.querySelectorAll('[data-app-action-sidebar-project-row]')) {
       if (row.querySelector('[' + PROJECT_BUTTON_ATTR + ']')) continue;
@@ -145,12 +159,57 @@ function Get-CodexNewWindowButtonPayload {
       finally { window.setTimeout(() => { button.disabled = false; }, 800); }
     });
     menuGroup.appendChild(button);
+
+    if (!menuGroup.querySelector('[' + DASHBOARD_BUTTON_ATTR + ']')) {
+      const dashboardButton = document.createElement('button');
+      dashboardButton.type = 'button';
+      dashboardButton.setAttribute(DASHBOARD_BUTTON_ATTR, 'true');
+      dashboardButton.setAttribute('aria-label', 'Usage Dashboard');
+      dashboardButton.title = 'Open the Codex usage dashboard';
+      dashboardButton.className = nativeButton?.className || 'no-drag rounded-md border border-transparent px-2.5 py-1 text-base font-normal leading-none outline-none transition-colors text-token-text-tertiary hover:bg-token-foreground/5 hover:text-token-description-foreground focus-visible:bg-token-foreground/5 focus-visible:text-token-description-foreground';
+      dashboardButton.textContent = 'Usage Dashboard';
+      dashboardButton.addEventListener('click', (event) => {
+        event.preventDefault();
+        event.stopPropagation();
+        openUsageDashboard();
+      });
+      menuGroup.appendChild(dashboardButton);
+    }
+  }
+
+  let installPending = false;
+  const INSTALL_SURFACE_SELECTOR = [
+    HEADER_SELECTOR,
+    MENU_GROUP_SELECTOR,
+    '[data-app-action-sidebar-project-row]'
+  ].join(',');
+
+  function mutationTouchesInstallSurface(record) {
+    const target = record.target instanceof Element
+      ? record.target
+      : record.target?.parentElement;
+    if (target?.matches(INSTALL_SURFACE_SELECTOR) || target?.closest(INSTALL_SURFACE_SELECTOR)) return true;
+    return [...Array.from(record.addedNodes || []), ...Array.from(record.removedNodes || [])].some((node) => {
+      return node instanceof Element && (
+        node.matches(INSTALL_SURFACE_SELECTOR) || Boolean(node.querySelector(INSTALL_SURFACE_SELECTOR))
+      );
+    });
+  }
+
+  function scheduleInstall(records) {
+    if (records && !records.some(mutationTouchesInstallSurface)) return;
+    if (installPending) return;
+    installPending = true;
+    window.setTimeout(() => {
+      installPending = false;
+      install();
+    }, 80);
   }
 
   install();
   window.__CODEX_PLUS_NEW_WINDOW_BUTTON = true;
-  new MutationObserver(install).observe(document.documentElement, { childList: true, subtree: true });
-  window.setInterval(install, 500);
+  new MutationObserver(scheduleInstall).observe(document.documentElement, { childList: true, subtree: true });
+  window.setInterval(scheduleInstall, 5000);
 })();
 '@
 }

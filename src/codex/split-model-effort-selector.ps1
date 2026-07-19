@@ -286,7 +286,22 @@ function Get-CodexSplitModelEffortSelectorPayload {
     restoreNativeTrigger();
   }
 
-  const observer = new MutationObserver(schedule);
+  const SELECTOR_SURFACE = NATIVE_TRIGGER_SELECTOR + ',[' + HOST_ATTR + ']';
+  function mutationTouchesSelector(record) {
+    const target = record.target instanceof Element
+      ? record.target
+      : record.target?.parentElement;
+    if (target?.matches(SELECTOR_SURFACE) || target?.closest(SELECTOR_SURFACE)) return true;
+    return [...Array.from(record.addedNodes || []), ...Array.from(record.removedNodes || [])].some((node) => {
+      return node instanceof Element && (
+        node.matches(SELECTOR_SURFACE) || Boolean(node.querySelector(SELECTOR_SURFACE))
+      );
+    });
+  }
+
+  const observer = new MutationObserver((records) => {
+    if (records.some(mutationTouchesSelector)) schedule();
+  });
   const start = () => {
     apply();
     if (document.documentElement) {
@@ -298,7 +313,7 @@ function Get-CodexSplitModelEffortSelectorPayload {
         subtree: true
       });
     }
-    syncInterval = window.setInterval(schedule, 500);
+    syncInterval = window.setInterval(schedule, 2000);
   };
 
   window.__CODEX_PLUS_SPLIT_MODEL_EFFORT_SELECTOR = { apply, destroy, getController };

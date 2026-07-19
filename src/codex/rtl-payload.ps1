@@ -316,11 +316,28 @@ function Get-CodexRtlPayload {
     }, 50);
   };
 
-  const observer = new MutationObserver(schedule);
+  function mutationIsInsideComposer(record) {
+    const target = record.target instanceof Element
+      ? record.target
+      : record.target?.parentElement;
+    if (!target) return false;
+    return Boolean(target.closest(COMPOSER_SELECTOR));
+  }
+
+  const observer = new MutationObserver((records) => {
+    if (records.length > 0 && records.every(mutationIsInsideComposer)) {
+      // The composer already uses dir=auto. Do not rescan and clone the full
+      // conversation for every ProseMirror keystroke.
+      processComposers();
+      return;
+    }
+    schedule();
+  });
   const observe = () => {
     if (observing || !document.documentElement) return;
     observer.observe(document.documentElement, {
       attributes: true,
+      attributeFilter: ['dir', 'contenteditable', 'data-thread-title'],
       childList: true,
       subtree: true
     });

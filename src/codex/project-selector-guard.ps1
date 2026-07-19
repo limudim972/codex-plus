@@ -227,15 +227,32 @@ function Get-CodexProjectSelectorGuardPayload {
     }, true);
   }
 
-  const observer = new MutationObserver(schedule);
+  const GUARD_SURFACE_SELECTOR = PROJECT_SELECTOR + ',' + CLEAR_PROJECT_SELECTOR + ',[role="menuitem"]';
+  function mutationTouchesGuard(record) {
+    if (record.type === 'attributes' && record.attributeName === PROJECT_WINDOW_MARKER) return true;
+    const target = record.target instanceof Element
+      ? record.target
+      : record.target?.parentElement;
+    if (target?.matches(GUARD_SURFACE_SELECTOR) || target?.closest(GUARD_SURFACE_SELECTOR)) return true;
+    return [...Array.from(record.addedNodes || []), ...Array.from(record.removedNodes || [])].some((node) => {
+      return node instanceof Element && (
+        node.matches(GUARD_SURFACE_SELECTOR) || Boolean(node.querySelector(GUARD_SURFACE_SELECTOR))
+      );
+    });
+  }
+
+  const observer = new MutationObserver((records) => {
+    if (records.some(mutationTouchesGuard)) schedule();
+  });
   const start = () => {
     apply();
     if (document.documentElement) observer.observe(document.documentElement, {
       attributes: true,
+      attributeFilter: [PROJECT_WINDOW_MARKER, 'aria-label'],
       childList: true,
       subtree: true
     });
-    window.setInterval(schedule, 500);
+    window.setInterval(schedule, 2000);
   };
 
   window.__CODEX_PLUS_PROJECT_SELECTOR_GUARD = { apply, observer };

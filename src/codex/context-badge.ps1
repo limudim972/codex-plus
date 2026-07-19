@@ -116,11 +116,34 @@ function Get-CodexContextBadgePayload {
     }, 50);
   };
 
-  const observer = new MutationObserver(schedule);
+  const BADGE_RELEVANT_SELECTOR = [
+    TOOLTIP_TRIGGER_SELECTOR,
+    TITLE_SELECTOR,
+    '.app-header-tint',
+    'iframe'
+  ].join(',');
+
+  function mutationTouchesBadgeSource(record) {
+    const target = record.target instanceof Element
+      ? record.target
+      : record.target?.parentElement;
+    if (target?.hasAttribute(BADGE_ID) || target?.closest('[' + BADGE_ID + ']')) return false;
+    if (target?.matches(BADGE_RELEVANT_SELECTOR) || target?.closest(BADGE_RELEVANT_SELECTOR)) return true;
+    return Array.from(record.addedNodes || []).some((node) => {
+      return node instanceof Element && (
+        node.matches(BADGE_RELEVANT_SELECTOR) || Boolean(node.querySelector(BADGE_RELEVANT_SELECTOR))
+      );
+    });
+  }
+
+  const observer = new MutationObserver((records) => {
+    if (records.some(mutationTouchesBadgeSource)) schedule();
+  });
   const observe = () => {
     if (observing || !document.documentElement) return;
     observer.observe(document.documentElement, {
       attributes: true,
+      attributeFilter: ['aria-label', 'data-thread-title'],
       childList: true,
       subtree: true
     });

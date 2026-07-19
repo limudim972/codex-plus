@@ -110,6 +110,8 @@ Assert-True ($launcherScript.Contains('WScript.Arguments(0)')) 'VBS launcher sho
 Assert-True ($launcherScript.Contains('CODEX_PLUS_LAUNCHER_KEY')) 'VBS launcher should pass the launcher identity through the process environment.'
 Assert-True ($launcherScript.Contains('Scriptlet.TypeLib')) 'VBS launcher should create a fresh instance identity for each shortcut launch.'
 Assert-True ($launcherScript.Contains('instanceKey = launcherKey & "-"')) 'VBS launcher should derive each instance identity from the shortcut identity.'
+Assert-True ($launcherScript.Contains('dashboard-server.ps1')) 'VBS launcher should start the local JSONL dashboard service.'
+Assert-True ($launcherScript.Contains('dashboardProcessId')) 'VBS launcher should hand the dashboard process to the close watchdog.'
 Assert-True ($launcherScript.Contains('Chr(34)')) 'VBS launcher should build the quoted patch path using Chr(34).'
 Assert-True ($launcherScript -match 'command = "powershell\.exe .* -File " & Chr\(34\) & ".*" & Chr\(34\) & " -LaunchCodexRtl"') 'VBS launcher should concatenate the quoted patch path safely.'
 Assert-True ($launcherScript.Contains(', 0, False')) 'VBS launcher should hide the window and not wait.'
@@ -811,6 +813,8 @@ $textSelectorsOnly = ($payload -split 'const SKIP_SELECTOR')[0]
 Assert-True (-not $textSelectorsOnly.Contains("'td'")) 'Payload text block targeting should not include table cells.'
 Assert-True (-not $textSelectorsOnly.Contains("'th'")) 'Payload text block targeting should not include table headers.'
 Assert-True ($payload.Contains('MutationObserver')) 'Payload should reapply after React DOM changes.'
+Assert-True ($payload.Contains('records.every(mutationIsInsideComposer)')) 'Composer mutations should not rescan the full conversation on every keystroke.'
+Assert-True ($payload.Contains("attributeFilter: ['dir', 'contenteditable', 'data-thread-title']")) 'RTL observation should ignore unrelated React attribute churn.'
 
 $splitSelectorPayload = Get-CodexSplitModelEffortSelectorPayload
 Assert-True ($splitSelectorPayload.Contains('data-codex-plus-model-select')) 'Split selector should expose a dedicated model select.'
@@ -819,7 +823,8 @@ Assert-True ($splitSelectorPayload.Contains('supportedReasoningEfforts')) 'Split
 Assert-True ($splitSelectorPayload.Contains('latest.onSelectModel(model.model || model.id, nextEffort)')) 'Split selector should use Codex native model and effort callback arguments.'
 Assert-True ($splitSelectorPayload.Contains('latest.onSelectReasoningEffort(event.target.value)')) 'Split selector should use Codex native effort callback.'
 Assert-True ($splitSelectorPayload.Contains('const CHEVRON')) 'Split selector should render a native-style chevron for each select.'
-Assert-True ($splitSelectorPayload.Contains('window.setInterval(schedule, 500)')) 'Split selector should periodically reconcile native Codex state after delayed updates.'
+Assert-True ($splitSelectorPayload.Contains('window.setInterval(schedule, 2000)')) 'Split selector should periodically reconcile native Codex state without polling twice per second.'
+Assert-True ($splitSelectorPayload.Contains('records.some(mutationTouchesSelector)')) 'Split selector should ignore mutations outside the model selector surface.'
 Assert-True ($splitSelectorPayload.Contains('hideNativeTrigger')) 'Split selector should hide the original Codex model and effort trigger.'
 Assert-True ($splitSelectorPayload.Contains('data-codex-plus-native-selector-hidden')) 'Split selector should mark the hidden native trigger for runtime verification.'
 Assert-True (-not ($splitSelectorPayload.Contains('role="dialog"'))) 'Split selector should not open a custom popup panel.'
@@ -839,6 +844,7 @@ Assert-True ($projectSelectorGuardPayload.Contains('data-clear-project-button'))
 Assert-True ($projectSelectorGuardPayload.Contains('CLEAR_PROJECT_SELECTOR')) 'Project selector guard should keep the project clear control non-interactive.'
 Assert-True ($projectSelectorGuardPayload.Contains('PROJECT_WINDOW_CLEAR_SELECTOR')) 'Project selector guard should scope clear-control hiding to project windows.'
 Assert-True ($projectSelectorGuardPayload.Contains('display: none !important')) 'Project selector guard should hide the project clear X.'
+Assert-True ($projectSelectorGuardPayload.Contains('records.some(mutationTouchesGuard)')) 'Project selector guard should ignore unrelated composer and conversation mutations.'
 Assert-True ($projectSelectorGuardPayload.Contains("closest('[' + LOCKED_ATTR + '=""true""],[' + PENDING_ATTR + '=""true""],' + CLEAR_PROJECT_SELECTOR)")) 'Project selector guard should block clear-project events before native state changes.'
 
 $sidebarPagingPayload = Get-CodexSidebarPagingPayload
@@ -846,6 +852,15 @@ Assert-True ($sidebarPagingPayload.Contains("key: 'threads'")) 'Sidebar paging s
 Assert-True ($sidebarPagingPayload.Contains("title: 'Recents'")) 'Sidebar paging should render a Recents heading.'
 Assert-True ($sidebarPagingPayload.Contains("minVisibleCount: 3")) 'Sidebar paging should keep at least three thread rows visible by default.'
 Assert-True ($sidebarPagingPayload.Contains('getProjectTimestampMsForRow')) 'Sidebar paging should resolve project timestamps from live state.'
+Assert-True ($sidebarPagingPayload.Contains('getReconciliationValue')) 'Sidebar paging should reuse expensive live catalog projections during one reconciliation.'
+Assert-True ($sidebarPagingPayload.Contains("getReconciliationValue('recentThreadEntries'")) 'Sidebar paging should compute recent thread entries only once per reconciliation.'
+Assert-True ($sidebarPagingPayload.Contains('getReconciliationRowValue')) 'Sidebar paging should cache repeated row metadata lookups during sorting and rendering.'
+Assert-True ($sidebarPagingPayload.Contains('existingRowsByThreadId')) 'Synthetic Recents should index existing rows before rebuilding the live catalog view.'
+Assert-True ($sidebarPagingPayload.Contains('existingRow || createSyntheticThreadRow')) 'Synthetic Recents should clone a native row only for a genuinely new thread.'
+Assert-True ($sidebarPagingPayload.Contains("getReconciliationValue('liveSidebarCatalog'")) 'Sidebar paging should reuse one live catalog snapshot throughout a reconciliation.'
+Assert-True ($sidebarPagingPayload.Contains('dirtyLiveCatalogBindings.add(binding)')) 'Live store subscriptions should invalidate only the binding that changed.'
+Assert-True ($sidebarPagingPayload.Contains('refreshLiveThreadBinding(scope, binding)')) 'Sidebar refreshes should update dirty bindings incrementally instead of rescanning the entire store.'
+Assert-True ($sidebarPagingPayload.Contains('LIVE_CATALOG_FULL_REFRESH_MS = 30000')) 'Full live catalog scans should be a low-frequency safety fallback.'
 Assert-True ($sidebarPagingPayload.Contains('getRemoteProjectTimestampMsForRow')) 'Sidebar paging should fall back to remote project timestamps from React props.'
 Assert-True ($sidebarPagingPayload.Contains('cloudEnvironment')) 'Sidebar paging should read the remote project cloud environment metadata.'
 Assert-True ($sidebarPagingPayload.Contains("const titleElement = row.querySelector('[data-thread-title=""true""], .text-fade-truncate');")) 'Sidebar timestamps should target the inline title element, not the native row wrapper.'
@@ -944,7 +959,10 @@ Assert-True ($sidebarPagingPayload.Contains('startThreadNavigationLoadingMonitor
 Assert-True ($sidebarPagingPayload.Contains('isThreadNavigationReady')) 'Thread navigation should remove the spinner after the target conversation renders.'
 Assert-True ($sidebarPagingPayload.Contains('conversationText.length > 0')) 'Thread navigation should keep the spinner visible while the replacement conversation is still empty.'
 Assert-True ($sidebarPagingPayload.Contains('THREAD_NAVIGATION_MIN_DISPLAY_MS')) 'Thread navigation should keep the spinner visible long enough to be noticed.'
-Assert-True ($sidebarPagingPayload.Contains('SIDEBAR_POLL_INTERVAL_MS = 5000')) 'Sidebar fallback polling should not reconcile the full thread catalog twice per second.'
+Assert-True ($sidebarPagingPayload.Contains('SIDEBAR_POLL_INTERVAL_MS = 30000')) 'Sidebar fallback polling should stay infrequent because live store subscriptions drive normal updates.'
+Assert-True ($sidebarPagingPayload.Contains('USER_ACTIVITY_SETTLE_MS = 500')) 'Sidebar reconciliation should wait until typing and scrolling have settled.'
+Assert-True ($sidebarPagingPayload.Contains("['beforeinput', 'keydown', 'wheel', 'touchmove', 'scroll']")) 'Sidebar reconciliation should track the user interactions that are sensitive to main-thread jank.'
+Assert-True ($sidebarPagingPayload.Contains('activityAge < USER_ACTIVITY_SETTLE_MS')) 'A scheduled sidebar refresh should defer while the user is actively typing or scrolling.'
 Assert-True ($sidebarPagingPayload.Contains('if (threadNavigationState)')) 'Sidebar reconciliation should wait until an in-progress thread navigation has rendered.'
 Assert-True ($sidebarPagingPayload.Contains('SIDEBAR_NAVIGATION_REFRESH_RETRY_MS')) 'Deferred sidebar reconciliation should retry after navigation without blocking the conversation render.'
 Assert-True ($sidebarPagingPayload.Contains('authoritativeUnread')) 'Synthetic unread state should prefer the current native or live read state over stale indicators.'
@@ -1000,8 +1018,17 @@ Assert-True (-not ($payloadBundle.Contains('__CODEX_PLUS_WINDOW_TITLE'))) 'Injec
 Assert-True ($payloadBundle.Contains('__CODEX_RTL_SHARED_HELPERS')) 'Injected payload bundle should include the shared bidi helper payload.'
 Assert-True ($payloadBundle.Contains('__CODEX_PLUS_SPLIT_MODEL_EFFORT_SELECTOR')) 'Injected payload bundle should include the split model and effort selectors.'
 Assert-True ($payloadBundle.Contains('__CODEX_PLUS_PROJECT_SELECTOR_GUARD')) 'Injected payload bundle should include the project selector guard.'
+$reminderHiderPayload = Get-CodexFullAccessReminderHiderPayload
+Assert-True ($reminderHiderPayload.Contains('record.addedNodes')) 'Reminder hiding should scan only newly added mutation subtrees.'
+Assert-True ($reminderHiderPayload.Contains('createTreeWalker')) 'Reminder hiding should use a linear text-node walk instead of repeatedly reading nested container text.'
+Assert-True ($reminderHiderPayload.Contains('normalize(textNode.nodeValue)')) 'Reminder hiding should avoid layout-forcing innerText reads.'
+Assert-True (-not ($reminderHiderPayload.Contains('element.innerText'))) 'Reminder hiding should never force layout for every element after a composer mutation.'
 $newWindowPayload = Get-CodexNewWindowButtonPayload
 Assert-True ($newWindowPayload.Contains('data-codex-plus-shared-window-button')) 'New window payload should expose a dedicated shared-window marker.'
+Assert-True ($newWindowPayload.Contains('data-codex-plus-usage-dashboard-button')) 'New window payload should expose a dedicated dashboard marker.'
+Assert-True ($newWindowPayload.Contains("dashboardButton.textContent = 'Usage Dashboard'")) 'Dashboard button should use an ASCII-only label without a glyph prefix.'
+Assert-True ($newWindowPayload.Contains("http://127.0.0.1:3000/")) 'Dashboard button should open the local PowerShell service URL.'
+Assert-True ($newWindowPayload.Contains('records.some(mutationTouchesInstallSurface)')) 'Window controls should ignore mutations outside their header and sidebar surfaces.'
 Assert-True ($newWindowPayload.Contains("document.querySelector('[' + BUTTON_ATTR + '], [' + PROJECT_BUTTON_ATTR + ']')")) 'New window payload should recover when its installed flag is stale but the DOM buttons are missing.'
 Assert-True ($newWindowPayload.Contains('open-in-new-window')) 'New window payload should use Codex''s supported open-in-new-window message.'
 Assert-True ($newWindowPayload.Contains('data-codex-plus-project-window-button')) 'New window payload should add a project-row new-window action.'
@@ -1023,6 +1050,7 @@ Assert-True ($contextBadgePayload.Contains('__CODEX_PLUS_NATIVE_WINDOW_TITLE')) 
 Assert-True ($contextBadgePayload.Contains('__CODEX_PLUS_PROJECT_WINDOW_CONTEXT')) 'Context badge should include the project title in project windows.'
 Assert-True ($contextBadgePayload.Contains("['Plus', title, statusText, percent]")) 'Context badge should display Plus, status, title, and usage when available.'
 Assert-True ($contextBadgePayload.Contains('setStatus(nextStatus)')) 'Context badge should expose a live status setter.'
+Assert-True ($contextBadgePayload.Contains('records.some(mutationTouchesBadgeSource)')) 'Context badge should ignore unrelated composer and conversation mutations.'
 $sharedPayload = Get-CodexRtlSharedPayload
 Assert-True ($sharedPayload.Contains('ensureHelpers')) 'Shared bidi payload should expose the helpers on a shared window namespace.'
 Assert-True ($sharedPayload.Contains('classifyDirection')) 'Shared bidi payload should own the direction classifier used by multiple surfaces.'
@@ -1030,6 +1058,7 @@ $planPayload = Get-CodexRtlPayloadPlan
 Assert-True ($planPayload.Contains('__CODEX_RTL_SHARED_HELPERS')) 'Plan payload should consume the shared bidi helpers instead of redefining its own classifier.'
 Assert-True ($planPayload.Contains("textAlign !== 'start'")) 'Plan payload should keep the plan surface aligned to the natural block start edge.'
 Assert-True ($planPayload.Contains('hasNestedTextBlock')) 'Plan payload should avoid flattening nested mixed-direction blocks.'
+Assert-True ($planPayload.Contains('records.some(mutationTouchesPlan)')) 'Plan RTL should ignore mutations outside the Plan panel.'
 
 $nodeCommand = Get-Command -Name node -ErrorAction SilentlyContinue
 if ($nodeCommand) {

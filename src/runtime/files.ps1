@@ -2,6 +2,10 @@ function Get-CodexPlusLauncherScriptPath {
     Join-Path (Get-CodexRtlRuntimeRoot) 'launch-codex-plus.vbs'
 }
 
+function Get-CodexUsageDashboardServerScriptPath {
+    Join-Path (Get-CodexRtlRuntimeRoot) 'dashboard-server.ps1'
+}
+
 function Install-CodexRtlRuntimeFiles {
     param([Parameter(Mandatory)][string]$SourceRoot)
 
@@ -9,6 +13,7 @@ function Install-CodexRtlRuntimeFiles {
     $items = @(
         'patch.ps1',
         'src/runtime/assets/codex-plus.ico',
+        'src/runtime/dashboard-server.ps1',
         'src/shared/logging.ps1',
         'src/shared/prompting.ps1',
         'src/shared/asar.ps1',
@@ -18,6 +23,7 @@ function Install-CodexRtlRuntimeFiles {
         'src/codex/rtl-payload.ps1',
         'src/codex/rtl-payload-Plan.ps1',
         'src/codex/context-badge.ps1',
+        'src/codex/full-access-reminder-hider.ps1',
         'src/codex/split-model-effort-selector.ps1',
         'src/codex/project-selector-guard.ps1',
         'src/codex/sidebar-paging.ps1',
@@ -85,9 +91,18 @@ launchSplashCommand = "powershell.exe -NoProfile -ExecutionPolicy Bypass -Window
 If instanceKey <> "" Then
     launchSplashCommand = launchSplashCommand & " -LauncherKey " & Chr(34) & instanceKey & Chr(34)
 End If
+dashboardServerPath = Replace("$escapedPatchScriptPath", "patch.ps1", "src\runtime\dashboard-server.ps1")
+dashboardRoot = shell.ExpandEnvironmentStrings("%USERPROFILE%") & "\Documents\code\Codex Usage Dashboard"
+dashboardCommand = "powershell.exe -NoProfile -ExecutionPolicy Bypass -WindowStyle Hidden -File " & Chr(34) & dashboardServerPath & Chr(34) & " -DashboardRoot " & Chr(34) & dashboardRoot & Chr(34) & " -Port 3000"
+If instanceKey <> "" Then
+    dashboardCommand = dashboardCommand & " -LauncherKey " & Chr(34) & instanceKey & Chr(34)
+End If
 shell.Run launchSplashCommand, 0, False
 shell.Run command, 0, False
+Set dashboardExec = shell.Exec(dashboardCommand)
+dashboardProcessId = dashboardExec.ProcessID
 watchdogCommand = "powershell.exe -NoProfile -ExecutionPolicy Bypass -WindowStyle Hidden -File " & Chr(34) & "$escapedPatchScriptPath" & Chr(34) & " -SkipMain -StartCloseWatchdog"
+watchdogCommand = watchdogCommand & " -DashboardProcessId " & dashboardProcessId
 If instanceKey <> "" Then
     watchdogCommand = watchdogCommand & " -LauncherKey " & Chr(34) & instanceKey & Chr(34)
 End If
