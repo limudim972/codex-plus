@@ -111,7 +111,7 @@ Assert-True ($launcherScript.Contains('CODEX_PLUS_LAUNCHER_KEY')) 'VBS launcher 
 Assert-True ($launcherScript.Contains('Scriptlet.TypeLib')) 'VBS launcher should create a fresh instance identity for each shortcut launch.'
 Assert-True ($launcherScript.Contains('instanceKey = launcherKey & "-"')) 'VBS launcher should derive each instance identity from the shortcut identity.'
 Assert-True ($launcherScript.Contains('dashboard-server.ps1')) 'VBS launcher should start the local JSONL dashboard service.'
-Assert-True ($launcherScript.Contains('dashboardProcessId')) 'VBS launcher should hand the dashboard process to the close watchdog.'
+Assert-True ($launcherScript.Contains('shell.Run dashboardCommand, 0, False')) 'VBS launcher should start the dashboard hidden.'
 Assert-True ($launcherScript.Contains('Chr(34)')) 'VBS launcher should build the quoted patch path using Chr(34).'
 Assert-True ($launcherScript -match 'command = "powershell\.exe .* -File " & Chr\(34\) & ".*" & Chr\(34\) & " -LaunchCodexRtl"') 'VBS launcher should concatenate the quoted patch path safely.'
 Assert-True ($launcherScript.Contains(', 0, False')) 'VBS launcher should hide the window and not wait.'
@@ -1043,6 +1043,8 @@ Assert-True ($newWindowPayload.Contains("setStatus('- Launching '")) 'New-window
 Assert-True (-not ($newWindowPayload.Contains('New Plus'))) 'New window payload should not expose the removed independent Plus button.'
 $launchSource = Get-Content -Raw (Join-Path $repoRoot 'src\runtime\launch.ps1')
 Assert-True ($launchSource.Contains('[int]$PollMilliseconds = 250')) 'The close watchdog should poll frequently so taskbar titles update quickly.'
+Assert-True ($launchSource.Contains('$seenProcessIds = [System.Collections.Generic.HashSet[int]]::new()')) 'The close watchdog should retain observed instance process ids for reliable cleanup.'
+Assert-True ($launchSource.Contains('& $stopSeenProcesses')) 'The close watchdog should terminate observed instance processes after the last window closes.'
 Assert-True ($launchSource.Contains('A newly opened project target exposes its project context')) 'Native titles should be synchronized after each newly injected target.'
 $contextBadgePayload = Get-CodexContextBadgePayload
 Assert-True ($contextBadgePayload.Contains('readWindowTitle')) 'Context badge should read the current window title context.'

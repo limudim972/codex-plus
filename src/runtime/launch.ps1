@@ -228,6 +228,7 @@ function New-CodexRtlLaunchArguments {
     param(
         [Parameter(Mandatory)][int]$Port,
         [AllowEmptyString()][string]$LauncherKey,
+        [int]$DashboardProcessId,
         [int]$WindowTitleOrdinal = 0
     )
 
@@ -1019,7 +1020,7 @@ function Watch-CodexCloseToQuit {
         [int]$GracePolls = 3,
         [int]$MissingProcessGracePolls = 40,
         [int]$StartupWaitSeconds = 30,
-        [int]$NoWindowKillAfterSeconds = 12
+        [int]$NoWindowKillAfterSeconds = 120
     )
 
     $startupDeadline = [DateTime]::UtcNow.AddSeconds($StartupWaitSeconds)
@@ -1028,6 +1029,23 @@ function Watch-CodexCloseToQuit {
     $seenVisibleWindow = $false
     $missingVisibleWindowCount = 0
     $missingProcessCount = 0
+    $seenProcessIds = [System.Collections.Generic.HashSet[int]]::new()
+    $stopSeenProcesses = {
+        foreach ($processId in @($seenProcessIds)) {
+            Stop-Process -Id $processId -Force -ErrorAction SilentlyContinue
+        }
+    }
+    $stopDashboard = {
+        if ($DashboardProcessId -gt 0) {
+            Stop-Process -Id $DashboardProcessId -Force -ErrorAction SilentlyContinue
+        }
+        $dashboardProcesses = Get-CimInstance Win32_Process -Filter "Name = 'powershell.exe'" -ErrorAction SilentlyContinue | Where-Object {
+            $_.CommandLine -like '*dashboard-server.ps1*' -and $_.CommandLine -like '*-Port 3000*' -and ($LauncherKey -eq '' -or $_.CommandLine -like ('*' + $LauncherKey + '*'))
+        }
+        foreach ($dashboardProcess in @($dashboardProcesses)) {
+            Stop-Process -Id ([int]$dashboardProcess.ProcessId) -Force -ErrorAction SilentlyContinue
+        }
+    }
     while ($true) {
         $matchingProcesses = @(
             Get-CodexDesktopProcesses | Where-Object {
@@ -1040,6 +1058,7 @@ function Watch-CodexCloseToQuit {
                 continue
             }
             if (-not $seenMatchingProcess) {
+                & $stopDashboard
                 return
             }
 
@@ -1049,12 +1068,16 @@ function Watch-CodexCloseToQuit {
             # leaving no watchdog to terminate them after their last window closed.
             $missingProcessCount++
             if ($missingProcessCount -ge $MissingProcessGracePolls) {
+                & $stopDashboard
                 return
             }
             Start-Sleep -Milliseconds $PollMilliseconds
             continue
         }
         $missingProcessCount = 0
+        foreach ($process in $matchingProcesses) {
+            [void]$seenProcessIds.Add([int]$process.ProcessId)
+        }
         if (-not $seenMatchingProcess) {
             $seenMatchingProcess = $true
             $matchingProcessSeenAt = [DateTime]::UtcNow
@@ -1083,6 +1106,8 @@ function Watch-CodexCloseToQuit {
 
         if ($missingVisibleWindowCount -ge $GracePolls) {
             Stop-CodexDesktopProcesses -Port $Port -LauncherKey $LauncherKey -CurrentInstanceOnly
+            & $stopSeenProcesses
+            & $stopDashboard
             return
         }
 
