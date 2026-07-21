@@ -61,9 +61,14 @@ function Get-CodexNewWindowButtonPayload {
   }
 
   function getProjectStartupPath(context) {
-    // The native bridge accepts the home route. Project metadata is carried
-    // through the shared Plus-session queue and claimed by the new window.
-    return '/';
+    // Carry the project identity in the native startup URL as well as the
+    // shared Plus-session queue. A newly created Electron window can begin
+    // loading before its localStorage view has observed the queue update.
+    if (!context?.id || !context?.name) return '/';
+    const params = new URLSearchParams();
+    params.set('codexPlusProjectId', context.id);
+    params.set('codexPlusProjectName', context.name);
+    return '/?' + params.toString();
   }
 
   function launchSharedWindow(context) {
