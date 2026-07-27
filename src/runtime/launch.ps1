@@ -1016,17 +1016,18 @@ function Watch-CodexCloseToQuit {
     param(
         [Parameter(Mandatory)][int]$Port,
         [AllowEmptyString()][string]$LauncherKey,
+        [int]$DashboardProcessId = 0,
         [int]$PollMilliseconds = 250,
         [int]$GracePolls = 3,
         [int]$MissingProcessGracePolls = 40,
-        [int]$StartupWaitSeconds = 30,
-        [int]$NoWindowKillAfterSeconds = 120
+        [int]$StartupWaitSeconds = 30
     )
 
     $startupDeadline = [DateTime]::UtcNow.AddSeconds($StartupWaitSeconds)
     $seenMatchingProcess = $false
-    $matchingProcessSeenAt = $null
-    $seenVisibleWindow = $false
+    # Process cleanup is deliberately disarmed during startup. Electron may
+    # create the instance processes well before it publishes a native window.
+    $closeCleanupArmed = $false
     $missingVisibleWindowCount = 0
     $missingProcessCount = 0
     $seenProcessIds = [System.Collections.Generic.HashSet[int]]::new()
@@ -1062,12 +1063,28 @@ function Watch-CodexCloseToQuit {
                 return
             }
 
+            if (-not $closeCleanupArmed) {
+                # A browser process can be replaced while the first window is
+                # still launching. Never terminate an observed process before
+                # this instance has exposed its initial visible window.
+                if ([DateTime]::UtcNow -ge $startupDeadline) {
+                    & $stopDashboard
+                    return
+                }
+                Start-Sleep -Milliseconds $PollMilliseconds
+                continue
+            }
+
             # Process discovery can briefly return no rows while Electron replaces
             # its browser process or WMI/CIM is under load. Exiting on the first
             # empty sample permanently orphaned otherwise healthy Plus instances,
             # leaving no watchdog to terminate them after their last window closed.
             $missingProcessCount++
             if ($missingProcessCount -ge $MissingProcessGracePolls) {
+                # The process can disappear from CIM before it has actually
+                # exited.  Always clean up the processes observed for this
+                # launcher instance before abandoning the watchdog.
+                & $stopSeenProcesses
                 & $stopDashboard
                 return
             }
@@ -1080,12 +1097,11 @@ function Watch-CodexCloseToQuit {
         }
         if (-not $seenMatchingProcess) {
             $seenMatchingProcess = $true
-            $matchingProcessSeenAt = [DateTime]::UtcNow
         }
 
         $visibleProcessCount = Get-CodexVisibleProcessCount -Port $Port -LauncherKey $LauncherKey
         if ($visibleProcessCount -gt 0) {
-            $seenVisibleWindow = $true
+            $closeCleanupArmed = $true
             $missingVisibleWindowCount = 0
             try {
                 Invoke-CodexRtlInjection -Port $Port | Out-Null
@@ -1093,11 +1109,7 @@ function Watch-CodexCloseToQuit {
             }
             Update-CodexWindowTitles -Port $Port -LauncherKey $LauncherKey | Out-Null
         } else {
-            $allowNoWindowKill = $seenVisibleWindow
-            if ((-not $allowNoWindowKill) -and $matchingProcessSeenAt) {
-                $allowNoWindowKill = ([DateTime]::UtcNow -ge $matchingProcessSeenAt.AddSeconds($NoWindowKillAfterSeconds))
-            }
-            if ($allowNoWindowKill) {
+            if ($closeCleanupArmed) {
                 $missingVisibleWindowCount++
             } else {
                 $missingVisibleWindowCount = 0
