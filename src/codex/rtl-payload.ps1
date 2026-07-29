@@ -61,6 +61,23 @@ function Get-CodexRtlPayload {
     '[class*="Code"]'
   ].join(',');
 
+  const LEFT_EDGE_SIDEBAR_GUARD_KEY = '__CODEX_PLUS_LEFT_EDGE_SIDEBAR_GUARD';
+  const LEFT_EDGE_SIDEBAR_GUARD_WIDTH = 40;
+
+  function installLeftEdgeSidebarGuard() {
+    if (window[LEFT_EDGE_SIDEBAR_GUARD_KEY]) return;
+    const blockEdgeActivation = (event) => {
+      if (event.isTrusted && event.clientX <= LEFT_EDGE_SIDEBAR_GUARD_WIDTH
+          && !document.querySelector('[data-app-shell-sidebar-trigger][aria-label="Hide sidebar"]')) {
+        event.stopImmediatePropagation();
+      }
+    };
+    for (const eventName of ['pointerenter', 'mouseenter', 'pointerover', 'mouseover', 'pointermove', 'mousemove']) {
+      window.addEventListener(eventName, blockEdgeActivation, true);
+    }
+    window[LEFT_EDGE_SIDEBAR_GUARD_KEY] = true;
+  }
+
   const INLINE_STYLE_ID = 'data-codex-rtl-fix-style';
   const RTL_SHARED = window.__CODEX_RTL_SHARED_HELPERS;
   const RTL_RE = RTL_SHARED.RTL_RE;
@@ -366,6 +383,7 @@ function Get-CodexRtlPayload {
 
   const start = () => {
     disconnect();
+    installLeftEdgeSidebarGuard();
     apply();
     observe();
   };
