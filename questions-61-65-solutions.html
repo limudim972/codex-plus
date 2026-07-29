@@ -1,0 +1,214 @@
+<!doctype html>
+<html lang="he" dir="rtl">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>פתרונות שאלות 61–65</title>
+  <style>
+    @page { size: A4; margin: 16mm; }
+    :root { --ink:#173b68; --accent:#c65335; --paper:#f7faff; --line:#dbe5f2; }
+    * { box-sizing:border-box; }
+    html, body { margin:0; min-height:100%; background:#e9eef5; color:#182538; font-family:Arial,"Noto Sans Hebrew",sans-serif; }
+    body { direction:rtl; }
+    .app-shell { display:flex; flex-direction:row-reverse; direction:ltr; height:100vh; min-height:100vh; }
+    .sidebar { flex:0 0 210px; height:100vh; overflow-y:auto; scrollbar-gutter:stable; padding:22px 16px; background:var(--ink); color:#fff; direction:rtl; }
+    .sidebar h1 { margin:0 0 18px; font-size:1.1rem; }
+    .sidebar a { display:block; margin:7px 0; padding:9px 11px; border-radius:6px; color:#fff; text-decoration:none; background:#ffffff18; }
+    .sidebar a:hover, .sidebar a:focus { background:#ffffff38; }
+    .pages { flex:1; height:100vh; overflow-y:auto; scrollbar-gutter:stable; padding:24px; direction:rtl; }
+    .question { width:min(180mm,100%); min-height:265mm; margin:0 auto 24px; padding:11mm 12mm; background:#fff; box-shadow:0 2px 12px #173b6820; scroll-margin-top:1rem; page-break-after:always; break-after:page; }
+    .question:last-child { page-break-after:auto; break-after:auto; }
+    h1 { margin:0 0 10px; color:var(--ink); font-size:1.55rem; border-bottom:2px solid var(--line); padding-bottom:7px; }
+    h2 { margin:18px 0 8px; color:var(--ink); font-size:1.12rem; }
+    h3 { margin:17px 0 7px; color:var(--ink); font-size:1.04rem; }
+    p { margin:7px 0; line-height:1.58; }
+    .ocr-question { padding:12px 14px; border:1px solid #b7c9df; border-right:5px solid var(--accent); background:#fbfdff; line-height:1.7; }
+    .question-drawing { margin:12px auto 16px; padding:7px; border:1px solid var(--line); background:var(--paper); text-align:center; }
+    .question-drawing svg { display:block; width:min(100%,520px); height:auto; margin:auto; }
+    .equation { display:block; max-width:100%; margin:10px auto; overflow:visible; }
+    .inline-math { white-space:nowrap; }
+    .parallel-relation { display:inline-block; direction:ltr; white-space:nowrap; font-family:"Times New Roman",serif; font-style:normal; }
+    .method-steps { margin:8px 0 12px; padding:0 28px 0 0; }
+    .method-steps li { margin:5px 0; }
+    .solution-step { margin:12px 0; padding:10px 14px; border-right:5px solid #2d5f91; background:#f0f6fc; border-radius:5px; }
+    .solution-step-title { margin-bottom:6px; color:var(--ink); font-weight:700; font-size:1.02rem; }
+    .answer .parallel-relation { display:block; width:100%; text-align:left; font-size:1.25rem; }
+    .proof-table { width:100%; border-collapse:collapse; margin:10px 0; }
+    .proof-table th, .proof-table td { border:1px solid #c7d5e5; padding:7px; vertical-align:top; }
+    .proof-table th { color:var(--ink); background:#edf3fa; }
+    .answer { margin:10px 0; padding:9px 12px; border-right:4px solid var(--accent); background:#fff4ef; }
+    @media print {
+      html, body { background:#fff; }
+      .app-shell { display:block; height:auto; }
+      .sidebar { display:none; }
+      .pages { height:auto; overflow:visible; padding:0; }
+      .question { width:auto; min-height:0; margin:0; padding:0; box-shadow:none; }
+    }
+  </style>
+</head>
+<body>
+  <div class="app-shell">
+    <aside class="sidebar" aria-label="ניווט בין השאלות">
+      <h1>תוכן עניינים</h1>
+      <a href="#q61">שאלה 61</a>
+      <a href="#q62">שאלה 62</a>
+      <a href="#q63">שאלה 63</a>
+      <a href="#q64">שאלה 64</a>
+      <a href="#q65">שאלה 65</a>
+    </aside>
+
+    <main class="pages">
+      <section class="question" id="q61">
+        <h1>שאלה 61</h1>
+        <div class="ocr-question"><math class="inline-math" dir="ltr"><mi>ABCD</mi></math> הוא ריבוע. <math class="inline-math" dir="ltr"><mi>F</mi></math> ו־<math class="inline-math" dir="ltr"><mi>E</mi></math> הן נקודות על הצלעות <math class="inline-math" dir="ltr"><mi>CD</mi></math> ו־<math class="inline-math" dir="ltr"><mi>BC</mi></math> בהתאמה כך ש־<math class="inline-math" dir="ltr"><mi>BE</mi><mo>=</mo><mi>FC</mi></math>.<br><math class="inline-math" dir="ltr"><mi>H</mi></math> היא נקודת החיתוך של <math class="inline-math" dir="ltr"><mi>AE</mi></math> ו־<math class="inline-math" dir="ltr"><mi>BF</mi></math>.<br>א. הוכח: <math class="inline-math" dir="ltr"><mi>△</mi><mi>AEB</mi><mo>≅</mo><mi>△</mi><mi>BFC</mi></math>.<br>ב. המשך <math class="inline-math" dir="ltr"><mi>BF</mi></math> חותך את המשך <math class="inline-math" dir="ltr"><mi>AD</mi></math> בנקודה <math class="inline-math" dir="ltr"><mi>G</mi></math> (ראה ציור). נתון כי: <math class="inline-math" dir="ltr"><mfrac><mi>CF</mi><mi>FD</mi></mfrac><mo>=</mo><mfrac><mn>1</mn><mn>2</mn></mfrac></math>. חשב את היחס <math class="inline-math" dir="ltr"><mfrac><mi>DG</mi><mi>CF</mi></mfrac></math>.</div>
+        <div class="question-drawing" aria-label="ריבוע ABCD, הנקודות E F H והנקודה G על המשך AD"><svg viewBox="0 0 820 300" role="img" aria-label="ריבוע ABCD והישרים AE ו-BFG"><rect x="90" y="45" width="210" height="210" fill="#e7f1fc" stroke="#173b68" stroke-width="4"/><line x1="90" y1="255" x2="160" y2="45" stroke="#c65335" stroke-width="3"/><line x1="90" y1="45" x2="300" y2="115" stroke="#2d5f91" stroke-width="3"/><line x1="90" y1="255" x2="720" y2="255" stroke="#173b68" stroke-width="3"/><line x1="90" y1="45" x2="300" y2="115" stroke="#173b68" stroke-width="3"/><line x1="90" y1="45" x2="720" y2="255" stroke="#c65335" stroke-width="3"/><circle cx="90" cy="45" r="4" fill="#173b68"/><circle cx="160" cy="45" r="4" fill="#c65335"/><circle cx="300" cy="115" r="4" fill="#c65335"/><circle cx="153" cy="66" r="4" fill="#2d5f91"/><text x="78" y="35" fill="#173b68" font-size="19">B</text><text x="305" y="35" fill="#173b68" font-size="19">C</text><text x="305" y="275" fill="#173b68" font-size="19">D</text><text x="72" y="275" fill="#173b68" font-size="19">A</text><text x="160" y="35" fill="#c65335" font-size="19">E</text><text x="310" y="112" fill="#c65335" font-size="19">F</text><text x="158" y="62" fill="#2d5f91" font-size="19">H</text><text x="725" y="250" fill="#c65335" font-size="19">G</text></svg></div>
+        <h3>נתון</h3><p><math class="inline-math" dir="ltr"><mi>ABCD</mi></math> ריבוע, <math class="inline-math" dir="ltr"><mi>E</mi><mo>∈</mo><mi>BC</mi></math>, <math class="inline-math" dir="ltr"><mi>F</mi><mo>∈</mo><mi>CD</mi></math>, <math class="inline-math" dir="ltr"><mi>BE</mi><mo>=</mo><mi>FC</mi></math>, והנקודה <math class="inline-math" dir="ltr"><mi>H</mi></math> היא חיתוך <math class="inline-math" dir="ltr"><mi>AE</mi></math> ו־<math class="inline-math" dir="ltr"><mi>BF</mi></math>.</p>
+        <h3>צ.ל.</h3><p>א. <math class="inline-math" dir="ltr"><mi>△</mi><mi>AEB</mi><mo>≅</mo><mi>△</mi><mi>BFC</mi></math>. ב. לחשב את <math class="inline-math" dir="ltr"><mfrac><mi>DG</mi><mi>CF</mi></mfrac></math> כאשר <math class="inline-math" dir="ltr"><mfrac><mi>CF</mi><mi>FD</mi></mfrac><mo>=</mo><mfrac><mn>1</mn><mn>2</mn></mfrac></math>.</p>
+        <h3>פתרון</h3>
+        <h2>סעיף א</h2>
+        <h3>מהלך הפתרון</h3><ol class="method-steps"><li>נראה ששתי הצלעות המתאימות שוות לפי נתוני הריבוע והנתון.</li><li>נראה שהזוויות המתאימות ישרות, ונסיק חפיפה לפי צלע־זווית־צלע.</li></ol>
+        <div class="solution-step"><div class="solution-step-title">1. נראה ששתי הצלעות המתאימות שוות לפי נתוני הריבוע והנתון.</div><table class="proof-table" dir="rtl"><thead><tr><th>טענה</th><th>נימוק</th></tr></thead><tbody>
+          <tr><td><math class="inline-math" dir="ltr"><mi>AB</mi><mo>=</mo><mi>BC</mi></math></td><td>צלעות נגדיות בריבוע.</td></tr>
+          <tr><td><math class="inline-math" dir="ltr"><mi>BE</mi><mo>=</mo><mi>FC</mi></math></td><td>נתון.</td></tr>
+        </tbody></table></div>
+        <div class="solution-step"><div class="solution-step-title">2. נראה שהזוויות המתאימות ישרות, ונסיק חפיפה לפי צלע־זווית־צלע.</div><table class="proof-table" dir="rtl"><thead><tr><th>טענה</th><th>נימוק</th></tr></thead><tbody>
+          <tr><td><math class="inline-math" dir="ltr"><mo>∠</mo><mi>ABE</mi><mo>=</mo><mo>∠</mo><mi>BCF</mi><mo>=</mo><mn>90</mn><mo>°</mo></math></td><td><math class="inline-math" dir="ltr"><mi>AB</mi><mo>⊥</mo><mi>BC</mi></math> ו־<math class="inline-math" dir="ltr"><mi>BC</mi><mo>⊥</mo><mi>CD</mi></math> בריבוע.</td></tr>
+          <tr><td><math class="inline-math" dir="ltr"><mi>△</mi><mi>AEB</mi><mo>≅</mo><mi>△</mi><mi>BFC</mi></math></td><td>חפיפת צלע־זווית־צלע.</td></tr>
+        </tbody></table></div>
+        <h2>סעיף ב</h2>
+        <h3>מהלך הפתרון</h3><ol class="method-steps"><li>נבטא את צלע הריבוע באמצעות <math class="inline-math" dir="ltr"><mi>CF</mi></math> לפי היחס הנתון.</li><li>נשתמש בדמיון המשולשים כדי לקבל יחס בין <math class="inline-math" dir="ltr"><mi>GA</mi></math> ל־<math class="inline-math" dir="ltr"><mi>GD</mi></math>.</li><li>נפתור את היחס ונחשב את <math class="inline-math" dir="ltr"><mfrac><mi>DG</mi><mi>CF</mi></mfrac></math>.</li></ol>
+        <div class="solution-step"><div class="solution-step-title">1. נבטא את צלע הריבוע באמצעות <math class="inline-math" dir="ltr"><mi>CF</mi></math> לפי היחס הנתון.</div>
+          <p>נסמן <math class="inline-math" dir="ltr"><mi>CF</mi><mo>=</mo><mi>x</mi></math>. מן הנתון:</p>
+          <math class="equation" display="block" dir="ltr"><mrow><mfrac><mi>CF</mi><mi>FD</mi></mfrac><mo>=</mo><mfrac><mn>1</mn><mn>2</mn></mfrac><mo>⇒</mo><mi>FD</mi><mo>=</mo><mn>2</mn><mi>x</mi></mrow></math>
+          <p>לכן צלע הריבוע היא:</p>
+          <math class="equation" display="block" dir="ltr"><mrow><mi>CD</mi><mo>=</mo><mi>CF</mi><mo>+</mo><mi>FD</mi><mo>=</mo><mn>3</mn><mi>x</mi><mo>⇒</mo><mi>AB</mi><mo>=</mo><mn>3</mn><mi>x</mi></mrow></math>
+        </div>
+        <div class="solution-step"><div class="solution-step-title">2. נשתמש בדמיון המשולשים כדי לקבל יחס בין <math class="inline-math" dir="ltr"><mi>GA</mi></math> ל־<math class="inline-math" dir="ltr"><mi>GD</mi></math>.</div>
+          <p>המשולשים <math class="inline-math" dir="ltr"><mi>GAB</mi></math> ו־<math class="inline-math" dir="ltr"><mi>GDF</mi></math> דומים, משום ש־<span class="parallel-relation">AB&nbsp;∥&nbsp;DF</span> ושתי הצלעות האחרות נמצאות על אותם ישרים.</p>
+          <math class="equation" display="block" dir="ltr"><mrow><mfrac><mi>GA</mi><mi>GD</mi></mfrac><mo>=</mo><mfrac><mi>AB</mi><mi>DF</mi></mfrac><mo>=</mo><mfrac><mn>3</mn><mn>2</mn></mfrac></mrow></math>
+        </div>
+        <div class="solution-step"><div class="solution-step-title">3. נפתור את היחס ונחשב את <math class="inline-math" dir="ltr"><mfrac><mi>DG</mi><mi>CF</mi></mfrac></math>.</div>
+          <p>מכיוון ש־<math class="inline-math" dir="ltr"><mi>GA</mi><mo>=</mo><mi>GD</mi><mo>+</mo><mi>DA</mi></math> ו־<math class="inline-math" dir="ltr"><mi>DA</mi><mo>=</mo><mn>3</mn><mi>x</mi></math>:</p>
+          <math class="equation" display="block" dir="ltr"><mrow><mfrac><mrow><mi>GD</mi><mo>+</mo><mn>3</mn><mi>x</mi></mrow><mi>GD</mi></mfrac><mo>=</mo><mfrac><mn>3</mn><mn>2</mn></mfrac><mo>⇒</mo><mn>2</mn><mi>GD</mi><mo>+</mo><mn>6</mn><mi>x</mi><mo>=</mo><mn>3</mn><mi>GD</mi><mo>⇒</mo><mi>DG</mi><mo>=</mo><mn>6</mn><mi>x</mi></mrow></math>
+          <div class="answer"><math class="equation" display="block" dir="ltr"><mrow><mfrac><mi>DG</mi><mi>CF</mi></mfrac><mo>=</mo><mfrac><mrow><mn>6</mn><mi>x</mi></mrow><mi>x</mi></mfrac><mo>=</mo><mn>6</mn></mrow></math></div>
+        </div>
+      </section>
+
+      <section class="question" id="q62">
+        <h1>שאלה 62</h1>
+        <div class="ocr-question">בציור שלפניך נתון: <span class="parallel-relation">DE&nbsp;∥&nbsp;BC</span>, <span class="parallel-relation">DF&nbsp;∥&nbsp;AC</span>.<br>הוכח: <math class="inline-math" dir="ltr"><mfrac><mi>AE</mi><mi>AC</mi></mfrac><mo>+</mo><mfrac><mi>BF</mi><mi>BC</mi></mfrac><mo>=</mo><mn>1</mn></math>.</div>
+        <div class="question-drawing" aria-label="משולש ABC עם DE המקביל ל-BC ו-DF המקביל ל-AC"><svg viewBox="0 0 520 300" role="img" aria-label="המשולש ABC והנקודות D E F"><polygon points="260,30 80,250 450,250" fill="#e7f1fc" stroke="#173b68" stroke-width="4"/><line x1="160" y1="150" x2="350" y2="150" stroke="#c65335" stroke-width="4"/><line x1="160" y1="150" x2="247" y2="250" stroke="#2d5f91" stroke-width="4"/><text x="255" y="25" fill="#173b68" font-size="20">A</text><text x="60" y="270" fill="#173b68" font-size="20">B</text><text x="455" y="270" fill="#173b68" font-size="20">C</text><text x="145" y="145" fill="#c65335" font-size="20">D</text><text x="355" y="145" fill="#c65335" font-size="20">E</text><text x="252" y="275" fill="#2d5f91" font-size="20">F</text></svg></div>
+        <h3>נתון</h3><p><math class="inline-math" dir="ltr"><mi>D</mi><mo>∈</mo><mi>AB</mi></math>, <math class="inline-math" dir="ltr"><mi>E</mi><mo>∈</mo><mi>AC</mi></math>, <math class="inline-math" dir="ltr"><mi>F</mi><mo>∈</mo><mi>BC</mi></math>, <span class="parallel-relation">DE&nbsp;∥&nbsp;BC</span>, <span class="parallel-relation">DF&nbsp;∥&nbsp;AC</span>.</p>
+        <h3>צ.ל.</h3><p><math class="inline-math" dir="ltr"><mfrac><mi>AE</mi><mi>AC</mi></mfrac><mo>+</mo><mfrac><mi>BF</mi><mi>BC</mi></mfrac><mo>=</mo><mn>1</mn></math>.</p>
+        <h3>מהלך הפתרון</h3><ol class="method-steps"><li>נשתמש ב־<span class="parallel-relation">DE&nbsp;∥&nbsp;BC</span> כדי לקבל את היחס הראשון מדמיון משולשים.</li><li>נשתמש ב־<span class="parallel-relation">DF&nbsp;∥&nbsp;AC</span> כדי לקבל את היחס השני.</li><li>נחבר את שני היחסים ונשתמש בכך ש־<math class="inline-math" dir="ltr"><mi>AD</mi><mo>+</mo><mi>DB</mi><mo>=</mo><mi>AB</mi></math>.</li></ol>
+        <h3>פתרון</h3>
+        <div class="solution-step"><div class="solution-step-title">1. נשתמש ב־<span class="parallel-relation">DE&nbsp;∥&nbsp;BC</span> כדי לקבל את היחס הראשון מדמיון משולשים.</div><table class="proof-table" dir="rtl"><thead><tr><th>טענה</th><th>נימוק</th></tr></thead><tbody>
+          <tr><td><math class="inline-math" dir="ltr"><mi>△</mi><mi>ADE</mi><mo>∼</mo><mi>△</mi><mi>ABC</mi></math></td><td><span class="parallel-relation">DE&nbsp;∥&nbsp;BC</span>.</td></tr>
+          <tr><td><math class="inline-math" dir="ltr"><mfrac><mi>AE</mi><mi>AC</mi></mfrac><mo>=</mo><mfrac><mi>AD</mi><mi>AB</mi></mfrac></math></td><td>יחס צלעות מתאימות במשולשים הדומים.</td></tr>
+        </tbody></table></div>
+        <div class="solution-step"><div class="solution-step-title">2. נשתמש ב־<span class="parallel-relation">DF&nbsp;∥&nbsp;AC</span> כדי לקבל את היחס השני.</div><table class="proof-table" dir="rtl"><thead><tr><th>טענה</th><th>נימוק</th></tr></thead><tbody>
+          <tr><td><math class="inline-math" dir="ltr"><mi>△</mi><mi>BDF</mi><mo>∼</mo><mi>△</mi><mi>BAC</mi></math></td><td><span class="parallel-relation">DF&nbsp;∥&nbsp;AC</span>.</td></tr>
+          <tr><td><math class="inline-math" dir="ltr"><mfrac><mi>BF</mi><mi>BC</mi></mfrac><mo>=</mo><mfrac><mi>BD</mi><mi>BA</mi></mfrac></math></td><td>יחס צלעות מתאימות במשולשים הדומים.</td></tr>
+        </tbody></table></div>
+        <div class="solution-step"><div class="solution-step-title">3. נחבר את שני היחסים ונשתמש בכך ש־<math class="inline-math" dir="ltr"><mi>AD</mi><mo>+</mo><mi>DB</mi><mo>=</mo><mi>AB</mi></math>.</div><table class="proof-table" dir="rtl"><thead><tr><th>טענה</th><th>נימוק</th></tr></thead><tbody>
+          <tr><td><math class="inline-math" dir="ltr"><mfrac><mi>AE</mi><mi>AC</mi></mfrac><mo>+</mo><mfrac><mi>BF</mi><mi>BC</mi></mfrac><mo>=</mo><mfrac><mi>AD</mi><mi>AB</mi></mfrac><mo>+</mo><mfrac><mi>BD</mi><mi>BA</mi></mfrac></math></td><td>הצבה של שני היחסים.</td></tr>
+          <tr><td><math class="inline-math" dir="ltr"><mfrac><mi>AD</mi><mi>AB</mi></mfrac><mo>+</mo><mfrac><mi>BD</mi><mi>AB</mi></mfrac><mo>=</mo><mn>1</mn></math></td><td><math class="inline-math" dir="ltr"><mi>AD</mi><mo>+</mo><mi>BD</mi><mo>=</mo><mi>AB</mi></math>.</td></tr>
+        </tbody></table><div class="answer"><math class="equation" display="block" dir="ltr"><mrow><mfrac><mi>AE</mi><mi>AC</mi></mfrac><mo>+</mo><mfrac><mi>BF</mi><mi>BC</mi></mfrac><mo>=</mo><mn>1</mn></mrow></math></div></div>
+      </section>
+
+      <section class="question" id="q63">
+        <h1>שאלה 63</h1>
+        <div class="ocr-question"><math class="inline-math" dir="ltr"><mi>BP</mi></math> ו־<math class="inline-math" dir="ltr"><mi>CQ</mi></math> הם חוצי זוויות במשולש <math class="inline-math" dir="ltr"><mi>ABC</mi></math>.<br>נתון: <math class="inline-math" dir="ltr"><mi>BC</mi><mo>=</mo><mi>a</mi></math>, <math class="inline-math" dir="ltr"><mi>AB</mi><mo>=</mo><mi>c</mi></math>, <math class="inline-math" dir="ltr"><mi>AC</mi><mo>=</mo><mi>b</mi></math>.<br>הוכח: <math class="inline-math" dir="ltr"><mfrac><mi>AQ</mi><mi>AP</mi></mfrac><mo>=</mo><mfrac><mrow><mi>a</mi><mo>+</mo><mi>c</mi></mrow><mrow><mi>a</mi><mo>+</mo><mi>b</mi></mrow></mfrac></math>.</div>
+        <div class="question-drawing" aria-label="משולש ABC עם חוצי הזוויות BP ו-CQ"><svg viewBox="0 0 520 300" role="img" aria-label="המשולש ABC, חוצה הזווית BP וחוצה הזווית CQ"><polygon points="260,30 80,250 450,250" fill="#e7f1fc" stroke="#173b68" stroke-width="4"/><line x1="80" y1="250" x2="355" y2="145" stroke="#c65335" stroke-width="3"/><line x1="450" y1="250" x2="175" y2="145" stroke="#2d5f91" stroke-width="3"/><circle cx="355" cy="145" r="4" fill="#c65335"/><circle cx="175" cy="145" r="4" fill="#2d5f91"/><text x="255" y="25" fill="#173b68" font-size="20">A</text><text x="60" y="270" fill="#173b68" font-size="20">B</text><text x="455" y="270" fill="#173b68" font-size="20">C</text><text x="360" y="140" fill="#c65335" font-size="20">P</text><text x="150" y="140" fill="#2d5f91" font-size="20">Q</text></svg></div>
+        <h3>נתון</h3><p><math class="inline-math" dir="ltr"><mi>BP</mi></math> ו־<math class="inline-math" dir="ltr"><mi>CQ</mi></math> חוצי זוויות, <math class="inline-math" dir="ltr"><mi>BC</mi><mo>=</mo><mi>a</mi></math>, <math class="inline-math" dir="ltr"><mi>AB</mi><mo>=</mo><mi>c</mi></math>, <math class="inline-math" dir="ltr"><mi>AC</mi><mo>=</mo><mi>b</mi></math>.</p>
+        <h3>צ.ל.</h3><p><math class="inline-math" dir="ltr"><mfrac><mi>AQ</mi><mi>AP</mi></mfrac><mo>=</mo><mfrac><mrow><mi>a</mi><mo>+</mo><mi>c</mi></mrow><mrow><mi>a</mi><mo>+</mo><mi>b</mi></mrow></mfrac></math>.</p>
+        <h3>מהלך הפתרון</h3><ol class="method-steps"><li>נפעיל את משפט חוצה הזווית על <math class="inline-math" dir="ltr"><mi>BP</mi></math> ונמצא את <math class="inline-math" dir="ltr"><mi>AP</mi></math>.</li><li>נפעיל את המשפט על <math class="inline-math" dir="ltr"><mi>CQ</mi></math> ונמצא את <math class="inline-math" dir="ltr"><mi>AQ</mi></math>.</li><li>נחלק את שני האורכים ונפשט את היחס.</li></ol>
+        <h3>פתרון</h3>
+        <div class="solution-step"><div class="solution-step-title">1. נפעיל את משפט חוצה הזווית על <math class="inline-math" dir="ltr"><mi>BP</mi></math> ונמצא את <math class="inline-math" dir="ltr"><mi>AP</mi></math>.</div>
+          <p>מכיוון ש־<math class="inline-math" dir="ltr"><mi>BP</mi></math> חוצה את זווית <math class="inline-math" dir="ltr"><mi>B</mi></math>:</p>
+          <math class="equation" display="block" dir="ltr"><mrow><mfrac><mi>AP</mi><mi>PC</mi></mfrac><mo>=</mo><mfrac><mi>AB</mi><mi>BC</mi></mfrac><mo>=</mo><mfrac><mi>c</mi><mi>a</mi></mfrac></mrow></math>
+          <p>מאחר ש־<math class="inline-math" dir="ltr"><mi>AP</mi><mo>+</mo><mi>PC</mi><mo>=</mo><mi>AC</mi><mo>=</mo><mi>b</mi></math>, נקבל:</p>
+          <math class="equation" display="block" dir="ltr"><mrow><mi>AP</mi><mo>=</mo><mfrac><mi>c</mi><mrow><mi>a</mi><mo>+</mo><mi>c</mi></mrow></mfrac><mi>b</mi></mrow></math>
+        </div>
+        <div class="solution-step"><div class="solution-step-title">2. נפעיל את המשפט על <math class="inline-math" dir="ltr"><mi>CQ</mi></math> ונמצא את <math class="inline-math" dir="ltr"><mi>AQ</mi></math>.</div>
+          <p>מכיוון ש־<math class="inline-math" dir="ltr"><mi>CQ</mi></math> חוצה את זווית <math class="inline-math" dir="ltr"><mi>C</mi></math>:</p>
+          <math class="equation" display="block" dir="ltr"><mrow><mfrac><mi>AQ</mi><mi>QB</mi></mfrac><mo>=</mo><mfrac><mi>AC</mi><mi>BC</mi></mfrac><mo>=</mo><mfrac><mi>b</mi><mi>a</mi></mfrac></mrow></math>
+          <p>מאחר ש־<math class="inline-math" dir="ltr"><mi>AQ</mi><mo>+</mo><mi>QB</mi><mo>=</mo><mi>AB</mi><mo>=</mo><mi>c</mi></math>, נקבל:</p>
+          <math class="equation" display="block" dir="ltr"><mrow><mi>AQ</mi><mo>=</mo><mfrac><mi>b</mi><mrow><mi>a</mi><mo>+</mo><mi>b</mi></mrow></mfrac><mi>c</mi></mrow></math>
+        </div>
+        <div class="solution-step"><div class="solution-step-title">3. נחלק את שני האורכים ונפשט את היחס.</div>
+          <p>נחלק את שני האורכים:</p>
+          <div class="answer"><math class="equation" display="block" dir="ltr"><mrow><mfrac><mi>AQ</mi><mi>AP</mi></mfrac><mo>=</mo><mfrac><mrow><mfrac><mi>bc</mi><mrow><mi>a</mi><mo>+</mo><mi>b</mi></mrow></mfrac></mrow><mrow><mfrac><mi>bc</mi><mrow><mi>a</mi><mo>+</mo><mi>c</mi></mrow></mfrac></mrow></mfrac><mo>=</mo><mfrac><mrow><mi>a</mi><mo>+</mo><mi>c</mi></mrow><mrow><mi>a</mi><mo>+</mo><mi>b</mi></mrow></mfrac></mrow></math></div>
+        </div>
+      </section>
+
+      <section class="question" id="q64">
+        <h1>שאלה 64</h1>
+        <div class="ocr-question">בציור שלפניך, <math class="inline-math" dir="ltr"><mi>EG</mi></math> חוצה את הזווית <math class="inline-math" dir="ltr"><mi>AEC</mi></math> ו־<math class="inline-math" dir="ltr"><mi>DF</mi></math> חוצה את הזווית <math class="inline-math" dir="ltr"><mi>ADB</mi></math>.<br>נתון: <math class="inline-math" dir="ltr"><mi>BD</mi><mo>=</mo><mn>3</mn></math> ס"מ, <math class="inline-math" dir="ltr"><mi>AD</mi><mo>=</mo><mn>6</mn></math> ס"מ, <math class="inline-math" dir="ltr"><mi>AE</mi><mo>=</mo><mn>8</mn></math> ס"מ, <math class="inline-math" dir="ltr"><mi>CE</mi><mo>=</mo><mn>4</mn></math> ס"מ.<br>ב. הוכח: <span class="parallel-relation">FG&nbsp;∥&nbsp;BC</span>.</div>
+        <div class="question-drawing" aria-label="משולש ABC, הנקודות D E F G וחוצי הזוויות DF ו-EG"><svg viewBox="0 0 560 310" role="img" aria-label="המשולש ABC עם D ו-E על BC ו-F ו-G על השוקיים"><polygon points="280,25 80,255 480,255" fill="#e7f1fc" stroke="#173b68" stroke-width="4"/><line x1="80" y1="255" x2="280" y2="25" stroke="#173b68" stroke-width="3"/><line x1="480" y1="255" x2="280" y2="25" stroke="#173b68" stroke-width="3"/><line x1="145" y1="180" x2="415" y2="180" stroke="#c65335" stroke-width="4"/><line x1="145" y1="180" x2="245" y2="255" stroke="#2d5f91" stroke-width="3"/><line x1="415" y1="180" x2="315" y2="255" stroke="#2d5f91" stroke-width="3"/><text x="275" y="20" fill="#173b68" font-size="20">A</text><text x="60" y="275" fill="#173b68" font-size="20">B</text><text x="485" y="275" fill="#173b68" font-size="20">C</text><text x="130" y="275" fill="#173b68" font-size="20">D</text><text x="302" y="275" fill="#173b68" font-size="20">E</text><text x="128" y="175" fill="#c65335" font-size="20">F</text><text x="420" y="175" fill="#c65335" font-size="20">G</text></svg></div>
+        <h3>נתון</h3><p><math class="inline-math" dir="ltr"><mi>D</mi><mo>∈</mo><mi>BC</mi></math>, <math class="inline-math" dir="ltr"><mi>E</mi><mo>∈</mo><mi>BC</mi></math>, <math class="inline-math" dir="ltr"><mi>F</mi><mo>∈</mo><mi>AB</mi></math>, <math class="inline-math" dir="ltr"><mi>G</mi><mo>∈</mo><mi>AC</mi></math>, <math class="inline-math" dir="ltr"><mi>DF</mi></math> ו־<math class="inline-math" dir="ltr"><mi>EG</mi></math> חוצי זוויות, <math class="inline-math" dir="ltr"><mi>BD</mi><mo>=</mo><mn>3</mn></math>, <math class="inline-math" dir="ltr"><mi>AD</mi><mo>=</mo><mn>6</mn></math>, <math class="inline-math" dir="ltr"><mi>AE</mi><mo>=</mo><mn>8</mn></math>, <math class="inline-math" dir="ltr"><mi>CE</mi><mo>=</mo><mn>4</mn></math>.</p>
+        <h3>צ.ל.</h3><p><span class="parallel-relation">FG&nbsp;∥&nbsp;BC</span>.</p>
+        <h3>מהלך הפתרון</h3><ol class="method-steps"><li>נשתמש במשפט חוצה הזווית כדי למצוא את היחס <math class="inline-math" dir="ltr"><mfrac><mi>AF</mi><mi>FB</mi></mfrac></math>.</li><li>נשתמש באותו משפט כדי למצוא את היחס <math class="inline-math" dir="ltr"><mfrac><mi>AG</mi><mi>GC</mi></mfrac></math>.</li><li>נשווה את היחסים ונפעיל את המשפט ההפוך למשפט הפרופורציות.</li></ol>
+        <h3>פתרון</h3>
+        <div class="solution-step"><div class="solution-step-title">1. נשתמש במשפט חוצה הזווית כדי למצוא את היחס <math class="inline-math" dir="ltr"><mfrac><mi>AF</mi><mi>FB</mi></mfrac></math>.</div>
+          <p>נשתמש במשפט חוצה הזווית במשולש <math class="inline-math" dir="ltr"><mi>ADB</mi></math>. מאחר ש־<math class="inline-math" dir="ltr"><mi>DF</mi></math> חוצה את הזווית <math class="inline-math" dir="ltr"><mi>ADB</mi></math>:</p>
+          <math class="equation" display="block" dir="ltr"><mrow><mfrac><mi>AF</mi><mi>FB</mi></mfrac><mo>=</mo><mfrac><mi>AD</mi><mi>DB</mi></mfrac><mo>=</mo><mfrac><mn>6</mn><mn>3</mn></mfrac><mo>=</mo><mn>2</mn></mrow></math>
+        </div>
+        <div class="solution-step"><div class="solution-step-title">2. נשתמש באותו משפט כדי למצוא את היחס <math class="inline-math" dir="ltr"><mfrac><mi>AG</mi><mi>GC</mi></mfrac></math>.</div>
+          <p>באופן דומה, במשולש <math class="inline-math" dir="ltr"><mi>AEC</mi></math>, מאחר ש־<math class="inline-math" dir="ltr"><mi>EG</mi></math> חוצה את הזווית <math class="inline-math" dir="ltr"><mi>AEC</mi></math>:</p>
+          <math class="equation" display="block" dir="ltr"><mrow><mfrac><mi>AG</mi><mi>GC</mi></mfrac><mo>=</mo><mfrac><mi>AE</mi><mi>EC</mi></mfrac><mo>=</mo><mfrac><mn>8</mn><mn>4</mn></mfrac><mo>=</mo><mn>2</mn></mrow></math>
+        </div>
+        <div class="solution-step"><div class="solution-step-title">3. נשווה את היחסים ונפעיל את המשפט ההפוך למשפט הפרופורציות.</div>
+          <p>קיבלנו:</p>
+          <math class="equation" display="block" dir="ltr"><mrow><mfrac><mi>AF</mi><mi>FB</mi></mfrac><mo>=</mo><mfrac><mi>AG</mi><mi>GC</mi></mfrac></mrow></math>
+          <p>לכן, לפי המשפט ההפוך למשפט הפרופורציות במשולש, הקטע המחבר את הנקודות המתאימות מקביל לצלע השלישית:</p>
+          <div class="answer"><span class="parallel-relation">FG&nbsp;∥&nbsp;BC</span></div>
+        </div>
+      </section>
+
+      <section class="question" id="q65">
+        <h1>שאלה 65</h1>
+        <div class="ocr-question">המרובע <math class="inline-math" dir="ltr"><mi>ABCD</mi></math> הוא ריבוע שאלכסוניו נפגשים בנקודה <math class="inline-math" dir="ltr"><mi>M</mi></math>.<br><math class="inline-math" dir="ltr"><mi>CP</mi></math> חוצה את הזווית <math class="inline-math" dir="ltr"><mi>ACD</mi></math> וחותך את האלכסון <math class="inline-math" dir="ltr"><mi>BD</mi></math> בנקודה <math class="inline-math" dir="ltr"><mi>Q</mi></math>.<br>הוכח: <math class="inline-math" dir="ltr"><mi>AP</mi><mo>=</mo><mn>2</mn><mi>MQ</mi></math>.</div>
+        <div class="question-drawing" aria-label="ריבוע ABCD, האלכסונים M, וחוצה הזווית CP החותך את BD ב-Q"><svg viewBox="0 0 520 300" role="img" aria-label="הריבוע ABCD והנקודות M P Q"><rect x="150" y="35" width="220" height="220" fill="#e7f1fc" stroke="#173b68" stroke-width="4"/><line x1="150" y1="35" x2="370" y2="255" stroke="#173b68" stroke-width="3"/><line x1="370" y1="35" x2="150" y2="255" stroke="#173b68" stroke-width="3"/><line x1="370" y1="255" x2="150" y2="164" stroke="#c65335" stroke-width="3"/><circle cx="260" cy="145" r="5" fill="#173b68"/><circle cx="150" cy="164" r="5" fill="#c65335"/><circle cx="214" cy="191" r="4" fill="#c65335"/><text x="138" y="28" fill="#173b68" font-size="20">A</text><text x="375" y="28" fill="#173b68" font-size="20">B</text><text x="375" y="275" fill="#173b68" font-size="20">C</text><text x="138" y="275" fill="#173b68" font-size="20">D</text><text x="268" y="140" fill="#173b68" font-size="20">M</text><text x="130" y="160" fill="#c65335" font-size="20">P</text><text x="220" y="190" fill="#c65335" font-size="20">Q</text></svg></div>
+        <h3>נתון</h3><p><math class="inline-math" dir="ltr"><mi>ABCD</mi></math> ריבוע, האלכסונים נפגשים ב־<math class="inline-math" dir="ltr"><mi>M</mi></math>, ו־<math class="inline-math" dir="ltr"><mi>CP</mi></math> חוצה את הזווית <math class="inline-math" dir="ltr"><mi>ACD</mi></math> וחותך את <math class="inline-math" dir="ltr"><mi>BD</mi></math> ב־<math class="inline-math" dir="ltr"><mi>Q</mi></math>.</p>
+        <h3>צ.ל.</h3><p><math class="inline-math" dir="ltr"><mi>AP</mi><mo>=</mo><mn>2</mn><mi>MQ</mi></math>.</p>
+        <h3>מהלך הפתרון</h3><ol class="method-steps"><li>נמצא את <math class="inline-math" dir="ltr"><mi>AP</mi></math> ביחס ל־<math class="inline-math" dir="ltr"><mi>PD</mi></math> בעזרת משפט חוצה הזווית.</li><li>נשתמש בזוויות של הריבוע כדי להראות שבמשולש <math class="inline-math" dir="ltr"><mi>DPQ</mi></math> שתי זוויות שוות, ולכן <math class="inline-math" dir="ltr"><mi>DQ</mi><mo>=</mo><mi>DP</mi></math>.</li><li>נמצא את <math class="inline-math" dir="ltr"><mi>DM</mi></math> מאמצע האלכסון.</li><li>נחשב את <math class="inline-math" dir="ltr"><mi>MQ</mi></math>, נשווה בין <math class="inline-math" dir="ltr"><mi>AP</mi></math> ל־<math class="inline-math" dir="ltr"><mi>MQ</mi></math>, ונקבל את הטענה.</li></ol>
+        <h3>פתרון</h3>
+        <div class="solution-step"><div class="solution-step-title">1. נמצא את <math class="inline-math" dir="ltr"><mi>AP</mi></math> ביחס ל־<math class="inline-math" dir="ltr"><mi>PD</mi></math> בעזרת משפט חוצה הזווית.</div>
+          <p>נסמן את צלע הריבוע ב־<math class="inline-math" dir="ltr"><mi>x</mi></math> ואת <math class="inline-math" dir="ltr"><mi>PD</mi></math> ב־<math class="inline-math" dir="ltr"><mi>y</mi></math>. במשולש <math class="inline-math" dir="ltr"><mi>ACD</mi></math>, הקטע <math class="inline-math" dir="ltr"><mi>CP</mi></math> הוא חוצה זווית.</p>
+          <p>לפי משפט חוצה הזווית:</p>
+          <math class="equation" display="block" dir="ltr"><mrow><mfrac><mi>AP</mi><mi>PD</mi></mfrac><mo>=</mo><mfrac><mi>AC</mi><mi>CD</mi></mfrac><mo>=</mo><mfrac><mi>x</mi><msqrt><msup><mi>x</mi><mn>2</mn></msup><mo>+</mo><msup><mi>x</mi><mn>2</mn></msup></msqrt></mfrac><mo>=</mo><msqrt><mn>2</mn></msqrt></mrow></math>
+          <p>מכיוון ש־<math class="inline-math" dir="ltr"><mi>AC</mi></math> הוא אלכסון הריבוע, מתקיים:</p>
+          <math class="equation" display="block" dir="ltr"><mrow><mi>AC</mi><mo>=</mo><mi>x</mi><msqrt><mn>2</mn></msqrt><mo>,</mo><mspace width="1em"></mspace><mi>CD</mi><mo>=</mo><mi>x</mi></mrow></math>
+          <p>לכן מהיחס שקיבלנו:</p>
+          <math class="equation" display="block" dir="ltr"><mrow><mi>AP</mi><mo>=</mo><msqrt><mn>2</mn></msqrt><mi>PD</mi><mo>=</mo><msqrt><mn>2</mn></msqrt><mi>y</mi></mrow></math>
+          <p>הקטע <math class="inline-math" dir="ltr"><mi>AD</mi></math> מורכב מ־<math class="inline-math" dir="ltr"><mi>AP</mi></math> ומ־<math class="inline-math" dir="ltr"><mi>PD</mi></math>, ולכן:</p>
+          <math class="equation" display="block" dir="ltr"><mrow><mi>x</mi><mo>=</mo><mi>AD</mi><mo>=</mo><mi>AP</mi><mo>+</mo><mi>PD</mi><mo>=</mo><mo>(</mo><msqrt><mn>2</mn></msqrt><mo>+</mo><mn>1</mn><mo>)</mo><mi>y</mi></mrow></math>
+        </div>
+        <div class="solution-step"><div class="solution-step-title">2. נשתמש בזוויות של הריבוע כדי להראות שבמשולש <math class="inline-math" dir="ltr"><mi>DPQ</mi></math> שתי זוויות שוות, ולכן <math class="inline-math" dir="ltr"><mi>DQ</mi><mo>=</mo><mi>DP</mi></math>.</div>
+          <p>כעת נבחן את המשולש <math class="inline-math" dir="ltr"><mi>DPQ</mi></math>. בריבוע האלכסון <math class="inline-math" dir="ltr"><mi>DB</mi></math> חוצה את הזווית הישרה <math class="inline-math" dir="ltr"><mo>∠</mo><mi>ADC</mi></math>, ולכן:</p>
+          <math class="equation" display="block" dir="ltr"><mrow><mo>∠</mo><mi>PDQ</mi><mo>=</mo><mn>45</mn><mo>°</mo></mrow></math>
+          <p>נסמן <math class="inline-math" dir="ltr"><mi>α</mi><mo>=</mo><mo>∠</mo><mi>DCP</mi></math>. הזווית <math class="inline-math" dir="ltr"><mo>∠</mo><mi>ACD</mi></math> היא <math class="inline-math" dir="ltr"><mn>45</mn><mo>°</mo></math>, ו־<math class="inline-math" dir="ltr"><mi>CP</mi></math> חוצה אותה. לכן:</p>
+          <math class="equation" display="block" dir="ltr"><mrow><mi>α</mi><mo>=</mo><mfrac><mrow><mo>∠</mo><mi>ACD</mi></mrow><mn>2</mn></mfrac><mo>=</mo><mn>22.5</mn><mo>°</mo></mrow></math>
+          <p>במשולש <math class="inline-math" dir="ltr"><mi>DCP</mi></math> הזווית <math class="inline-math" dir="ltr"><mo>∠</mo><mi>CDP</mi></math> ישרה, ולכן:</p>
+          <math class="equation" display="block" dir="ltr"><mrow><mi>β</mi><mo>=</mo><mo>∠</mo><mi>DPC</mi><mo>=</mo><mn>90</mn><mo>°</mo><mo>−</mo><mi>α</mi><mo>=</mo><mn>67.5</mn><mo>°</mo></mrow></math>
+          <p>הנקודה <math class="inline-math" dir="ltr"><mi>Q</mi></math> נמצאת על <math class="inline-math" dir="ltr"><mi>CP</mi></math>, ולכן <math class="inline-math" dir="ltr"><mo>∠</mo><mi>DPQ</mi><mo>=</mo><mi>β</mi></math>. סכום הזוויות במשולש <math class="inline-math" dir="ltr"><mi>DPQ</mi></math> נותן:</p>
+          <math class="equation" display="block" dir="ltr"><mrow><mo>∠</mo><mi>DQP</mi><mo>=</mo><mn>180</mn><mo>°</mo><mo>−</mo><mn>45</mn><mo>°</mo><mo>−</mo><mi>β</mi><mo>=</mo><mi>β</mi></mrow></math>
+          <p>קיבלנו שתי זוויות שוות במשולש <math class="inline-math" dir="ltr"><mi>DPQ</mi></math>, ולכן הצלעות שמולן שוות:</p>
+          <math class="equation" display="block" dir="ltr"><mrow><mi>DQ</mi><mo>=</mo><mi>DP</mi><mo>=</mo><mi>y</mi></mrow></math>
+        </div>
+        <div class="solution-step"><div class="solution-step-title">3. נמצא את <math class="inline-math" dir="ltr"><mi>DM</mi></math> מאמצע האלכסון.</div>
+          <p>הנקודה <math class="inline-math" dir="ltr"><mi>M</mi></math> היא אמצע האלכסון <math class="inline-math" dir="ltr"><mi>DB</mi></math>. מאחר שאלכסון הריבוע הוא <math class="inline-math" dir="ltr"><mi>x</mi><msqrt><mn>2</mn></msqrt></math>, נקבל:</p>
+          <math class="equation" display="block" dir="ltr"><mrow><mi>DM</mi><mo>=</mo><mfrac><mi>DB</mi><mn>2</mn></mfrac><mo>=</mo><mfrac><mi>x</mi><msqrt><mn>2</mn></msqrt></mfrac><mo>=</mo><mfrac><mrow><mo>(</mo><msqrt><mn>2</mn></msqrt><mo>+</mo><mn>1</mn><mo>)</mo><mi>y</mi></mrow><msqrt><mn>2</mn></msqrt></mfrac><mo>=</mo><mo>(</mo><mn>1</mn><mo>+</mo><mfrac><mn>1</mn><msqrt><mn>2</mn></msqrt></mfrac><mo>)</mo><mi>y</mi></mrow></math>
+        </div>
+        <div class="solution-step"><div class="solution-step-title">4. נחשב את <math class="inline-math" dir="ltr"><mi>MQ</mi></math>, נשווה בין <math class="inline-math" dir="ltr"><mi>AP</mi></math> ל־<math class="inline-math" dir="ltr"><mi>MQ</mi></math>, ונקבל את הטענה.</div>
+          <p>הנקודות <math class="inline-math" dir="ltr"><mi>D</mi></math>, <math class="inline-math" dir="ltr"><mi>Q</mi></math> ו־<math class="inline-math" dir="ltr"><mi>M</mi></math> נמצאות על אותו אלכסון, ו־<math class="inline-math" dir="ltr"><mi>Q</mi></math> נמצאת בין <math class="inline-math" dir="ltr"><mi>D</mi></math> ל־<math class="inline-math" dir="ltr"><mi>M</mi></math>. לכן:</p>
+          <math class="equation" display="block" dir="ltr"><mrow><mi>MQ</mi><mo>=</mo><mi>DM</mi><mo>−</mo><mi>DQ</mi><mo>=</mo><mo>(</mo><mn>1</mn><mo>+</mo><mfrac><mn>1</mn><msqrt><mn>2</mn></msqrt></mfrac><mo>)</mo><mi>y</mi><mo>−</mo><mi>y</mi><mo>=</mo><mfrac><mi>y</mi><msqrt><mn>2</mn></msqrt></mfrac></mrow></math>
+          <p>מצד שני, כבר מצאנו ש־<math class="inline-math" dir="ltr"><mi>AP</mi><mo>=</mo><msqrt><mn>2</mn></msqrt><mi>y</mi></math>. לכן:</p>
+          <div class="answer"><math class="equation" display="block" dir="ltr"><mrow><mi>AP</mi><mo>=</mo><msqrt><mn>2</mn></msqrt><mi>y</mi><mo>=</mo><mn>2</mn><mfrac><mi>y</mi><msqrt><mn>2</mn></msqrt></mfrac><mo>=</mo><mn>2</mn><mi>MQ</mi></mrow></math></div>
+        </div>
+      </section>
+    </main>
+  </div>
+</body>
+</html>

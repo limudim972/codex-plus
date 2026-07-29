@@ -83,6 +83,15 @@ function Invoke-CodexLiveMouseClick {
     }
 }
 
+function Get-CodexCompatibilityMainTargetId {
+    param([Parameter(Mandatory)][int]$DebugPort)
+
+    $targets = @(Wait-CodexDevToolsTargets -Port $DebugPort -TimeoutSeconds 10 |
+        Where-Object { (Test-CodexDevToolsTarget -Target $_) -and ([string]$_.url -eq 'app://-/index.html') })
+    if ($targets.Count -ne 1) { return '' }
+    return [string]$targets[0].id
+}
+
 function Get-CodexCompatibilityInstance {
     param([Parameter(Mandatory)][int]$DebugPort)
 
@@ -184,27 +193,40 @@ function Get-CodexLiveContract {
     if (scope && navigator) break;
   }
 
-  const mainScriptUrl = Array.from(document.scripts).map((script) => script.src).find(Boolean) || '';
+  const moduleSourceUrls = [
+    ...Array.from(document.scripts).map((script) => script.src),
+    ...Array.from(document.querySelectorAll('link[rel="modulepreload"]')).map((link) => link.href)
+  ].filter(Boolean);
+  const mainScriptUrl = moduleSourceUrls[0] || '';
   let navigationAsset = '';
   let appServerAsset = '';
+  let assetSourceUrl = mainScriptUrl;
   let navigation = null;
   let appServer = null;
   let moduleError = '';
-  if (mainScriptUrl) {
+  if (moduleSourceUrls.length) {
     try {
-      const mainSource = await (await fetch(mainScriptUrl)).text();
+      const sourceTexts = await Promise.all(moduleSourceUrls.map(async (sourceUrl) => ({
+        sourceUrl,
+        source: await (await fetch(sourceUrl)).text()
+      })));
       const findAsset = (prefix) => {
-        const markerIndex = mainSource.indexOf(prefix + '-');
-        if (markerIndex < 0) return '';
-        const extensionIndex = mainSource.indexOf('.js', markerIndex);
-        return extensionIndex < 0 ? '' : mainSource.slice(markerIndex, extensionIndex + 3);
+        for (const candidate of sourceTexts) {
+          const markerIndex = candidate.source.indexOf(prefix + '-');
+          if (markerIndex < 0) continue;
+          const extensionIndex = candidate.source.indexOf('.js', markerIndex);
+          if (extensionIndex < 0) continue;
+          assetSourceUrl = candidate.sourceUrl;
+          return candidate.source.slice(markerIndex, extensionIndex + 3);
+        }
+        return '';
       };
       navigationAsset = findAsset('sidebar-thread-navigation');
       appServerAsset = findAsset('app-server-manager-signals');
       if (navigationAsset && appServerAsset) {
         [navigation, appServer] = await Promise.all([
-          import(new URL(navigationAsset, mainScriptUrl).href),
-          import(new URL(appServerAsset, mainScriptUrl).href)
+          import(new URL(navigationAsset, assetSourceUrl).href),
+          import(new URL(appServerAsset, assetSourceUrl).href)
         ]);
       }
     } catch (error) {
@@ -218,6 +240,23 @@ function Get-CodexLiveContract {
     manager = scope && appServer?.c ? scope.get(appServer.c, 'local') : null;
   } catch (error) {
     managerError = String(error);
+  }
+  if (!manager && scope?.node?.familyBindings?.entries) {
+    // Codex 26.721 folds the app-server manager into an enumerable signal
+    // family instead of exposing the old app-server binding chunk.
+    for (const [family, members] of scope.node.familyBindings.entries()) {
+      for (const [key] of members?.entries?.() || []) {
+        try {
+          const candidate = scope.get(family, key);
+          if (candidate && typeof candidate.activateThreadSummary === 'function') {
+            manager = candidate;
+            break;
+          }
+        } catch {
+        }
+      }
+      if (manager) break;
+    }
   }
 
   return JSON.stringify({
@@ -249,6 +288,7 @@ function Get-CodexLiveContract {
       appServerBinding: typeof appServer?.c,
       optionalPrepare: typeof appServer?.Et,
       manager: Boolean(manager),
+      bundleManager: Boolean(manager && !appServer),
       activateThreadSummary: typeof manager?.activateThreadSummary,
       getConversation: typeof manager?.getConversation,
       moduleError,
@@ -272,10 +312,12 @@ function Assert-CodexLiveContract {
     Assert-CodexCompatibility ([int]$Contract.dom.syntheticRows -gt 0) 'The synthetic Recents list has no thread rows.'
     Assert-CodexCompatibility ([bool]$Contract.react.scope) 'Codex React app scope could not be resolved.'
     Assert-CodexCompatibility ([bool]$Contract.react.navigator) 'Codex React Router navigator could not be resolved.'
-    Assert-CodexCompatibility (-not [string]::IsNullOrWhiteSpace([string]$Contract.modules.navigationAsset)) 'The sidebar-thread-navigation asset could not be resolved.'
-    Assert-CodexCompatibility (-not [string]::IsNullOrWhiteSpace([string]$Contract.modules.appServerAsset)) 'The app-server-manager-signals asset could not be resolved.'
-    Assert-CodexCompatibility ($Contract.modules.navigationFunction -eq 'function') 'The sidebar navigation export is no longer callable.'
-    Assert-CodexCompatibility ($Contract.modules.appServerBinding -eq 'object') 'The app-server manager binding changed shape.'
+    if (-not $Contract.modules.bundleManager) {
+        Assert-CodexCompatibility (-not [string]::IsNullOrWhiteSpace([string]$Contract.modules.navigationAsset)) 'The sidebar-thread-navigation asset could not be resolved.'
+        Assert-CodexCompatibility (-not [string]::IsNullOrWhiteSpace([string]$Contract.modules.appServerAsset)) 'The app-server-manager-signals asset could not be resolved.'
+        Assert-CodexCompatibility ($Contract.modules.navigationFunction -eq 'function') 'The sidebar navigation export is no longer callable.'
+        Assert-CodexCompatibility ($Contract.modules.appServerBinding -eq 'object') 'The app-server manager binding changed shape.'
+    }
     Assert-CodexCompatibility ([bool]$Contract.modules.manager) 'The local app-server manager could not be resolved.'
     Assert-CodexCompatibility ($Contract.modules.activateThreadSummary -eq 'function') 'activateThreadSummary is no longer callable.'
     Assert-CodexCompatibility ([string]::IsNullOrWhiteSpace([string]$Contract.modules.moduleError)) "Codex module import failed: $($Contract.modules.moduleError)"
@@ -367,11 +409,13 @@ function Wait-CodexSyntheticNavigation {
     )
 
     $targetJson = $NavigationTarget | ConvertTo-Json -Depth 8 -Compress
+    $targetJsonBase64 = [Convert]::ToBase64String([Text.Encoding]::UTF8.GetBytes($targetJson))
     $expression = @"
 JSON.stringify((() => {
-  const target = $targetJson;
+  const target = JSON.parse(new TextDecoder().decode(Uint8Array.from(atob('$targetJsonBase64'), (value) => value.charCodeAt(0))));
   const normalize = (value) => String(value || '').trim().toLowerCase().replace(/^(?:local|remote):/, '');
-  const row = Array.from(document.querySelectorAll('[data-codex-plus-sidebar-synthetic-row="threads"]'))
+  const row = Array.from(document.querySelectorAll('[data-codex-plus-sidebar-synthetic-row]'))
+    .filter((candidate) => candidate.getAttribute('data-codex-plus-sidebar-synthetic-row') === 'threads')
     .find((candidate) => normalize(candidate.getAttribute('data-codex-plus-thread-id')) === normalize(target.threadId));
   const mainText = document.querySelector('main')?.innerText || '';
   const projectRows = Array.from(document.querySelectorAll('[data-app-action-sidebar-project-row]'));
@@ -404,7 +448,17 @@ JSON.stringify((() => {
     $deadline = [DateTime]::UtcNow.AddSeconds($TimeoutSeconds)
     $lastResult = $null
     while ([DateTime]::UtcNow -lt $deadline) {
-        $lastResult = (Invoke-CodexLiveExpression -DebugPort $DebugPort -TargetId $TargetId -Expression $expression) | ConvertFrom-Json
+        # A real synthetic-row click can reload the renderer in newer Codex
+        # builds, which replaces the DevTools target id. Re-resolve the exact
+        # main app target while polling instead of pinning the pre-click id.
+        $currentTargetId = Get-CodexCompatibilityMainTargetId -DebugPort $DebugPort
+        if ([string]::IsNullOrWhiteSpace($currentTargetId)) { $currentTargetId = $TargetId }
+        try {
+            $lastResult = (Invoke-CodexLiveExpression -DebugPort $DebugPort -TargetId $currentTargetId -Expression $expression) | ConvertFrom-Json
+        } catch {
+            Start-Sleep -Milliseconds 250
+            continue
+        }
         if ($lastResult.ready) { return $lastResult }
         Start-Sleep -Milliseconds 250
     }
@@ -446,8 +500,15 @@ if (-not [string]::IsNullOrWhiteSpace($ExpectedProfile)) {
 }
 
 $targets = @(Wait-CodexDevToolsTargets -Port $Port -TimeoutSeconds 45 | Where-Object { Test-CodexDevToolsTarget -Target $_ })
-Assert-CodexCompatibility ($targets.Count -eq 1) "Expected exactly one live app:// Codex target on port $Port; found $($targets.Count)."
-$target = $targets[0]
+# Recent Codex builds expose a second app:// page for the avatar overlay. The
+# main renderer remains the target whose URL is exactly app://-/index.html.
+$mainTargets = @($targets | Where-Object { [string]$_.url -eq 'app://-/index.html' })
+if ($mainTargets.Count -eq 1) {
+    $target = $mainTargets[0]
+} else {
+    Assert-CodexCompatibility ($targets.Count -eq 1) "Expected one main app:// Codex target on port $Port; found $($targets.Count) app targets and $($mainTargets.Count) exact main targets."
+    $target = $targets[0]
+}
 
 Write-Host "[live] Codex $($installInfo.PackageVersion), port $Port, profile $($instance.Profile)" -ForegroundColor Cyan
 Wait-CodexCompatibilitySurface -DebugPort $Port -TargetId $target.id | Out-Null

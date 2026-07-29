@@ -1,0 +1,223 @@
+<!doctype html>
+<html lang="he" dir="rtl">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>פתרונות שאלות 66–69</title>
+  <style>
+    @page { size: A4; margin: 16mm; }
+    :root { --ink:#173b68; --accent:#c65335; --paper:#f7faff; --line:#dbe5f2; }
+    * { box-sizing:border-box; }
+    html, body { margin:0; min-height:100%; background:#e9eef5; color:#182538; font-family:Arial,"Noto Sans Hebrew",sans-serif; }
+    body { direction:rtl; }
+    .app-shell { display:flex; flex-direction:row-reverse; direction:ltr; height:100vh; min-height:100vh; }
+    .sidebar { flex:0 0 210px; height:100vh; overflow-y:auto; scrollbar-gutter:stable; padding:22px 16px; background:var(--ink); color:#fff; direction:rtl; }
+    .sidebar h1 { margin:0 0 18px; font-size:1.1rem; }
+    .sidebar a { display:block; margin:7px 0; padding:9px 11px; border-radius:6px; color:#fff; text-decoration:none; background:#ffffff18; }
+    .sidebar a:hover, .sidebar a:focus { background:#ffffff38; }
+    .pages { flex:1; height:100vh; overflow-y:auto; scrollbar-gutter:stable; padding:24px; direction:rtl; }
+    .question { width:min(180mm,100%); min-height:265mm; margin:0 auto 24px; padding:11mm 12mm; background:#fff; box-shadow:0 2px 12px #173b6820; scroll-margin-top:1rem; page-break-after:always; break-after:page; }
+    .question:last-child { page-break-after:auto; break-after:auto; }
+    h1 { margin:0 0 10px; color:var(--ink); font-size:1.55rem; border-bottom:2px solid var(--line); padding-bottom:7px; }
+    h2 { margin:18px 0 8px; color:var(--ink); font-size:1.12rem; }
+    h3 { margin:17px 0 7px; color:var(--ink); font-size:1.04rem; }
+    p { margin:7px 0; line-height:1.58; }
+    .ocr-question { padding:12px 14px; border:1px solid #b7c9df; border-right:5px solid var(--accent); background:#fbfdff; line-height:1.7; }
+    .question-drawing { margin:12px auto 16px; padding:7px; border:1px solid var(--line); background:var(--paper); text-align:center; }
+    .question-drawing svg { display:block; width:min(100%,520px); height:auto; margin:auto; }
+    .equation { display:block; max-width:100%; margin:10px auto; overflow:visible; }
+    .inline-math { white-space:nowrap; }
+    .parallel-relation { display:inline-block; direction:ltr; white-space:nowrap; font-family:"Times New Roman",serif; font-style:normal; }
+    .method-steps { margin:8px 0 12px; padding:0 28px 0 0; }
+    .method-steps li { margin:5px 0; }
+    .solution-step { margin:12px 0; padding:10px 14px; border-right:5px solid #2d5f91; background:#f0f6fc; border-radius:5px; }
+    .solution-step-title { margin-bottom:6px; color:var(--ink); font-weight:700; font-size:1.02rem; }
+    .answer { margin:10px 0; padding:9px 12px; border-right:4px solid var(--accent); background:#fff4ef; }
+    .proof-table { width:100%; border-collapse:collapse; margin:10px 0; }
+    .proof-table th, .proof-table td { border:1px solid #c7d5e5; padding:7px; vertical-align:top; }
+    .proof-table th { color:var(--ink); background:#edf3fa; }
+    @media print {
+      html, body { background:#fff; }
+      .app-shell { display:block; height:auto; }
+      .sidebar { display:none; }
+      .pages { height:auto; overflow:visible; padding:0; }
+      .question { width:auto; min-height:0; margin:0; padding:0; box-shadow:none; }
+    }
+  </style>
+</head>
+<body>
+  <div class="app-shell">
+    <aside class="sidebar" aria-label="ניווט בין השאלות">
+      <h1>תוכן עניינים</h1>
+      <a href="#q66">שאלה 66</a>
+      <a href="#q67">שאלה 67</a>
+      <a href="#q68">שאלה 68</a>
+      <a href="#q69">שאלה 69</a>
+    </aside>
+
+    <main class="pages">
+      <section class="question" id="q66">
+        <h1>שאלה 66</h1>
+        <div class="ocr-question">הנקודות <math class="inline-math" dir="ltr"><mi>A</mi><mo>,</mo><mi>B</mi><mo>,</mo><mi>C</mi><mo>,</mo><mi>D</mi><mo>,</mo><mi>E</mi></math> נמצאות על מעגל (ראה ציור).<br>נתון: <span class="parallel-relation">CD&nbsp;∥&nbsp;AB</span>,<br>הקשתות <math class="inline-math" dir="ltr"><mi>CA</mi></math> ו־<math class="inline-math" dir="ltr"><mi>AB</mi></math> שוות,<br><math class="inline-math" dir="ltr"><mi>AE</mi></math> הוא קוטר במעגל,<br>המיתר <math class="inline-math" dir="ltr"><mi>CD</mi></math> חותך את <math class="inline-math" dir="ltr"><mi>AE</mi></math> בנקודה <math class="inline-math" dir="ltr"><mi>M</mi></math>.<br>א. הוכח כי <math class="inline-math" dir="ltr"><mo>∠</mo><mi>EMD</mi><mo>=</mo><mo>∠</mo><mi>MDE</mi></math>.<br>ב. הוכח כי המרובע <math class="inline-math" dir="ltr"><mi>ABMC</mi></math> הוא מעוין.</div>
+        <div class="question-drawing" aria-label="מעגל עם הנקודות A B C D E, הקוטר AE והמיתר CD החותך אותו ב-M"><svg viewBox="0 0 520 300" role="img" aria-label="המעגל והנקודות A B C D E M"><circle cx="250" cy="150" r="105" fill="#e7f1fc" stroke="#173b68" stroke-width="3"/><line x1="205" y1="55" x2="205" y2="255" stroke="#c65335" stroke-width="3"/><line x1="150" y1="105" x2="345" y2="125" stroke="#2d5f91" stroke-width="3"/><line x1="205" y1="55" x2="205" y2="255" stroke="#c65335" stroke-width="4"/><line x1="150" y1="105" x2="345" y2="125" stroke="#173b68" stroke-width="4"/><line x1="205" y1="55" x2="250" y2="255" stroke="#173b68" stroke-width="3"/><line x1="150" y1="105" x2="250" y2="255" stroke="#c65335" stroke-width="2" stroke-dasharray="6 5"/><line x1="345" y1="125" x2="250" y2="255" stroke="#2d5f91" stroke-width="2" stroke-dasharray="6 5"/><circle cx="205" cy="55" r="4" fill="#173b68"/><circle cx="150" cy="105" r="4" fill="#173b68"/><circle cx="345" cy="125" r="4" fill="#173b68"/><circle cx="250" cy="255" r="4" fill="#173b68"/><circle cx="205" cy="155" r="4" fill="#c65335"/><text x="194" y="42" fill="#173b68" font-size="19">A</text><text x="130" y="101" fill="#173b68" font-size="19">C</text><text x="350" y="120" fill="#173b68" font-size="19">D</text><text x="255" y="275" fill="#173b68" font-size="19">E</text><text x="190" y="150" fill="#c65335" font-size="19">M</text><text x="220" y="65" fill="#173b68" font-size="19">B</text></svg></div>
+        <h3>נתון</h3><p><math class="inline-math" dir="ltr"><mi>A</mi><mo>,</mo><mi>B</mi><mo>,</mo><mi>C</mi><mo>,</mo><mi>D</mi><mo>,</mo><mi>E</mi></math> על מעגל, <span class="parallel-relation">CD&nbsp;∥&nbsp;AB</span>, הקשתות <math class="inline-math" dir="ltr"><mi>CA</mi></math> ו־<math class="inline-math" dir="ltr"><mi>AB</mi></math> שוות, <math class="inline-math" dir="ltr"><mi>AE</mi></math> קוטר, והמיתר <math class="inline-math" dir="ltr"><mi>CD</mi></math> חותך את <math class="inline-math" dir="ltr"><mi>AE</mi></math> ב־<math class="inline-math" dir="ltr"><mi>M</mi></math>.</p>
+        <h3>צ.ל.</h3><p>א. <math class="inline-math" dir="ltr"><mo>∠</mo><mi>EMD</mi><mo>=</mo><mo>∠</mo><mi>MDE</mi></math>. ב. המרובע <math class="inline-math" dir="ltr"><mi>ABMC</mi></math> הוא מעוין.</p>
+        <h3>פתרון</h3>
+        <h2>סעיף א</h2>
+        <h3>מהלך הפתרון</h3><ol class="method-steps"><li>נשתמש בכך ששתי הקשתות <math class="inline-math" dir="ltr"><mi>ABE</mi></math> ו־<math class="inline-math" dir="ltr"><mi>ACE</mi></math> הן חצאי מעגלים.</li><li>ניעזר בקשתות שוות כדי לקבל זוויות היקפיות שוות.</li><li>נשתמש במקבילות ובקולינאריות כדי להעביר את השוויון לזוויות המבוקשות.</li></ol>
+        <div class="solution-step"><div class="solution-step-title">1. נשתמש בכך ששתי הקשתות <math class="inline-math" dir="ltr"><mi>ABE</mi></math> ו־<math class="inline-math" dir="ltr"><mi>ACE</mi></math> הן חצאי מעגלים.</div>
+          <p>מכיוון ש־<math class="inline-math" dir="ltr"><mi>AE</mi></math> הוא קוטר, כל אחת מהקשתות הגדולות שמחברות את <math class="inline-math" dir="ltr"><mi>A</mi></math> ל־<math class="inline-math" dir="ltr"><mi>E</mi></math> היא קשת של חצי מעגל. לכן:</p>
+          <math class="equation" display="block" dir="ltr"><mrow><mover><mrow><mi>A</mi><mi>B</mi><mi>E</mi></mrow><mo>⌒</mo></mover><mo>=</mo><mover><mrow><mi>A</mi><mi>C</mi><mi>E</mi></mrow><mo>⌒</mo></mover><mo>=</mo><mn>180</mn><mo>°</mo></mrow></math>
+          <p>נתון שהקשת <math class="inline-math" dir="ltr"><mi>AB</mi></math> שווה לקשת <math class="inline-math" dir="ltr"><mi>CA</mi></math>. נחסר קשתות שוות משני חצאי המעגלים:</p>
+          <math class="equation" display="block" dir="ltr"><mrow><mover><mrow><mi>BE</mi></mrow><mo>⌒</mo></mover><mo>=</mo><mover><mrow><mi>CE</mi></mrow><mo>⌒</mo></mover></mrow></math>
+        </div>
+        <div class="solution-step"><div class="solution-step-title">2. ניעזר בקשתות שוות כדי לקבל זוויות היקפיות שוות.</div>
+          <p>זוויות היקפיות הנשענות על קשתות שוות שוות זו לזו. לכן:</p>
+          <math class="equation" display="block" dir="ltr"><mrow><mo>∠</mo><mi>EAB</mi><mo>=</mo><mo>∠</mo><mi>CDE</mi></mrow></math>
+        </div>
+        <div class="solution-step"><div class="solution-step-title">3. נשתמש במקבילות ובקולינאריות כדי להעביר את השוויון לזוויות המבוקשות.</div>
+          <p>הנקודות <math class="inline-math" dir="ltr"><mi>A</mi><mo>,</mo><mi>M</mi><mo>,</mo><mi>E</mi></math> נמצאות על ישר אחד, והנקודות <math class="inline-math" dir="ltr"><mi>C</mi><mo>,</mo><mi>M</mi><mo>,</mo><mi>D</mi></math> נמצאות על ישר אחד. בנוסף, <span class="parallel-relation">CD&nbsp;∥&nbsp;AB</span>. לכן:</p>
+          <math class="equation" display="block" dir="ltr"><mrow><mo>∠</mo><mi>EMD</mi><mo>=</mo><mo>∠</mo><mi>EAB</mi><mo>,</mo><mspace width="1em"></mspace><mo>∠</mo><mi>MDE</mi><mo>=</mo><mo>∠</mo><mi>CDE</mi></mrow></math>
+          <div class="answer"><math class="equation" display="block" dir="ltr"><mrow><mo>∠</mo><mi>EMD</mi><mo>=</mo><mo>∠</mo><mi>EAB</mi><mo>=</mo><mo>∠</mo><mi>CDE</mi><mo>=</mo><mo>∠</mo><mi>MDE</mi></mrow></math></div>
+        </div>
+        <h2>סעיף ב</h2>
+        <h3>מהלך הפתרון</h3><ol class="method-steps"><li>נמיר את הקשתות השוות למיתרים שווים.</li><li>נשתמש בכך ש־<math class="inline-math" dir="ltr"><mi>AE</mi></math> הוא האנך האמצעי ל־<math class="inline-math" dir="ltr"><mi>BC</mi></math>, ולכן <math class="inline-math" dir="ltr"><mi>MB</mi><mo>=</mo><mi>MC</mi></math>.</li><li>נראה שהצלע <math class="inline-math" dir="ltr"><mi>CM</mi></math> שווה גם ל־<math class="inline-math" dir="ltr"><mi>AC</mi></math>.</li><li>נסיק שכל ארבע צלעות המרובע שוות.</li></ol>
+        <div class="solution-step"><div class="solution-step-title">1. נמיר את הקשתות השוות למיתרים שווים.</div>
+          <p>במעגל, למיתרים הנשענים על קשתות שוות יש אותו אורך. לכן:</p>
+          <math class="equation" display="block" dir="ltr"><mrow><mi>AB</mi><mo>=</mo><mi>AC</mi></mrow></math>
+        </div>
+        <div class="solution-step"><div class="solution-step-title">2. נשתמש בכך ש־<math class="inline-math" dir="ltr"><mi>AE</mi></math> הוא האנך האמצעי ל־<math class="inline-math" dir="ltr"><mi>BC</mi></math>, ולכן <math class="inline-math" dir="ltr"><mi>MB</mi><mo>=</mo><mi>MC</mi></math>.</div>
+          <p>מאחר ש־<math class="inline-math" dir="ltr"><mi>AB</mi><mo>=</mo><mi>AC</mi></math>, הנקודה <math class="inline-math" dir="ltr"><mi>A</mi></math> נמצאת על האנך האמצעי ל־<math class="inline-math" dir="ltr"><mi>BC</mi></math>. גם מרכז המעגל נמצא על אנך זה, ולכן הקוטר <math class="inline-math" dir="ltr"><mi>AE</mi></math> הוא האנך האמצעי ל־<math class="inline-math" dir="ltr"><mi>BC</mi></math>. מכיוון ש־<math class="inline-math" dir="ltr"><mi>M</mi></math> נמצאת על <math class="inline-math" dir="ltr"><mi>AE</mi></math>:</p>
+          <math class="equation" display="block" dir="ltr"><mrow><mi>MB</mi><mo>=</mo><mi>MC</mi></mrow></math>
+        </div>
+        <div class="solution-step"><div class="solution-step-title">3. נראה שהצלע <math class="inline-math" dir="ltr"><mi>CM</mi></math> שווה גם ל־<math class="inline-math" dir="ltr"><mi>AC</mi></math>.</div>
+          <p>במשולש <math class="inline-math" dir="ltr"><mi>ABC</mi></math>, הקטע <math class="inline-math" dir="ltr"><mi>AM</mi></math> הוא תיכון לצלע <math class="inline-math" dir="ltr"><mi>BC</mi></math>, ולכן הוא גם חוצה את זווית הראש:</p>
+          <math class="equation" display="block" dir="ltr"><mrow><mo>∠</mo><mi>BAM</mi><mo>=</mo><mo>∠</mo><mi>MAC</mi></mrow></math>
+          <p>מן המקבילות <span class="parallel-relation">AB&nbsp;∥&nbsp;CM</span> מתקבל:</p>
+          <math class="equation" display="block" dir="ltr"><mrow><mo>∠</mo><mi>BAM</mi><mo>=</mo><mo>∠</mo><mi>AMC</mi></mrow></math>
+          <p>לכן <math class="inline-math" dir="ltr"><mo>∠</mo><mi>MAC</mi><mo>=</mo><mo>∠</mo><mi>AMC</mi></math>, ובמשולש <math class="inline-math" dir="ltr"><mi>AMC</mi></math> הצלעות שמול זוויות אלה שוות:</p>
+          <math class="equation" display="block" dir="ltr"><mrow><mi>AC</mi><mo>=</mo><mi>CM</mi></mrow></math>
+        </div>
+        <div class="solution-step"><div class="solution-step-title">4. נסיק שכל ארבע צלעות המרובע שוות.</div>
+          <div class="answer"><math class="equation" display="block" dir="ltr"><mrow><mi>AB</mi><mo>=</mo><mi>AC</mi><mo>=</mo><mi>CM</mi><mo>=</mo><mi>MB</mi></mrow></math><p>לכן המרובע <math class="inline-math" dir="ltr"><mi>ABMC</mi></math> הוא מעוין.</p></div>
+        </div>
+      </section>
+
+      <section class="question" id="q67">
+        <h1>שאלה 67</h1>
+        <div class="ocr-question">המשולשים <math class="inline-math" dir="ltr"><mi>CAD</mi></math> ו־<math class="inline-math" dir="ltr"><mi>CFD</mi></math> חסומים במעגל.<br><math class="inline-math" dir="ltr"><mi>AB</mi></math> הוא קוטר במעגל זה, החותך את הצלע <math class="inline-math" dir="ltr"><mi>FD</mi></math> בנקודה <math class="inline-math" dir="ltr"><mi>E</mi></math> (ראה ציור).<br>נתון כי <math class="inline-math" dir="ltr"><mi>CD</mi><mo>⊥</mo><mi>AB</mi></math>.<br>א. הוכח: <math class="inline-math" dir="ltr"><mi>△</mi><mi>CAE</mi><mo>≅</mo><mi>△</mi><mi>DAE</mi></math>.<br>ב. הוכח: <math class="inline-math" dir="ltr"><mo>∠</mo><mi>ACF</mi><mo>=</mo><mo>∠</mo><mi>ACE</mi></math>.</div>
+        <div class="question-drawing" aria-label="מעגל עם הקוטר AB והמיתרים AC AD CF FD, והנקודה E"><svg viewBox="0 0 520 300" role="img" aria-label="המעגל והנקודות A B C D E F"><circle cx="250" cy="150" r="105" fill="#e7f1fc" stroke="#173b68" stroke-width="3"/><line x1="145" y1="150" x2="355" y2="150" stroke="#173b68" stroke-width="4"/><line x1="315" y1="70" x2="315" y2="230" stroke="#c65335" stroke-width="4"/><line x1="145" y1="150" x2="315" y2="70" stroke="#173b68" stroke-width="3"/><line x1="145" y1="150" x2="315" y2="230" stroke="#173b68" stroke-width="3"/><line x1="115" y1="95" x2="315" y2="230" stroke="#c65335" stroke-width="3"/><line x1="115" y1="95" x2="315" y2="70" stroke="#2d5f91" stroke-width="3"/><line x1="115" y1="95" x2="250" y2="150" stroke="#2d5f91" stroke-width="2"/><circle cx="145" cy="150" r="4" fill="#173b68"/><circle cx="355" cy="150" r="4" fill="#173b68"/><circle cx="315" cy="70" r="4" fill="#173b68"/><circle cx="315" cy="230" r="4" fill="#173b68"/><circle cx="115" cy="95" r="4" fill="#173b68"/><circle cx="200" cy="150" r="4" fill="#c65335"/><text x="130" y="145" fill="#173b68" font-size="19">A</text><text x="360" y="145" fill="#173b68" font-size="19">B</text><text x="320" y="65" fill="#173b68" font-size="19">C</text><text x="320" y="250" fill="#173b68" font-size="19">D</text><text x="100" y="90" fill="#173b68" font-size="19">F</text><text x="198" y="140" fill="#c65335" font-size="19">E</text></svg></div>
+        <h3>נתון</h3><p>המשולשים <math class="inline-math" dir="ltr"><mi>CAD</mi></math> ו־<math class="inline-math" dir="ltr"><mi>CFD</mi></math> חסומים במעגל, <math class="inline-math" dir="ltr"><mi>AB</mi></math> קוטר, <math class="inline-math" dir="ltr"><mi>E</mi></math> נמצאת על <math class="inline-math" dir="ltr"><mi>FD</mi></math> וגם על <math class="inline-math" dir="ltr"><mi>AB</mi></math>, ו־<math class="inline-math" dir="ltr"><mi>CD</mi><mo>⊥</mo><mi>AB</mi></math>.</p>
+        <h3>צ.ל.</h3><p>א. <math class="inline-math" dir="ltr"><mi>△</mi><mi>CAE</mi><mo>≅</mo><mi>△</mi><mi>DAE</mi></math>. ב. <math class="inline-math" dir="ltr"><mo>∠</mo><mi>ACF</mi><mo>=</mo><mo>∠</mo><mi>ACE</mi></math>.</p>
+        <h3>פתרון</h3>
+        <h2>סעיף א</h2>
+        <h3>מהלך הפתרון</h3><ol class="method-steps"><li>נראה ש־<math class="inline-math" dir="ltr"><mi>AB</mi></math> הוא האנך האמצעי למיתר <math class="inline-math" dir="ltr"><mi>CD</mi></math>, ולכן נקבל שני זוגות של צלעות שוות.</li><li>נשתמש בצלע <math class="inline-math" dir="ltr"><mi>AE</mi></math> המשותפת.</li><li>נסיק חפיפה לפי צלע־צלע־צלע.</li></ol>
+        <div class="solution-step"><div class="solution-step-title">1. נראה ש־<math class="inline-math" dir="ltr"><mi>AB</mi></math> הוא האנך האמצעי למיתר <math class="inline-math" dir="ltr"><mi>CD</mi></math>, ולכן נקבל שני זוגות של צלעות שוות.</div>
+          <p>הישר <math class="inline-math" dir="ltr"><mi>AB</mi></math> עובר דרך מרכז המעגל, והוא מאונך למיתר <math class="inline-math" dir="ltr"><mi>CD</mi></math>. לכן הוא האנך האמצעי למיתר:</p>
+          <math class="equation" display="block" dir="ltr"><mrow><mi>AC</mi><mo>=</mo><mi>AD</mi><mo>,</mo><mspace width="1em"></mspace><mi>CE</mi><mo>=</mo><mi>DE</mi></mrow></math>
+        </div>
+        <div class="solution-step"><div class="solution-step-title">2. נשתמש בצלע <math class="inline-math" dir="ltr"><mi>AE</mi></math> המשותפת.</div>
+          <math class="equation" display="block" dir="ltr"><mrow><mi>AE</mi><mo>=</mo><mi>AE</mi></mrow></math>
+        </div>
+        <div class="solution-step"><div class="solution-step-title">3. נסיק חפיפה לפי צלע־צלע־צלע.</div>
+          <div class="answer"><math class="equation" display="block" dir="ltr"><mrow><mi>△</mi><mi>CAE</mi><mo>≅</mo><mi>△</mi><mi>DAE</mi></mrow></math></div>
+        </div>
+        <h2>סעיף ב</h2>
+        <h3>מהלך הפתרון</h3><ol class="method-steps"><li>נשתמש בחפיפה כדי להשוות בין <math class="inline-math" dir="ltr"><mo>∠</mo><mi>ACE</mi></math> ל־<math class="inline-math" dir="ltr"><mo>∠</mo><mi>ADE</mi></math>.</li><li>ניעזר בכך שהנקודות <math class="inline-math" dir="ltr"><mi>F</mi><mo>,</mo><mi>E</mi><mo>,</mo><mi>D</mi></math> על ישר אחד.</li><li>נשתמש בזוויות היקפיות הנשענות על אותו מיתר.</li></ol>
+        <div class="solution-step"><div class="solution-step-title">1. נשתמש בחפיפה כדי להשוות בין <math class="inline-math" dir="ltr"><mo>∠</mo><mi>ACE</mi></math> ל־<math class="inline-math" dir="ltr"><mo>∠</mo><mi>ADE</mi></math>.</div>
+          <math class="equation" display="block" dir="ltr"><mrow><mo>∠</mo><mi>ACE</mi><mo>=</mo><mo>∠</mo><mi>ADE</mi></mrow></math>
+        </div>
+        <div class="solution-step"><div class="solution-step-title">2. ניעזר בכך שהנקודות <math class="inline-math" dir="ltr"><mi>F</mi><mo>,</mo><mi>E</mi><mo>,</mo><mi>D</mi></math> על ישר אחד.</div>
+          <p>מאחר שהנקודות <math class="inline-math" dir="ltr"><mi>F</mi><mo>,</mo><mi>E</mi><mo>,</mo><mi>D</mi></math> קולינאריות, הקרניים <math class="inline-math" dir="ltr"><mi>DE</mi></math> ו־<math class="inline-math" dir="ltr"><mi>DF</mi></math> נמצאות על אותו כיוון. לכן:</p>
+          <math class="equation" display="block" dir="ltr"><mrow><mo>∠</mo><mi>ADE</mi><mo>=</mo><mo>∠</mo><mi>ADF</mi></mrow></math>
+        </div>
+        <div class="solution-step"><div class="solution-step-title">3. נשתמש בזוויות היקפיות הנשענות על אותו מיתר.</div>
+          <p>הזוויות <math class="inline-math" dir="ltr"><mo>∠</mo><mi>ADF</mi></math> ו־<math class="inline-math" dir="ltr"><mo>∠</mo><mi>ACF</mi></math> הן זוויות היקפיות הנשענות על המיתר <math class="inline-math" dir="ltr"><mi>AF</mi></math>. לכן:</p>
+          <div class="answer"><math class="equation" display="block" dir="ltr"><mrow><mo>∠</mo><mi>ACF</mi><mo>=</mo><mo>∠</mo><mi>ADF</mi><mo>=</mo><mo>∠</mo><mi>ACE</mi></mrow></math></div>
+        </div>
+      </section>
+
+      <section class="question" id="q68">
+        <h1>שאלה 68</h1>
+        <div class="ocr-question">מלבן <math class="inline-math" dir="ltr"><mi>ABCD</mi></math> חסום במעגל.<br>הנקודה <math class="inline-math" dir="ltr"><mi>E</mi></math> נמצאת על הקשת <math class="inline-math" dir="ltr"><mi>AB</mi></math> כך ש־<math class="inline-math" dir="ltr"><mi>DE</mi><mo>=</mo><mi>DC</mi></math> (ראה ציור).<br>א. הוכח: <math class="inline-math" dir="ltr"><mi>EB</mi><mo>=</mo><mi>BC</mi></math>.<br>ב. הוכח: <math class="inline-math" dir="ltr"><msup><mi>EB</mi><mn>2</mn></msup><mo>+</mo><msup><mi>ED</mi><mn>2</mn></msup><mo>=</mo><msup><mi>EA</mi><mn>2</mn></msup><mo>+</mo><msup><mi>EC</mi><mn>2</mn></msup></math>.</div>
+        <div class="question-drawing" aria-label="מלבן ABCD חסום במעגל ונקודה E על הקשת AB"><svg viewBox="0 0 520 300" role="img" aria-label="המעגל, המלבן ABCD והנקודה E"><circle cx="250" cy="150" r="112" fill="#e7f1fc" stroke="#173b68" stroke-width="3"/><rect x="165" y="108" width="170" height="84" fill="#f7faff" stroke="#173b68" stroke-width="3"/><line x1="165" y1="108" x2="250" y2="262" stroke="#c65335" stroke-width="3"/><circle cx="250" cy="262" r="4" fill="#c65335"/><text x="150" y="104" fill="#173b68" font-size="19">D</text><text x="340" y="104" fill="#173b68" font-size="19">C</text><text x="340" y="210" fill="#173b68" font-size="19">B</text><text x="150" y="210" fill="#173b68" font-size="19">A</text><text x="255" y="280" fill="#c65335" font-size="19">E</text></svg></div>
+        <h3>נתון</h3><p>מלבן <math class="inline-math" dir="ltr"><mi>ABCD</mi></math> חסום במעגל, <math class="inline-math" dir="ltr"><mi>E</mi></math> על הקשת <math class="inline-math" dir="ltr"><mi>AB</mi></math>, ו־<math class="inline-math" dir="ltr"><mi>DE</mi><mo>=</mo><mi>DC</mi></math>.</p>
+        <h3>צ.ל.</h3><p>א. <math class="inline-math" dir="ltr"><mi>EB</mi><mo>=</mo><mi>BC</mi></math>. ב. <math class="inline-math" dir="ltr"><msup><mi>EB</mi><mn>2</mn></msup><mo>+</mo><msup><mi>ED</mi><mn>2</mn></msup><mo>=</mo><msup><mi>EA</mi><mn>2</mn></msup><mo>+</mo><msup><mi>EC</mi><mn>2</mn></msup></math>.</p>
+        <h3>פתרון</h3>
+        <h2>סעיף א</h2>
+        <h3>מהלך הפתרון</h3><ol class="method-steps"><li>נשתמש בשוויון הצלעות במלבן כדי להשוות בין הקשתות המתאימות.</li><li>נשתמש ב־<math class="inline-math" dir="ltr"><mi>DE</mi><mo>=</mo><mi>DC</mi></math> כדי להשוות בין שתי קשתות נוספות.</li><li>נחסר קשתות שוות ונעבור למיתרים כדי לקבל <math class="inline-math" dir="ltr"><mi>EB</mi><mo>=</mo><mi>BC</mi></math>.</li></ol>
+        <div class="solution-step"><div class="solution-step-title">1. נשתמש בשוויון הצלעות במלבן כדי להשוות בין הקשתות המתאימות.</div>
+          <p>במלבן הצלעות הנגדיות שוות, ולכן במעגל גם המיתרים המתאימים שווים והקשתות המתאימות שוות:</p>
+          <math class="equation" display="block" dir="ltr"><mrow><mi>AB</mi><mo>=</mo><mi>CD</mi><mo>⇒</mo><mover><mrow><mi>AE</mi><mi>B</mi></mrow><mo>⌒</mo></mover><mo>=</mo><mover><mrow><mi>CD</mi></mrow><mo>⌒</mo></over></mrow></math>
+        </div>
+        <div class="solution-step"><div class="solution-step-title">2. נשתמש ב־<math class="inline-math" dir="ltr"><mi>DE</mi><mo>=</mo><mi>DC</mi></math> כדי להשוות בין שתי קשתות נוספות.</div>
+          <p>מיתרים שווים נשענים על קשתות שוות. לכן:</p>
+          <math class="equation" display="block" dir="ltr"><mrow><mi>DE</mi><mo>=</mo><mi>DC</mi><mo>⇒</mo><mover><mrow><mi>DAE</mi></mrow><mo>⌒</mo></mover><mo>=</mo><mover><mrow><mi>DC</mi></mrow><mo>⌒</mo></mover></mrow></math>
+        </div>
+        <div class="solution-step"><div class="solution-step-title">3. נחסר קשתות שוות ונעבור למיתרים כדי לקבל <math class="inline-math" dir="ltr"><mi>EB</mi><mo>=</mo><mi>BC</mi></math>.</div>
+          <p>משתי השוויונות, ולאחר חיסור הקשת <math class="inline-math" dir="ltr"><mi>AE</mi></math>, נקבל:</p>
+          <math class="equation" display="block" dir="ltr"><mrow><mover><mrow><mi>EB</mi></mrow><mo>⌒</mo></mover><mo>=</mo><mover><mrow><mi>DA</mi></mrow><mo>⌒</mo></mover></mrow></math>
+          <p>במלבן <math class="inline-math" dir="ltr"><mi>AD</mi><mo>=</mo><mi>BC</mi></math>, ולכן גם הקשתות והמיתרים המתאימים שווים:</p>
+          <div class="answer"><math class="equation" display="block" dir="ltr"><mrow><mi>EB</mi><mo>=</mo><mi>AD</mi><mo>=</mo><mi>BC</mi></mrow></math></div>
+        </div>
+        <h2>סעיף ב</h2>
+        <h3>מהלך הפתרון</h3><ol class="method-steps"><li>נראה שהמשולש <math class="inline-math" dir="ltr"><mi>BED</mi></math> ישר־זווית, ונשתמש בפיתגורס.</li><li>נראה שגם המשולש <math class="inline-math" dir="ltr"><mi>AEC</mi></math> ישר־זווית, ונשתמש בפיתגורס.</li><li>נשתמש בכך שאלכסוני המלבן שווים.</li></ol>
+        <div class="solution-step"><div class="solution-step-title">1. נראה שהמשולש <math class="inline-math" dir="ltr"><mi>BED</mi></math> ישר־זווית, ונשתמש בפיתגורס.</div>
+          <p>הנקודות <math class="inline-math" dir="ltr"><mi>B</mi><mo>,</mo><mi>C</mi><mo>,</mo><mi>D</mi><mo>,</mo><mi>E</mi></math> נמצאות על אותו מעגל. במלבן <math class="inline-math" dir="ltr"><mi>∠</mi><mi>BCD</mi><mo>=</mo><mn>90</mn><mo>°</mo></math>, ולכן הזווית הנגדית במרובע המחזורי גם היא ישרה:</p>
+          <math class="equation" display="block" dir="ltr"><mrow><mo>∠</mo><mi>BED</mi><mo>=</mo><mn>90</mn><mo>°</mo></mrow></math>
+          <p>לפי משפט פיתגורס:</p>
+          <math class="equation" display="block" dir="ltr"><mrow><msup><mi>EB</mi><mn>2</mn></msup><mo>+</mo><msup><mi>ED</mi><mn>2</mn></msup><mo>=</mo><msup><mi>BD</mi><mn>2</mn></msup></mrow></math>
+        </div>
+        <div class="solution-step"><div class="solution-step-title">2. נראה שגם המשולש <math class="inline-math" dir="ltr"><mi>AEC</mi></math> ישר־זווית, ונשתמש בפיתגורס.</div>
+          <p>האלכסון <math class="inline-math" dir="ltr"><mi>AC</mi></math> הוא קוטר המעגל החוסם את המלבן. לכן:</p>
+          <math class="equation" display="block" dir="ltr"><mrow><mo>∠</mo><mi>AEC</mi><mo>=</mo><mn>90</mn><mo>°</mo></mrow></math>
+          <p>לפי משפט פיתגורס:</p>
+          <math class="equation" display="block" dir="ltr"><mrow><msup><mi>EA</mi><mn>2</mn></msup><mo>+</mo><msup><mi>EC</mi><mn>2</mn></msup><mo>=</mo><msup><mi>AC</mi><mn>2</mn></msup></mrow></math>
+        </div>
+        <div class="solution-step"><div class="solution-step-title">3. נשתמש בכך שאלכסוני המלבן שווים.</div>
+          <p>אלכסוני מלבן שווים, ולכן <math class="inline-math" dir="ltr"><mi>BD</mi><mo>=</mo><mi>AC</mi></math>. מכאן:</p>
+          <div class="answer"><math class="equation" display="block" dir="ltr"><mrow><msup><mi>EB</mi><mn>2</mn></msup><mo>+</mo><msup><mi>ED</mi><mn>2</mn></msup><mo>=</mo><msup><mi>BD</mi><mn>2</mn></msup><mo>=</mo><msup><mi>AC</mi><mn>2</mn></msup><mo>=</mo><msup><mi>EA</mi><mn>2</mn></msup><mo>+</mo><msup><mi>EC</mi><mn>2</mn></msup></mrow></math></div>
+        </div>
+      </section>
+
+      <section class="question" id="q69">
+        <h1>שאלה 69</h1>
+        <div class="ocr-question">נתונים שני מעגלים בעלי מרכז משותף <math class="inline-math" dir="ltr"><mi>O</mi></math>.<br>רדיוס המעגל החיצוני גדול פי 2 מרדיוס המעגל הפנימי. מנקודה <math class="inline-math" dir="ltr"><mi>T</mi></math> שמחוץ למעגלים יוצא משיק <math class="inline-math" dir="ltr"><mi>TB</mi></math> למעגל הקטן, המשיק <math class="inline-math" dir="ltr"><mi>TA</mi></math> למעגל הגדול.<br>נתון: <math class="inline-math" dir="ltr"><mi>TA</mi><mo>=</mo><msqrt><mn>69</mn></msqrt></math> ס״מ, <math class="inline-math" dir="ltr"><mi>TB</mi><mo>=</mo><mn>12</mn></math> ס״מ.<br>א. הראה שהמרובע <math class="inline-math" dir="ltr"><mi>AOBT</mi></math> הוא בר־חסימה במעגל וחשב את רדיוס המעגל החוסם אותו.<br>ב. הוכח: <math class="inline-math" dir="ltr"><mo>∠</mo><mi>ATO</mi><mo>=</mo><mo>∠</mo><mi>OBA</mi></math>.</div>
+        <div class="question-drawing" aria-label="שני מעגלים בעלי מרכז משותף O ומשיקים מנקודה T"><svg viewBox="0 0 520 300" role="img" aria-label="שני מעגלים משיקים מהנקודה T"><circle cx="190" cy="150" r="85" fill="#e7f1fc" stroke="#173b68" stroke-width="3"/><circle cx="190" cy="150" r="42" fill="#f7faff" stroke="#173b68" stroke-width="3"/><line x1="190" y1="150" x2="221" y2="111" stroke="#173b68" stroke-width="3"/><line x1="190" y1="150" x2="198" y2="171" stroke="#173b68" stroke-width="3"/><line x1="350" y1="150" x2="221" y2="111" stroke="#c65335" stroke-width="3"/><line x1="350" y1="150" x2="198" y2="171" stroke="#2d5f91" stroke-width="3"/><circle cx="190" cy="150" r="4" fill="#173b68"/><circle cx="221" cy="111" r="4" fill="#c65335"/><circle cx="198" cy="171" r="4" fill="#2d5f91"/><text x="180" y="145" fill="#173b68" font-size="19">O</text><text x="225" y="105" fill="#c65335" font-size="19">A</text><text x="202" y="194" fill="#2d5f91" font-size="19">B</text><text x="355" y="145" fill="#173b68" font-size="19">T</text></svg></div>
+        <h3>נתון</h3><p>לשני המעגלים מרכז משותף <math class="inline-math" dir="ltr"><mi>O</mi></math>, רדיוס המעגל החיצוני הוא פי 2 מרדיוס המעגל הפנימי, ו־<math class="inline-math" dir="ltr"><mi>TA</mi></math> ו־<math class="inline-math" dir="ltr"><mi>TB</mi></math> משיקים למעגלים המתאימים.</p>
+        <h3>צ.ל.</h3><p>א. המרובע <math class="inline-math" dir="ltr"><mi>AOBT</mi></math> בר־חסימה במעגל ורדיוס המעגל החוסם אותו. ב. <math class="inline-math" dir="ltr"><mo>∠</mo><mi>ATO</mi><mo>=</mo><mo>∠</mo><mi>OBA</mi></math>.</p>
+        <h3>פתרון</h3>
+        <h2>סעיף א</h2>
+        <h3>מהלך הפתרון</h3><ol class="method-steps"><li>נשתמש בכך שרדיוס מאונך למשיק ונראה שהמרובע בר־חסימה.</li><li>נסמן את רדיוס המעגל הפנימי ב־<math class="inline-math" dir="ltr"><mi>x</mi></math>, ונשתמש בפיתגורס בשני המשולשים.</li><li>נחשב את <math class="inline-math" dir="ltr"><mi>OT</mi></math> ואת רדיוס המעגל החוסם.</li></ol>
+        <div class="solution-step"><div class="solution-step-title">1. נשתמש בכך שרדיוס מאונך למשיק ונראה שהמרובע בר־חסימה.</div>
+          <p>רדיוס לנקודת השקה מאונך למשיק, ולכן:</p>
+          <math class="equation" display="block" dir="ltr"><mrow><mo>∠</mo><mi>OAT</mi><mo>=</mo><mo>∠</mo><mi>OBT</mi><mo>=</mo><mn>90</mn><mo>°</mo></mrow></math>
+          <p>אלו זוויות נגדיות במרובע <math class="inline-math" dir="ltr"><mi>AOBT</mi></math>, וסכומן <math class="inline-math" dir="ltr"><mn>180</mn><mo>°</mo></math>. לכן המרובע בר־חסימה במעגל.</p>
+        </div>
+        <div class="solution-step"><div class="solution-step-title">2. נסמן את רדיוס המעגל הפנימי ב־<math class="inline-math" dir="ltr"><mi>x</mi></math>, ונשתמש בפיתגורס בשני המשולשים.</div>
+          <p>רדיוס המעגל החיצוני הוא <math class="inline-math" dir="ltr"><mi>2</mi><mi>x</mi></math>. במשולשים ישרי־הזווית <math class="inline-math" dir="ltr"><mi>OAT</mi></math> ו־<math class="inline-math" dir="ltr"><mi>OBT</mi></math>:</p>
+          <math class="equation" display="block" dir="ltr"><mrow><msup><mi>OT</mi><mn>2</mn></msup><mo>=</mo><msup><mrow><mo>(</mo><mn>2</mn><mi>x</mi><mo>)</mo></mrow><mn>2</mn></msup><mo>+</mo><msup><mrow><mo>(</mo><msqrt><mn>69</mn></msqrt><mo>)</mo></mrow><mn>2</mn></msup><mo>=</mo><mn>4</mn><msup><mi>x</mi><mn>2</mn></msup><mo>+</mo><mn>69</mn></mrow></math>
+          <math class="equation" display="block" dir="ltr"><mrow><msup><mi>OT</mi><mn>2</mn></msup><mo>=</mo><msup><mi>x</mi><mn>2</mn></msup><mo>+</mo><msup><mn>12</mn><mn>2</mn></msup><mo>=</mo><msup><mi>x</mi><mn>2</mn></msup><mo>+</mo><mn>144</mn></mrow></math>
+          <p>נשווה בין שתי המשוואות:</p>
+          <math class="equation" display="block" dir="ltr"><mrow><mn>4</mn><msup><mi>x</mi><mn>2</mn></msup><mo>+</mo><mn>69</mn><mo>=</mo><msup><mi>x</mi><mn>2</mn></msup><mo>+</mo><mn>144</mn><mo>⇒</mo><mn>3</mn><msup><mi>x</mi><mn>2</mn></msup><mo>=</mo><mn>75</mn><mo>⇒</mo><mi>x</mi><mo>=</mo><mn>5</mn></mrow></math>
+        </div>
+        <div class="solution-step"><div class="solution-step-title">3. נחשב את <math class="inline-math" dir="ltr"><mi>OT</mi></math> ואת רדיוס המעגל החוסם.</div>
+          <p>הרדיוס החיצוני הוא <math class="inline-math" dir="ltr"><mn>2</mn><mi>x</mi><mo>=</mo><mn>10</mn></math>, ולכן:</p>
+          <math class="equation" display="block" dir="ltr"><mrow><msup><mi>OT</mi><mn>2</mn></msup><mo>=</mo><mn>10</mn><msup><mn>2</mn><mn>2</mn></msup><mo>+</mo><msup><msqrt><mn>69</mn></msqrt><mn>2</mn></msup><mo>=</mo><mn>169</mn><mo>⇒</mo><mi>OT</mi><mo>=</mo><mn>13</mn></mrow></math>
+          <p>במרובע החסום, הקטע <math class="inline-math" dir="ltr"><mi>OT</mi></math> הוא קוטר המעגל החוסם, ולכן רדיוסו:</p>
+          <div class="answer"><math class="equation" display="block" dir="ltr"><mrow><mi>R</mi><mo>=</mo><mfrac><mi>OT</mi><mn>2</mn></mfrac><mo>=</mo><mfrac><mn>13</mn><mn>2</mn></mfrac></mrow></math></div>
+        </div>
+        <h2>סעיף ב</h2>
+        <h3>מהלך הפתרון</h3><ol class="method-steps"><li>נשתמש בכך שהמרובע <math class="inline-math" dir="ltr"><mi>AOBT</mi></math> חסום במעגל.</li><li>נזהה ששתי הזוויות נשענות על אותו מיתר <math class="inline-math" dir="ltr"><mi>AO</mi></math>.</li></ol>
+        <div class="solution-step"><div class="solution-step-title">1. נשתמש בכך שהמרובע <math class="inline-math" dir="ltr"><mi>AOBT</mi></math> חסום במעגל.</div>
+          <p>הנקודות <math class="inline-math" dir="ltr"><mi>A</mi><mo>,</mo><mi>O</mi><mo>,</mo><mi>B</mi><mo>,</mo><mi>T</mi></math> נמצאות על אותו מעגל.</p>
+        </div>
+        <div class="solution-step"><div class="solution-step-title">2. נזהה ששתי הזוויות נשענות על אותו מיתר <math class="inline-math" dir="ltr"><mi>AO</mi></math>.</div>
+          <p>הזווית <math class="inline-math" dir="ltr"><mo>∠</mo><mi>ATO</mi></math> והזווית <math class="inline-math" dir="ltr"><mo>∠</mo><mi>OBA</mi></math> הן זוויות היקפיות הנשענות על אותו מיתר <math class="inline-math" dir="ltr"><mi>AO</mi></math>. לכן:</p>
+          <div class="answer"><math class="equation" display="block" dir="ltr"><mrow><mo>∠</mo><mi>ATO</mi><mo>=</mo><mo>∠</mo><mi>OBA</mi></mrow></math></div>
+        </div>
+      </section>
+    </main>
+  </div>
+</body>
+</html>

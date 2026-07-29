@@ -99,10 +99,8 @@ If instanceKey <> "" Then
 End If
 shell.Run launchSplashCommand, 0, False
 shell.Run command, 0, False
-Set dashboardExec = shell.Exec(dashboardCommand)
-dashboardProcessId = dashboardExec.ProcessID
+shell.Run dashboardCommand, 0, False
 watchdogCommand = "powershell.exe -NoProfile -ExecutionPolicy Bypass -WindowStyle Hidden -File " & Chr(34) & "$escapedPatchScriptPath" & Chr(34) & " -SkipMain -StartCloseWatchdog"
-watchdogCommand = watchdogCommand & " -DashboardProcessId " & dashboardProcessId
 If instanceKey <> "" Then
     watchdogCommand = watchdogCommand & " -LauncherKey " & Chr(34) & instanceKey & Chr(34)
 End If

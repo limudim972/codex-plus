@@ -164,6 +164,7 @@ function Launch-CodexRtl {
         Invoke-CodexGraphicsDriverCheck | Out-Null
     }
     Start-CodexForRtl -Inspection $installInfo -Port $port -LauncherKey $LauncherKey | Out-Null
+    Start-Sleep -Seconds 5
     Invoke-CodexRtlInjection -Port $port | Out-Null
     Wait-CodexWindowTitleSync -Port $port -LauncherKey $LauncherKey | Out-Null
 }

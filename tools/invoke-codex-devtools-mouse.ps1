@@ -88,12 +88,15 @@ function Invoke-CodexDevToolsCommand {
 }
 
 $page = Get-CodexDevToolsPage -Port $Port -Title $Title -Id $Id
-foreach ($eventType in @('mousePressed', 'mouseReleased')) {
+$eventTypes = @('mousePressed', 'mouseReleased')
+foreach ($eventType in $eventTypes) {
+    $buttons = if ($eventType -eq 'mousePressed') { 1 } else { 0 }
     Invoke-CodexDevToolsCommand -WebSocketDebuggerUrl $page.webSocketDebuggerUrl -Method 'Input.dispatchMouseEvent' -Params @{
         type = $eventType
         x = $X
         y = $Y
         button = 'left'
+        buttons = $buttons
         clickCount = 1
     } | Out-Null
 }

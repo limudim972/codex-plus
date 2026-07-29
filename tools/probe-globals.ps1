@@ -1,6 +1,18 @@
-$list = Invoke-RestMethod 'http://[::1]:18318/json/list'
+param(
+    [int]$Port = 0,
+    [string]$Title,
+    [string]$Id
+)
+
+. (Join-Path $PSScriptRoot 'resolve-codex-plus-port.ps1')
+$resolvedPort = Get-CodexPlusDebugPort -Port $Port
+$list = Invoke-RestMethod -Uri "http://127.0.0.1:$resolvedPort/json/list" -UseBasicParsing
 $pages = if ($list -is [System.Array]) { $list } else { $list.value }
-$page = $pages | Where-Object { $_.type -eq 'page' -and $_.webSocketDebuggerUrl -and $_.url -like 'app://*' } | Select-Object -First 1
+$page = $pages |
+  Where-Object { $_.type -eq 'page' -and $_.webSocketDebuggerUrl -and $_.url -like 'app://*' } |
+  Where-Object { [string]::IsNullOrWhiteSpace($Title) -or $_.title -eq $Title } |
+  Where-Object { [string]::IsNullOrWhiteSpace($Id) -or $_.id -eq $Id } |
+  Select-Object -First 1
 if (-not $page) { throw 'No debugger target found' }
 
 $client = [System.Net.WebSockets.ClientWebSocket]::new()

@@ -1,4 +1,20 @@
-$ws = 'ws://127.0.0.1:18318/devtools/page/D5EECAEF70B6E9F29267F6652949995F'
+param(
+    [int]$Port = 0,
+    [string]$Title,
+    [string]$Id
+)
+
+. (Join-Path $PSScriptRoot 'resolve-codex-plus-port.ps1')
+$resolvedPort = Get-CodexPlusDebugPort -Port $Port
+$list = Invoke-RestMethod -Uri "http://127.0.0.1:$resolvedPort/json/list" -UseBasicParsing
+$pages = if ($list -is [System.Array]) { $list } else { $list.value }
+$page = $pages |
+    Where-Object { $_.type -eq 'page' -and $_.webSocketDebuggerUrl -and $_.url -like 'app://*' } |
+    Where-Object { [string]::IsNullOrWhiteSpace($Title) -or $_.title -eq $Title } |
+    Where-Object { [string]::IsNullOrWhiteSpace($Id) -or $_.id -eq $Id } |
+    Select-Object -First 1
+if (-not $page) { throw 'No live Codex page target found.' }
+$ws = $page.webSocketDebuggerUrl
 $client = [System.Net.WebSockets.ClientWebSocket]::new()
 $client.ConnectAsync([Uri]$ws, [Threading.CancellationToken]::None).GetAwaiter().GetResult()
 $expr = 'JSON.stringify({ plus: !!window.__CODEX_PLUS_SIDEBAR_PAGING, badge: !!window.__CODEX_PLUS_CONTEXT_BADGE, pagerCount: document.querySelectorAll(''[data-codex-plus-sidebar-pager]'').length, tasksLoaded: Array.from(document.querySelectorAll(''[role="list"]'')).find(el => { const label = (el.getAttribute(''aria-label'') || '''').trim(); return label === ''Tasks'' || label === ''Chats''; })?.getAttribute(''data-codex-plus-sidebar-loaded'') || null })'

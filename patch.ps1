@@ -9,6 +9,7 @@ param(
     [switch]$ShowLaunchSplash,
     [switch]$StartCloseWatchdog,
     [int]$WatchPort,
+    [int]$DashboardProcessId,
     [AllowEmptyString()][string]$LauncherKey,
     [switch]$InstallCodexPlus,
     [switch]$SkipMain
@@ -57,7 +58,7 @@ if ($StartCloseWatchdog) {
     if (-not $WatchPort) {
         throw 'WatchPort could not be resolved for the Codex close watchdog.'
     }
-    Watch-CodexCloseToQuit -Port $WatchPort -LauncherKey $LauncherKey
+    Watch-CodexCloseToQuit -Port $WatchPort -LauncherKey $LauncherKey -DashboardProcessId $DashboardProcessId
     return
 }
 

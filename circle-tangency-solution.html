@@ -1,0 +1,94 @@
+<!doctype html>
+<html lang="he" dir="rtl">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>פתרון — מעגלים משיקים לישרים</title>
+  <style>
+    @page { size: A4; margin: 18mm 16mm; }
+    :root { color-scheme: light; font-family: Arial, sans-serif; }
+    body { margin: 0; background: #eef2f7; color: #172033; line-height: 1.7; }
+    main { box-sizing: border-box; width: 180mm; min-height: 265mm; margin: 24px auto; padding: 14mm 16mm; background: #fff; box-shadow: 0 4px 18px #0002; }
+    h1 { margin-top: 0; color: #173b68; font-size: 1.55rem; }
+    h2 { margin-top: 1.6em; color: #24598f; font-size: 1.15rem; border-bottom: 1px solid #d8e2ee; padding-bottom: .25em; }
+    p { margin: .55em 0; }
+    .question { background: #f5f8fc; border-right: 4px solid #4b86bd; padding: 10px 14px; }
+    math { direction: ltr; }
+    math mo[stretchy="false"] { margin-left: 0; margin-right: 0; }
+    .equation { display: block; margin: .7em 0; text-align: center; }
+    .answer { background: #edf8f0; border: 1px solid #9bc8a5; border-radius: 6px; padding: 10px 14px; }
+    @media print { body { background: #fff; } main { width: auto; min-height: 0; margin: 0; padding: 0; box-shadow: none; } }
+  </style>
+</head>
+<body>
+  <main>
+    <h1>פתרון — משוואות שני המעגלים</h1>
+
+    <div class="question">
+      <p>מצאו את משוואותיהם של שני מעגלים המשיקים לישר:</p>
+      <math class="equation" display="block" dir="ltr"><mrow><mi>y</mi><mo>=</mo><mn>8</mn><mi>x</mi><mo>+</mo><mn>57</mn></mrow></math>
+      <p>ומשיקים לישר:</p>
+      <math class="equation" display="block" dir="ltr"><mrow><mn>7</mn><mi>y</mi><mo>−</mo><mn>4</mn><mi>x</mi><mo>−</mo><mn>35</mn><mo>=</mo><mn>0</mn></mrow></math>
+      <p>בנקודת החיתוך של הישר השני עם ציר ה־<math class="inline-math" dir="ltr"><mi>y</mi></math>.</p>
+    </div>
+
+    <h2>מציאת נקודת ההשקה עם ציר <math class="inline-math" dir="ltr"><mi>y</mi></math></h2>
+    <p>על ציר <math class="inline-math" dir="ltr"><mi>y</mi></math> מתקיים <math class="inline-math" dir="ltr"><mi>x</mi><mo>=</mo><mn>0</mn></math>. נציב זאת במשוואת הישר השני:</p>
+    <math class="equation" display="block" dir="ltr"><mrow><mn>7</mn><mi>y</mi><mo>−</mo><mn>4</mn><mo>·</mo><mn>0</mn><mo>−</mo><mn>35</mn><mo>=</mo><mn>0</mn></mrow></math>
+    <math class="equation" display="block" dir="ltr"><mrow><mn>7</mn><mi>y</mi><mo>−</mo><mn>35</mn><mo>=</mo><mn>0</mn><mo>⇒</mo><mi>y</mi><mo>=</mo><mn>5</mn></mrow></math>
+    <p>לכן נקודת ההשקה היא:</p>
+    <math class="equation" display="block" dir="ltr"><mrow><mi>P</mi><mo>(</mo><mn>0</mn><mo>,</mo><mn>5</mn><mo>)</mo></mrow></math>
+
+    <h2>מקום מרכז המעגל</h2>
+    <p>נכתוב את הישר השני בצורה מפורשת:</p>
+    <math class="equation" display="block" dir="ltr"><mrow><mn>7</mn><mi>y</mi><mo>=</mo><mn>4</mn><mi>x</mi><mo>+</mo><mn>35</mn><mo>⇒</mo><mi>y</mi><mo>=</mo><mfrac><mrow><mn>4</mn><mi>x</mi></mrow><mn>7</mn></mfrac><mo>+</mo><mn>5</mn></mrow></math>
+    <p>שיפוע הישר הוא <math class="inline-math" dir="ltr"><mfrac><mn>4</mn><mn>7</mn></mfrac></math>, ולכן שיפוע הרדיוס המאונך לו הוא <math class="inline-math" dir="ltr"><mo>−</mo><mfrac><mn>7</mn><mn>4</mn></mfrac></math>.</p>
+    <p>נסמן ב־<math class="inline-math" dir="ltr"><mi>x</mi></math> את שיעור ה־<math class="inline-math" dir="ltr"><mi>x</mi></math> של מרכז המעגל. המרכז נמצא על הישר העובר דרך <math class="inline-math" dir="ltr"><mi>P</mi></math> בשיפוע <math class="inline-math" dir="ltr"><mo>−</mo><mfrac><mn>7</mn><mn>4</mn></mfrac></math>:</p>
+    <math class="equation" display="block" dir="ltr"><mrow><mi>y</mi><mo>−</mo><mn>5</mn><mo>=</mo><mo>−</mo><mfrac><mn>7</mn><mn>4</mn></mfrac><mi>x</mi></mrow></math>
+    <p>לכן מרכז המעגל הוא:</p>
+    <math class="equation" display="block" dir="ltr"><mrow><mi>C</mi><mo>(</mo><mi>x</mi><mo>,</mo><mn>5</mn><mo>−</mo><mfrac><mrow><mn>7</mn><mi>x</mi></mrow><mn>4</mn></mfrac><mo>)</mo></mrow></math>
+
+    <h2>ביטוי הרדיוס</h2>
+    <p>הרדיוס הוא המרחק בין המרכז <math class="inline-math" dir="ltr"><mi>C</mi></math> לבין נקודת ההשקה <math class="inline-math" dir="ltr"><mi>P</mi></math>. נשתמש בנוסחת המרחק בין שתי נקודות:</p>
+    <math class="equation" display="block" dir="ltr"><mrow><mi>r</mi><mo>=</mo><msqrt><msup><mrow><mo>(</mo><mi>x</mi><mo>−</mo><mn>0</mn><mo>)</mo></mrow><mn>2</mn></msup><mo>+</mo><msup><mrow><mo>(</mo><mn>5</mn><mo>−</mo><mfrac><mrow><mn>7</mn><mi>x</mi></mrow><mn>4</mn></mfrac><mo>−</mo><mn>5</mn><mo>)</mo></mrow><mn>2</mn></msup></msqrt></mrow></math>
+    <p>נפשט את שני ההפרשים:</p>
+    <math class="equation" display="block" dir="ltr"><mrow><mi>r</mi><mo>=</mo><msqrt><msup><mi>x</mi><mn>2</mn></msup><mo>+</mo><msup><mrow><mo>(</mo><mo>−</mo><mfrac><mrow><mn>7</mn><mi>x</mi></mrow><mn>4</mn></mfrac><mo>)</mo></mrow><mn>2</mn></msup></msqrt></mrow></math>
+    <math class="equation" display="block" dir="ltr"><mrow><msup><mi>r</mi><mn>2</mn></msup><mo>=</mo><msup><mi>x</mi><mn>2</mn></msup><mo>+</mo><msup><mrow><mo>(</mo><mo>−</mo><mfrac><mn>7</mn><mi>x</mi><mn>4</mn></mfrac><mo>)</mo></mrow><mn>2</mn></msup><mo>=</mo><mfrac><mn>65</mn><mn>16</mn></mfrac><msup><mi>x</mi><mn>2</mn></msup></mrow></math>
+    <math class="equation" display="block" dir="ltr"><mrow><mi>r</mi><mo>=</mo><mfrac><msqrt><mn>65</mn></msqrt><mn>4</mn></mfrac><mrow><mo stretchy="false" lspace="0em" rspace="0em">|</mo><mi>x</mi><mo stretchy="false" lspace="0em" rspace="0em">|</mo></mrow></mrow></math>
+
+    <h2>תנאי ההשקה לישר הראשון</h2>
+    <p>נכתוב את הישר הראשון בצורה כללית:</p>
+    <math class="equation" display="block" dir="ltr"><mrow><mn>8</mn><mi>x</mi><mo>−</mo><mi>y</mi><mo>+</mo><mn>57</mn><mo>=</mo><mn>0</mn></mrow></math>
+    <p>מרחק המרכז מן הישר שווה לרדיוס:</p>
+    <math class="equation" display="block" dir="ltr"><mrow><mfrac><mrow><mo stretchy="false">|</mo><mn>8</mn><mi>x</mi><mo>−</mo><mo>(</mo><mn>5</mn><mo>−</mo><mfrac><mrow><mn>7</mn><mi>x</mi></mrow><mn>4</mn></mfrac><mo>)</mo><mo>+</mo><mn>57</mn><mo stretchy="false">|</mo></mrow><msqrt><mn>65</mn></msqrt></mfrac><mo>=</mo><mfrac><msqrt><mn>65</mn></msqrt><mn>4</mn></mfrac><mo stretchy="false">|</mo><mi>x</mi><mo stretchy="false">|</mo></mrow></math>
+    <p>נפשט:</p>
+    <math class="equation" display="block" dir="ltr"><mrow><mfrac><mrow><mo stretchy="false">|</mo><mfrac><mrow><mn>39</mn><mi>x</mi></mrow><mn>4</mn></mfrac><mo>+</mo><mn>52</mn><mo stretchy="false">|</mo></mrow><msqrt><mn>65</mn></msqrt></mfrac><mo>=</mo><mfrac><msqrt><mn>65</mn></msqrt><mn>4</mn></mfrac><mo stretchy="false">|</mo><mi>x</mi><mo stretchy="false">|</mo></mrow></math>
+    <p>נכפול ב־<math class="inline-math" dir="ltr"><mn>4</mn><msqrt><mn>65</mn></msqrt></math> ונקבל:</p>
+    <math class="equation" display="block" dir="ltr"><mrow><mo stretchy="false">|</mo><mn>39</mn><mi>x</mi><mo>+</mo><mn>208</mn><mo stretchy="false">|</mo><mo>=</mo><mn>65</mn><mo stretchy="false">|</mo><mi>x</mi><mo stretchy="false">|</mo></mrow></math>
+
+    <h2>פתרון המשוואה</h2>
+    <p>נבחן את שני המקרים של הערך המוחלט.</p>
+    <p><strong>מקרה ראשון:</strong></p>
+    <math class="equation" display="block" dir="ltr"><mrow><mn>39</mn><mi>x</mi><mo>+</mo><mn>208</mn><mo>=</mo><mn>65</mn><mi>x</mi><mo>⇒</mo><mn>208</mn><mo>=</mo><mn>26</mn><mi>x</mi><mo>⇒</mo><mi>x</mi><mo>=</mo><mn>8</mn></mrow></math>
+    <p><strong>מקרה שני:</strong></p>
+    <math class="equation" display="block" dir="ltr"><mrow><mn>39</mn><mi>x</mi><mo>+</mo><mn>208</mn><mo>=</mo><mo>−</mo><mn>65</mn><mi>x</mi><mo>⇒</mo><mn>104</mn><mi>x</mi><mo>=</mo><mo>−</mo><mn>208</mn><mo>⇒</mo><mi>x</mi><mo>=</mo><mo>−</mo><mn>2</mn></mrow></math>
+
+    <h2>מציאת שני המעגלים</h2>
+    <p>עבור <math class="inline-math" dir="ltr"><mi>x</mi><mo>=</mo><mo>−</mo><mn>2</mn></math>:</p>
+    <math class="equation" display="block" dir="ltr"><mrow><mi>C</mi><mo>=</mo><mrow><mo>(</mo><mo>−</mo><mn>2</mn><mo>,</mo><mn>5</mn><mo>−</mo><mfrac><mrow><mn>7</mn><mo>·</mo><mo>(</mo><mo>−</mo><mn>2</mn><mo>)</mo></mrow><mn>4</mn></mfrac><mo>)</mo></mrow><mo>=</mo><mrow><mo>(</mo><mo>−</mo><mn>2</mn><mo>,</mo><mfrac><mn>17</mn><mn>2</mn></mfrac><mo>)</mo></mrow></mrow></math>
+    <math class="equation" display="block" dir="ltr"><mrow><mi>r</mi><mo>=</mo><mfrac><msqrt><mn>65</mn></msqrt><mn>2</mn></mfrac></mrow></math>
+    <div class="answer"><math class="equation" display="block" dir="ltr"><mrow><msup><mrow><mo>(</mo><mi>x</mi><mo>+</mo><mn>2</mn><mo>)</mo></mrow><mn>2</mn></msup><mo>+</mo><msup><mrow><mo>(</mo><mi>y</mi><mo>−</mo><mfrac><mn>17</mn><mn>2</mn></mfrac><mo>)</mo></mrow><mn>2</mn></msup><mo>=</mo><mfrac><mn>65</mn><mn>4</mn></mfrac></mrow></math></div>
+
+    <p>עבור <math class="inline-math" dir="ltr"><mi>x</mi><mo>=</mo><mn>8</mn></math>:</p>
+    <math class="equation" display="block" dir="ltr"><mrow><mi>C</mi><mo>=</mo><mrow><mo>(</mo><mn>8</mn><mo>,</mo><mn>5</mn><mo>−</mo><mfrac><mrow><mn>7</mn><mo>·</mo><mn>8</mn></mrow><mn>4</mn></mfrac><mo>)</mo></mrow><mo>=</mo><mrow><mo>(</mo><mn>8</mn><mo>,</mo><mo>−</mo><mn>9</mn><mo>)</mo></mrow></mrow></math>
+    <math class="equation" display="block" dir="ltr"><mrow><mi>r</mi><mo>=</mo><mn>2</mn><msqrt><mn>65</mn></msqrt></mrow></math>
+    <div class="answer"><math class="equation" display="block" dir="ltr"><mrow><msup><mrow><mo>(</mo><mi>x</mi><mo>−</mo><mn>8</mn><mo>)</mo></mrow><mn>2</mn></msup><mo>+</mo><msup><mrow><mo>(</mo><mi>y</mi><mo>+</mo><mn>9</mn><mo>)</mo></mrow><mn>2</mn></msup><mo>=</mo><mn>260</mn></mrow></math></div>
+
+    <h2>תשובה סופית</h2>
+    <div class="answer">
+      <math class="equation" display="block" dir="ltr"><mrow><msup><mrow><mo>(</mo><mi>x</mi><mo>+</mo><mn>2</mn><mo>)</mo></mrow><mn>2</mn></msup><mo>+</mo><msup><mrow><mo>(</mo><mi>y</mi><mo>−</mo><mfrac><mn>17</mn><mn>2</mn></mfrac><mo>)</mo></mrow><mn>2</mn></msup><mo>=</mo><mfrac><mn>65</mn><mn>4</mn></mfrac></mrow></math>
+      <math class="equation" display="block" dir="ltr"><mrow><msup><mrow><mo>(</mo><mi>x</mi><mo>−</mo><mn>8</mn><mo>)</mo></mrow><mn>2</mn></msup><mo>+</mo><msup><mrow><mo>(</mo><mi>y</mi><mo>+</mo><mn>9</mn><mo>)</mo></mrow><mn>2</mn></msup><mo>=</mo><mn>260</mn></mrow></math>
+    </div>
+  </main>
+</body>
+</html>

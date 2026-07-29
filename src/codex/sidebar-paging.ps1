@@ -22,7 +22,8 @@ function Get-CodexSidebarPagingPayload {
   const THREAD_NAVIGATION_OVERLAY_ATTR = 'data-codex-plus-thread-navigation-overlay';
   const THREAD_NAVIGATION_MIN_DISPLAY_MS = 100;
   const THREAD_NAVIGATION_TIMEOUT_MS = 20000;
-  const THREAD_PRELOAD_MIN_DISPLAY_MS = 750;
+  const THREAD_PRELOAD_TIMEOUT_MS = 15000;
+  const THREAD_PRELOAD_START_DELAY_MS = 500;
   const SIDEBAR_REFRESH_DEBOUNCE_MS = 250;
   const SIDEBAR_NAVIGATION_REFRESH_RETRY_MS = 100;
   const SIDEBAR_POLL_INTERVAL_MS = 30000;
@@ -41,15 +42,22 @@ function Get-CodexSidebarPagingPayload {
   const THREADS_CONTAINER_ATTR = 'data-codex-plus-sidebar-threads-container';
   const BUTTON_CLASS = 'border-token-border no-drag cursor-interaction flex items-center gap-1 border whitespace-nowrap select-none focus:outline-none disabled:cursor-not-allowed disabled:opacity-40 rounded-full text-token-muted-foreground enabled:hover:bg-transparent data-[state=open]:bg-transparent hover:text-token-foreground border-transparent px-2 py-0.5 text-sm leading-[18px] text-token-description-foreground hover:text-token-foreground -ml-[9px]';
   const LEGACY_TIMESTAMP_SUFFIX_SELECTOR = 'span[aria-hidden="true"].pointer-events-none.select-none.whitespace-nowrap.text-token-description-foreground';
-  let internalNavigationModulesPromise = null;
-  let startupThreadNavigationWarmupStarted = false;
   let startupThreadPreloadStarted = false;
   const startupThreadPreloadPromises = new Map();
-  const startupThreadPreloadResults = new Map();
   const startupThreadPreloadActiveIds = new Set();
   const startupThreadPreloadCompletedIds = new Set();
-  let startupThreadPreloadManager = null;
-  let startupThreadOriginalReadThread = null;
+  const startupThreadPreloadFailedIds = new Set();
+  const startupThreadPreloadState = {
+    phase: 'idle',
+    batchSize: 0,
+    completedCount: 0,
+    failedCount: 0,
+    lastError: '',
+    threadPhases: {},
+    threadTurnCounts: {},
+    threadItemCounts: {},
+    updatedAt: 0
+  };
   const nativeThreadTitleCache = new Map();
   let liveCatalogScope = null;
   let liveCatalogStateBinding = null;
@@ -525,8 +533,42 @@ function Get-CodexSidebarPagingPayload {
     );
   }
 
-  function getLiveThreadCatalogState(scope) {
+  // Codex 26.721 moved the mounted scope's bindings from an enumerable Map to
+  // a WeakMap and exposed the enumerable family members through
+  // node.familyBindings instead. Keep a small adapter so the rest of the
+  // reconciliation code can continue to scan and refresh either shape.
+  function getLiveBindingSource(scope) {
     const cachedBindings = scope?.node?.cachedBindings;
+    if (cachedBindings && typeof cachedBindings.entries === 'function') {
+      return cachedBindings;
+    }
+
+    const familyBindings = scope?.node?.familyBindings;
+    if (!familyBindings || typeof familyBindings.entries !== 'function') return null;
+
+    const bindings = new Map();
+    for (const [family, members] of familyBindings.entries()) {
+      if (!members || typeof members.entries !== 'function') continue;
+      for (const [key] of members.entries()) {
+        bindings.set({
+          __codexPlusFamilyBinding: true,
+          family,
+          key
+        }, true);
+      }
+    }
+    return bindings;
+  }
+
+  function readLiveBinding(scope, binding) {
+    if (binding?.__codexPlusFamilyBinding) {
+      return scope.get(binding.family, binding.key);
+    }
+    return scope.get(binding);
+  }
+
+  function getLiveThreadCatalogState(scope) {
+    const cachedBindings = getLiveBindingSource(scope);
     if (
       !cachedBindings
       || typeof cachedBindings.entries !== 'function'
@@ -537,7 +579,7 @@ function Get-CodexSidebarPagingPayload {
 
     if (liveCatalogScope === scope && liveCatalogStateBinding) {
       try {
-        const state = scope.get(liveCatalogStateBinding);
+        const state = readLiveBinding(scope, liveCatalogStateBinding);
         if (isLiveThreadCatalog(state)) {
           return { state, cachedBindings };
         }
@@ -549,7 +591,7 @@ function Get-CodexSidebarPagingPayload {
     for (const [binding] of cachedBindings.entries()) {
       let state = null;
       try {
-        state = scope.get(binding);
+        state = readLiveBinding(scope, binding);
       } catch {
         continue;
       }
@@ -694,7 +736,7 @@ function Get-CodexSidebarPagingPayload {
       collectLiveThreadValue(
         liveCatalogCache.records,
         liveCatalogCache.bindings,
-        scope.get(binding),
+        readLiveBinding(scope, binding),
         binding
       );
     } catch {
@@ -713,6 +755,10 @@ function Get-CodexSidebarPagingPayload {
     clearLiveCatalogSubscriptions();
     liveCatalogSubscriptionScope = scope;
     for (const [binding] of cachedBindings.entries()) {
+      // Family-member bindings are readable through scope.get(family, key),
+      // but are not accepted by the store subscription API. The normal DOM
+      // observer and periodic refresh still reconcile these values.
+      if (binding?.__codexPlusFamilyBinding) continue;
       try {
         const unsubscribe = scope.node.store.sub(binding, () => {
           dirtyLiveCatalogBindings.add(binding);
@@ -747,7 +793,7 @@ function Get-CodexSidebarPagingPayload {
       for (const [binding] of cachedBindings.entries()) {
         let value = null;
         try {
-          value = scope.get(binding);
+          value = readLiveBinding(scope, binding);
         } catch {
           continue;
         }
@@ -778,7 +824,7 @@ function Get-CodexSidebarPagingPayload {
     for (const [key, binding] of liveCatalogCache.bindings.entries()) {
       let value = null;
       try {
-        value = scope.get(binding);
+        value = readLiveBinding(scope, binding);
       } catch {
         continue;
       }
@@ -1308,14 +1354,16 @@ function Get-CodexSidebarPagingPayload {
     if (animated) {
       animated.classList.remove('animate-spin');
       animated.style.animation = 'none';
-      const svg = animated.querySelector('svg');
-      if (svg) svg.replaceChildren();
       const check = document.createElement('span');
       check.className = 'text-sm font-semibold leading-none text-token-success';
       // Keep the source ASCII-only so the installed PowerShell payload cannot
       // turn the completion mark into mojibake when it crosses the runtime boundary.
       check.textContent = String.fromCharCode(0x2713);
-      animated.appendChild(check);
+      const svg = animated.querySelector('svg');
+      // Replace the spinner graphic in-place so the check uses the exact same
+      // centered status slot. Leaving an empty SVG beside it shifts the check.
+      if (svg) svg.replaceWith(check);
+      else animated.appendChild(check);
     }
     return indicator;
   }
@@ -1349,9 +1397,10 @@ function Get-CodexSidebarPagingPayload {
     if (!indicator?.style) return indicator;
     indicator.style.position = 'absolute';
     indicator.style.top = '0px';
-    // Keep the preload status in the dedicated gutter to the left of the
-    // indented synthetic thread label.
-    indicator.style.left = '-24px';
+    // Keep the preload status inside the button's reserved left padding.
+    // A negative gutter offset is clipped when the sidebar is flush with the
+    // viewport edge, which made the status disappear off-screen.
+    indicator.style.left = '0px';
     indicator.style.right = 'auto';
     indicator.style.minWidth = '24px';
     indicator.style.paddingLeft = '4px';
@@ -1397,226 +1446,158 @@ function Get-CodexSidebarPagingPayload {
     }
   }
 
-  function findAssetName(mainSource, assetPrefix) {
-    const marker = assetPrefix + '-';
-    const markerIndex = mainSource.indexOf(marker);
-    if (markerIndex < 0) return '';
-
-    const extensionIndex = mainSource.indexOf('.js', markerIndex);
-    return extensionIndex < 0 ? '' : mainSource.slice(markerIndex, extensionIndex + 3);
+  function withThreadPreloadTimeout(operation, phase) {
+    let timeoutId = 0;
+    const timeout = new Promise((resolve, reject) => {
+      timeoutId = window.setTimeout(() => {
+        reject(new Error('Thread preload timed out during ' + phase));
+      }, THREAD_PRELOAD_TIMEOUT_MS);
+    });
+    return Promise.race([Promise.resolve(operation), timeout]).finally(() => {
+      window.clearTimeout(timeoutId);
+    });
   }
 
-  function getInternalNavigationModules() {
-    if (!internalNavigationModulesPromise) {
-      internalNavigationModulesPromise = (async () => {
-        const mainScriptUrl = Array.from(document.scripts)
-          .map((script) => script.src)
-          .find(Boolean);
-        if (!mainScriptUrl) return null;
-
-        const response = await fetch(mainScriptUrl);
-        if (!response.ok) return null;
-        const mainSource = await response.text();
-        const navigationName = findAssetName(mainSource, 'sidebar-thread-navigation');
-        const appServerName = findAssetName(mainSource, 'app-server-manager-signals');
-        if (!navigationName || !appServerName) return null;
-
-        const [navigation, appServer] = await Promise.all([
-          import(new URL(navigationName, mainScriptUrl).href),
-          import(new URL(appServerName, mainScriptUrl).href)
-        ]);
-        return { navigation, appServer };
-      })().catch(() => null);
-    }
-    return internalNavigationModulesPromise;
+  function updateStartupThreadPreloadState(patch) {
+    Object.assign(startupThreadPreloadState, patch);
+    startupThreadPreloadState.updatedAt = Date.now();
   }
 
-  function prepareThreadForActivation(modules, scope, threadId, hostId) {
-    const prepareThread = modules?.appServer?.Et;
-    if (typeof prepareThread !== 'function') return;
-    prepareThread(scope, threadId, hostId);
+  function updateStartupThreadPhase(threadId, phase) {
+    startupThreadPreloadState.threadPhases[threadId] = phase;
+    startupThreadPreloadState.updatedAt = Date.now();
   }
 
-  function getThreadNavigationLocation(sourceListLabel, sourceProjectId) {
-    const directProjectId = normalizeProjectId(sourceProjectId);
-    if (directProjectId) return 'project:' + directProjectId;
-    const projectLabel = getProjectLabelFromSourceList(sourceListLabel);
-    if (projectLabel) {
-      const projectRow = findProjectRowByLabel(projectLabel);
-      const projectId = getProjectIdForRow(projectRow);
-      if (projectId) return 'project:' + projectId;
-    }
-    return 'flat-chats';
-  }
-
-  function warmStartupThreadNavigation() {
-    if (startupThreadNavigationWarmupStarted) return;
-    startupThreadNavigationWarmupStarted = true;
-    // Importing the private navigation modules removes first-click module
-    // discovery cost. Do not activate conversations here: those operations
-    // continue asynchronously and can compete with or override a real click.
-    void getInternalNavigationModules();
-  }
-
-  function installThreadPreloadReadCache(manager) {
-    if (!manager || typeof manager.readThread !== 'function') return false;
-    if (startupThreadPreloadManager === manager && startupThreadOriginalReadThread) return true;
-    startupThreadPreloadManager = manager;
-    startupThreadOriginalReadThread = manager.readThread.bind(manager);
-    manager.readThread = (threadId, options) => {
-      const normalizedThreadId = normalizeThreadId(threadId);
-      const cached = startupThreadPreloadResults.get(normalizedThreadId);
-      if (cached) return Promise.resolve(cloneThreadPreloadResult(cached));
-      const pending = startupThreadPreloadPromises.get(normalizedThreadId);
-      if (pending) {
-        return pending.then((result) => {
-          return result
-            ? cloneThreadPreloadResult(result)
-            : startupThreadOriginalReadThread(threadId, options);
-        });
-      }
-      return startupThreadOriginalReadThread(threadId, options);
-    };
-    return true;
-  }
-
-  function cloneThreadPreloadResult(result) {
-    if (!result) return result;
-    if (typeof structuredClone === 'function') return structuredClone(result);
-    return JSON.parse(JSON.stringify(result));
-  }
-
-  function waitForThreadPreloadMinimum(startedAt) {
-    const remainingMs = THREAD_PRELOAD_MIN_DISPLAY_MS - (performance.now() - startedAt);
-    return remainingMs > 0
-      ? new Promise((resolve) => window.setTimeout(resolve, remainingMs))
-      : Promise.resolve();
-  }
-
-  function getThreadResumeFunction(modules) {
-    for (const candidate of Object.values(modules?.appServer || {})) {
-      if (typeof candidate !== 'function') continue;
-      const source = String(candidate);
-      if (
-        source.length < 1000
-        && source.includes('.conversationId')
-        && source.includes('Promise.resolve().then')
-        && source.includes('.finally')
-      ) {
-        return candidate;
-      }
-    }
-    return null;
-  }
-
-  function getThreadHydrationManager(modules, scope) {
+  function getThreadHydrationManager(scope) {
     if (!scope) return null;
-    for (const signal of Object.values(modules?.appServer || {})) {
-      if (!signal || (typeof signal !== 'object' && typeof signal !== 'function')) continue;
-      try {
-        const candidate = scope.get(signal, 'local');
-        if (
-          candidate
-          && typeof candidate.getConversation === 'function'
-          && typeof candidate.readThread === 'function'
-          && typeof candidate.getThreadWorkspaceState === 'function'
-          && typeof candidate.getCompleteConversationTurns === 'function'
-        ) {
-          return candidate;
+    const isHydrationCandidate = (candidate) => (
+      candidate
+      && typeof candidate.getConversation === 'function'
+      && typeof candidate.hydrateBackgroundThreads === 'function'
+      && typeof candidate.getThreadWorkspaceState === 'function'
+      && typeof candidate.getCompleteConversationTurns === 'function'
+    );
+    const familyBindings = scope?.node?.familyBindings;
+    if (familyBindings && typeof familyBindings.entries === 'function') {
+      for (const [family, members] of familyBindings.entries()) {
+        for (const key of members?.keys?.() || []) {
+          try {
+            const candidate = scope.get(family, key);
+            if (isHydrationCandidate(candidate)) return candidate;
+          } catch {}
         }
-      } catch {}
+      }
     }
     return null;
   }
 
   async function preloadStartupThreads() {
+    if (document.readyState !== 'complete') return;
     const list = document.querySelector('[' + SYNTHETIC_LIST_ATTR + '="threads"]');
     if (!list) return;
+    const activeThreadId = getActiveThreadId();
+    const workingThreadIds = getWorkingThreadIds();
     const threadIds = getSidebarRows(list)
       .filter((row) => !row.hidden)
       .map((row) => normalizeThreadId(row.getAttribute('data-codex-plus-thread-id')))
       .filter((threadId) => (
         threadId
+        && threadId !== activeThreadId
+        && !workingThreadIds.has(threadId)
         && !startupThreadPreloadCompletedIds.has(threadId)
+        && !startupThreadPreloadFailedIds.has(threadId)
         && !startupThreadPreloadActiveIds.has(threadId)
         && !startupThreadPreloadPromises.has(threadId)
       ));
     if (!threadIds.length) return;
     startupThreadPreloadStarted = true;
     threadIds.forEach((threadId) => startupThreadPreloadActiveIds.add(threadId));
+    updateStartupThreadPreloadState({
+      phase: 'resolving-managers',
+      batchSize: threadIds.length,
+      completedCount: 0,
+      failedCount: 0,
+      lastError: '',
+      threadPhases: Object.fromEntries(threadIds.map((threadId) => [threadId, 'queued'])),
+      threadTurnCounts: {},
+      threadItemCounts: {}
+    });
     syncStartupThreadPreloadIndicators();
     window.__CODEX_PLUS_CONTEXT_BADGE?.setStatus('- Preloading ' + threadIds.length + ' threads');
 
-    const modules = await getInternalNavigationModules();
     const scope = getAppScopeFromSidebar();
-    const summaryManager = scope && modules?.appServer?.c
-      ? scope.get(modules.appServer.c, 'local')
-      : null;
-    const hydrationManager = getThreadHydrationManager(modules, scope);
-    const resumeThread = getThreadResumeFunction(modules);
+    const hydrationManager = getThreadHydrationManager(scope);
     if (
-      !summaryManager
-      || typeof summaryManager.activateThreadSummary !== 'function'
-      || !hydrationManager
-      || typeof resumeThread !== 'function'
-      || !installThreadPreloadReadCache(hydrationManager)
+      !hydrationManager
+      || typeof hydrationManager.hydrateBackgroundThreads !== 'function'
     ) {
       threadIds.forEach((threadId) => {
         startupThreadPreloadActiveIds.delete(threadId);
+        updateStartupThreadPhase(threadId, 'unavailable');
       });
       syncStartupThreadPreloadIndicators();
-      window.__CODEX_PLUS_CONTEXT_BADGE?.setStatus('- Thread preload unavailable');
-      window.setTimeout(() => window.__CODEX_PLUS_CONTEXT_BADGE?.clearStatus(), 2500);
+      window.__CODEX_PLUS_CONTEXT_BADGE?.clearStatus();
+      updateStartupThreadPreloadState({
+        phase: 'unavailable',
+        failedCount: threadIds.length,
+        lastError: 'Thread preload managers are unavailable'
+      });
       return;
     }
 
-    await Promise.all(threadIds.map((threadId) => {
-      if (startupThreadPreloadPromises.has(threadId)) return startupThreadPreloadPromises.get(threadId);
-      const startedAt = performance.now();
+    updateStartupThreadPreloadState({ phase: 'preloading' });
+    // Codex serializes thread/read work internally. Launching the whole batch
+    // with Promise.all can stall every request until its deadline, while the
+    // same reads complete quickly in sequence.
+    for (const threadId of threadIds) {
+      const existingPreload = startupThreadPreloadPromises.get(threadId);
+      if (existingPreload) {
+        await existingPreload;
+        continue;
+      }
       const preload = Promise.resolve().then(() => {
-        prepareThreadForActivation(modules, scope, threadId, 'local');
-        summaryManager.activateThreadSummary(threadId);
-        return startupThreadOriginalReadThread(threadId, { includeTurns: true });
-      }).then(async (result) => {
-        if (!result?.thread || !Array.isArray(result.thread.turns)) {
-          throw new Error('Full thread preload did not return turns');
-        }
-        startupThreadPreloadResults.set(threadId, cloneThreadPreloadResult(result));
-        const conversation = hydrationManager.getConversation(threadId);
-        await resumeThread(hydrationManager, {
-          conversationId: threadId,
-          model: null,
-          serviceTier: null,
-          reasoningEffort: null,
-          workspaceRoots: conversation?.cwd ? [conversation.cwd] : ['/'],
-          collaborationMode: conversation?.latestCollaborationMode ?? null
-        });
+        updateStartupThreadPhase(threadId, 'hydrating-background');
+        return withThreadPreloadTimeout(
+          hydrationManager.hydrateBackgroundThreads([threadId], { includeTurns: true }),
+          'background hydration'
+        );
+      }).then(() => {
         const hydratedConversation = hydrationManager.getConversation(threadId);
-        const hydratedTurns = await hydrationManager.getCompleteConversationTurns(threadId);
-        if (
-          hydratedConversation?.resumeState !== 'resumed'
-          || (
-            result.thread.turns.length > 0
-            && (!Array.isArray(hydratedTurns) || hydratedTurns.length === 0)
-          )
-        ) {
-          throw new Error('Thread preload did not hydrate the conversation state');
+        const hydratedTurns = hydratedConversation?.turns;
+        if (!Array.isArray(hydratedTurns)) {
+          throw new Error('Background hydration did not populate the conversation store');
         }
-        await waitForThreadPreloadMinimum(startedAt);
+        const hydratedItemCount = hydratedTurns.reduce((count, turn) => (
+          count + (Array.isArray(turn?.items) ? turn.items.length : 0)
+        ), 0);
+        if (hydratedTurns.length > 0 && hydratedItemCount === 0) {
+          throw new Error('Background hydration left only empty thread placeholders');
+        }
+        startupThreadPreloadState.threadTurnCounts[threadId] = hydratedTurns.length;
+        startupThreadPreloadState.threadItemCounts[threadId] = hydratedItemCount;
         startupThreadPreloadCompletedIds.add(threadId);
-        return result;
-      }).catch(() => {
-        startupThreadPreloadResults.delete(threadId);
+        updateStartupThreadPhase(threadId, 'complete');
+        return hydratedConversation;
+      }).catch((error) => {
         startupThreadPreloadPromises.delete(threadId);
+        startupThreadPreloadFailedIds.add(threadId);
+        updateStartupThreadPhase(threadId, 'failed');
+        startupThreadPreloadState.lastError = String(error?.message || error || 'Thread preload failed');
         return null;
       }).finally(() => {
         startupThreadPreloadActiveIds.delete(threadId);
         syncStartupThreadPreloadIndicators();
       });
       startupThreadPreloadPromises.set(threadId, preload);
-      return preload;
-    }));
+      await preload;
+    }
     const completedCount = threadIds.filter((threadId) => startupThreadPreloadCompletedIds.has(threadId)).length;
+    const failedCount = threadIds.length - completedCount;
+    updateStartupThreadPreloadState({
+      phase: failedCount === 0 ? 'complete' : 'complete-with-errors',
+      completedCount,
+      failedCount
+    });
     window.__CODEX_PLUS_CONTEXT_BADGE?.setStatus(
       completedCount === threadIds.length
         ? '- Threads preloaded'
@@ -1632,32 +1613,32 @@ function Get-CodexSidebarPagingPayload {
     const scope = getAppScopeFromSidebar();
     if (!scope) return false;
 
-    const modules = await getInternalNavigationModules();
-    if (!modules || typeof modules.navigation?.t !== 'function') return false;
-
     const routerNavigator = getReactRouterNavigatorFromSidebar();
     if (!routerNavigator || typeof routerNavigator.push !== 'function') return false;
 
-    const hostId = 'local';
-    const manager = getThreadHydrationManager(modules, scope) || (
-      typeof modules.appServer?.c === 'object'
-        ? scope.get(modules.appServer.c, hostId)
-        : null
+    const sourceProjectId = threadRow.getAttribute(SOURCE_PROJECT_ID_ATTR) || '';
+    const sourceProjectRow = findProjectRowById(sourceProjectId);
+    const sourceProjectWasClosed = Boolean(
+      sourceProjectRow
+      && sourceProjectRow.getAttribute('aria-expanded') !== 'true'
+      && sourceProjectRow.getAttribute('data-app-action-sidebar-project-collapsed') !== 'false'
     );
+    // The mounted manager and router are already live. Importing Codex's
+    // private app bundle here blocks the first synthetic navigation for
+    // several seconds and can remain pending in secondary renderers.
+    const manager = getThreadHydrationManager(scope);
     if (!manager || typeof manager.activateThreadSummary !== 'function') return false;
 
     try {
-      prepareThreadForActivation(modules, scope, threadId, hostId);
       manager.activateThreadSummary(threadId);
       if (typeof manager.getConversation === 'function' && !manager.getConversation(threadId)) {
         return false;
       }
       routerNavigator.push('/local/' + threadId);
-      modules.navigation.t(
-        scope,
-        hostId + ':' + threadId,
-        getThreadNavigationLocation(threadRow.getAttribute(SOURCE_LIST_ATTR), threadRow.getAttribute(SOURCE_PROJECT_ID_ATTR))
-      );
+      syncSyntheticThreadActiveState();
+      window.setTimeout(syncSyntheticThreadActiveState, 50);
+      window.setTimeout(syncSyntheticThreadActiveState, 250);
+      restoreClosedProject(sourceProjectId, sourceProjectWasClosed);
       return true;
     } catch {
       return false;
@@ -1934,6 +1915,22 @@ function Get-CodexSidebarPagingPayload {
       .find((row) => normalizeProjectId(getProjectIdForRow(row)) === normalizedProjectId) || null;
   }
 
+  function restoreClosedProject(projectId, wasClosed) {
+    if (!projectId || !wasClosed) return;
+    let attempts = 0;
+    const collapse = () => {
+      const projectRow = findProjectRowById(projectId);
+      if (projectRow) {
+        const expanded = projectRow.getAttribute('aria-expanded') === 'true'
+          || projectRow.getAttribute('data-app-action-sidebar-project-collapsed') === 'false';
+        if (expanded && typeof projectRow.click === 'function') projectRow.click();
+      }
+      attempts += 1;
+      if (attempts < 8) window.setTimeout(collapse, 75);
+    };
+    window.setTimeout(collapse, 50);
+  }
+
   function expandSourceProject(sourceListLabel) {
     const projectLabel = getProjectLabelFromSourceList(sourceListLabel);
     const projectRow = findProjectRowByLabel(projectLabel);
@@ -1978,7 +1975,10 @@ function Get-CodexSidebarPagingPayload {
 
   function wireSyntheticThreadRow(row, sourceListLabel, sourceRowText, sourceProjectId) {
     if (!row) return;
-    if (row.getAttribute('data-codex-plus-thread-wired') === 'true') {
+    // Codex 26.721 can replace a synthetic row node during pointer-move
+    // reconciliation while preserving its attributes. Use a node-local
+    // marker for the listener guard so replacement nodes are rewired.
+    if (row.__codexPlusThreadWired) {
       return;
     }
     row.setAttribute(SOURCE_LIST_ATTR, sourceListLabel);
@@ -2022,6 +2022,7 @@ function Get-CodexSidebarPagingPayload {
 
     row.addEventListener('click', invokeSourceRow, true);
     row.addEventListener('pointerup', invokeSourceRow, true);
+    row.__codexPlusThreadWired = true;
     row.setAttribute('data-codex-plus-thread-wired', 'true');
   }
 
@@ -3195,15 +3196,20 @@ function Get-CodexSidebarPagingPayload {
       applying = false;
       observe();
     }
-      window.setTimeout(() => {
-        warmStartupThreadNavigation();
-        preloadStartupThreads();
-      }, 0);
+      const beginStartupPreload = () => {
+        window.setTimeout(preloadStartupThreads, THREAD_PRELOAD_START_DELAY_MS);
+      };
+      if (document.readyState === 'complete') {
+        beginStartupPreload();
+      } else {
+        window.addEventListener('load', beginStartupPreload, { once: true });
+      }
   };
 
   window.__CODEX_PLUS_SIDEBAR_PAGING = {
     apply,
-    observer
+    observer,
+    preload: startupThreadPreloadState
   };
 
   startThreadNavigationLoadingMonitor();
