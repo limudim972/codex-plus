@@ -7,8 +7,16 @@ function Get-CodexNewChatButtonPayload {
   const PROJECT_BUTTON_SELECTOR = 'button[aria-label^="Project:"], button[aria-label^="Change project:"]';
   const PROJECT_CHOOSER_SELECTOR = 'button[aria-label="Choose project"], button[data-composer-navigation-target="workspace-project"][aria-label="Choose project"]';
   const PROJECT_OPTION_SELECTOR = '[role="option"], [role="menuitem"]';
+  const COMPOSER_ROOT_SELECTOR = '[data-codex-composer-root]';
+  const COMPOSER_EDITOR_SELECTOR = 'div.ProseMirror[data-codex-composer="true"], div.ProseMirror';
+  const UTILITY_BAR_SCROLL_SELECTOR = '[data-composer-utility-bar-scroll-area]';
+  const PERSISTENT_UTILITY_BAR_ATTR = 'data-codex-plus-persistent-composer-utility-bar';
+  const CONVERSATION_ID_ATTR = 'data-above-composer-conversation-id';
+  const UTILITY_BAR_STORAGE_KEY = 'codex-plus-composer-utility-bars-v1';
+  const MAX_STORED_UTILITY_BARS = 50;
   const RESTORE_TIMEOUT_MS = 15000;
   const RESTORE_POLL_INTERVAL_MS = 120;
+  let pendingUtilityBarSnapshot = '';
 
   function normalizeText(value) {
     return String(value || '').replace(/\s+/g, ' ').trim();
@@ -26,6 +34,86 @@ function Get-CodexNewChatButtonPayload {
 
   function isVisibleElement(element) {
     return isElement(element) && element.getClientRects().length > 0;
+  }
+
+  function findVisibleButtonByLabel(ariaLabel) {
+    return Array.from(document.querySelectorAll('button[aria-label="' + ariaLabel + '"]'))
+      .filter(isVisibleElement)
+      .reduce((selected, candidate) => {
+        if (!selected) return candidate;
+        return candidate.getBoundingClientRect().top >= selected.getBoundingClientRect().top
+          ? candidate
+          : selected;
+      }, null);
+  }
+
+  function isToggleOpen(button) {
+    if (!isElement(button)) return false;
+    if (normalizeText(button.getAttribute('aria-pressed')) === 'true') return true;
+    if (normalizeText(button.getAttribute('data-state')) === 'open') return true;
+    return normalizeText(button.closest('[data-state]')?.getAttribute('data-state')) === 'open';
+  }
+
+  function findBrowserWebview() {
+    return Array.from(document.querySelectorAll('webview'))
+      .find((candidate) => isVisibleElement(candidate) && getComputedStyle(candidate).visibility !== 'hidden')
+      || document.querySelector('webview')
+      || null;
+  }
+
+  function isBrowserWebviewOpen(webview) {
+    return Boolean(
+      webview
+      && isVisibleElement(webview)
+      && getComputedStyle(webview).visibility !== 'hidden'
+      && !webview.classList.contains('invisible')
+    );
+  }
+
+  function readBrowserWebviewSrc(webview) {
+    return normalizeText(webview?.getAttribute('src') || webview?.src);
+  }
+
+  function findBrowserUrlInput() {
+    return Array.from(document.querySelectorAll('input[placeholder="Enter a URL"]'))
+      .find((candidate) => isVisibleElement(candidate))
+      || null;
+  }
+
+  function pressBrowserAddressEnter(input) {
+    if (!isElement(input)) return false;
+    input.focus();
+    const keyOptions = {
+      bubbles: true,
+      cancelable: true,
+      key: 'Enter',
+      code: 'Enter',
+      which: 13,
+      keyCode: 13
+    };
+    input.dispatchEvent(new KeyboardEvent('keydown', keyOptions));
+    input.dispatchEvent(new KeyboardEvent('keypress', keyOptions));
+    input.dispatchEvent(new KeyboardEvent('keyup', keyOptions));
+    return true;
+  }
+
+  function findBrowserTabButton() {
+    return Array.from(document.querySelectorAll('button'))
+      .find((button) => {
+        if (!isVisibleElement(button)) return false;
+        const text = normalizeText(button.textContent);
+        return /^Browser(?:\s|$)/.test(text) && !/^Browser options$/i.test(text);
+      })
+      || null;
+  }
+
+  function readBrowserUrl() {
+    const browserUrlInput = findBrowserUrlInput();
+    if (browserUrlInput) {
+      return normalizeText(browserUrlInput.value || browserUrlInput.getAttribute('value'));
+    }
+
+    return readBrowserWebviewSrc(findBrowserWebview());
   }
 
   function hasClasses(element, classNames) {
@@ -66,6 +154,115 @@ function Get-CodexNewChatButtonPayload {
     return Array.from(document.querySelectorAll(NATIVE_NEW_CHAT_SELECTOR))
       .find((candidate) => isVisibleElement(candidate) && !candidate.hasAttribute(BUTTON_ATTR) && !isInsideComposerAccessSurface(candidate))
       || null;
+  }
+
+  function findComposerRoot() {
+    return Array.from(document.querySelectorAll(COMPOSER_ROOT_SELECTOR))
+      .find((root) => isVisibleElement(root) && root.querySelector(COMPOSER_EDITOR_SELECTOR))
+      || null;
+  }
+
+  function findComposerContentHost(root) {
+    if (!isElement(root)) return null;
+    return Array.from(root.children)
+      .find((candidate) => candidate.querySelector(COMPOSER_EDITOR_SELECTOR))
+      || null;
+  }
+
+  function currentComposerConversationId(root) {
+    return normalizeText(root?.querySelector('[' + CONVERSATION_ID_ATTR + ']')?.getAttribute(CONVERSATION_ID_ATTR));
+  }
+
+  function readUtilityBarSnapshots() {
+    try {
+      const stored = JSON.parse(window.sessionStorage.getItem(UTILITY_BAR_STORAGE_KEY) || '{}');
+      return stored && typeof stored === 'object' && !Array.isArray(stored) ? stored : {};
+    } catch {
+      return {};
+    }
+  }
+
+  function writeUtilityBarSnapshots(snapshots) {
+    try {
+      const entries = Object.entries(snapshots)
+        .sort((left, right) => Number(right[1]?.capturedAt || 0) - Number(left[1]?.capturedAt || 0))
+        .slice(0, MAX_STORED_UTILITY_BARS);
+      window.sessionStorage.setItem(UTILITY_BAR_STORAGE_KEY, JSON.stringify(Object.fromEntries(entries)));
+    } catch {
+    }
+  }
+
+  function createPersistentUtilityBarSnapshot(wrapper) {
+    if (!isElement(wrapper)) return '';
+    const snapshot = wrapper.cloneNode(true);
+    snapshot.setAttribute(PERSISTENT_UTILITY_BAR_ATTR, 'true');
+    snapshot.setAttribute('aria-label', 'Composer context');
+    snapshot.setAttribute('inert', '');
+    snapshot.style.pointerEvents = 'none';
+    snapshot.style.userSelect = 'none';
+    snapshot.querySelectorAll('[id], [aria-controls], [aria-expanded], [data-state]')
+      .forEach((element) => {
+        element.removeAttribute('id');
+        element.removeAttribute('aria-controls');
+        element.removeAttribute('aria-expanded');
+        element.removeAttribute('data-state');
+      });
+    snapshot.querySelectorAll('button, a, input, select, textarea, [tabindex]')
+      .forEach((element) => element.setAttribute('tabindex', '-1'));
+    return snapshot.outerHTML;
+  }
+
+  function utilityBarFromSnapshot(snapshotHtml) {
+    if (!normalizeText(snapshotHtml)) return null;
+    const template = document.createElement('template');
+    template.innerHTML = snapshotHtml;
+    const utilityBar = template.content.firstElementChild;
+    if (!isElement(utilityBar) || !utilityBar.hasAttribute(PERSISTENT_UTILITY_BAR_ATTR)) return null;
+    return utilityBar;
+  }
+
+  function installPersistentComposerUtilityBar() {
+    const root = findComposerRoot();
+    const host = findComposerContentHost(root);
+    if (!root || !host) return;
+
+    const nativeScrollArea = Array.from(root.querySelectorAll(UTILITY_BAR_SCROLL_SELECTOR))
+      .find((candidate) => !candidate.closest('[' + PERSISTENT_UTILITY_BAR_ATTR + ']'));
+    const existingPersistentBars = Array.from(host.querySelectorAll(':scope > [' + PERSISTENT_UTILITY_BAR_ATTR + ']'));
+
+    if (nativeScrollArea) {
+      existingPersistentBars.forEach((bar) => bar.remove());
+      const nativeWrapper = Array.from(host.children).find((candidate) => candidate.contains(nativeScrollArea));
+      const snapshotHtml = createPersistentUtilityBarSnapshot(nativeWrapper);
+      if (!snapshotHtml) return;
+
+      pendingUtilityBarSnapshot = snapshotHtml;
+      const conversationId = currentComposerConversationId(root);
+      if (conversationId) {
+        const snapshots = readUtilityBarSnapshots();
+        snapshots[conversationId] = { html: snapshotHtml, capturedAt: Date.now() };
+        writeUtilityBarSnapshots(snapshots);
+      }
+      return;
+    }
+
+    if (existingPersistentBars.length) return;
+
+    const conversationId = currentComposerConversationId(root);
+    const snapshots = readUtilityBarSnapshots();
+    let snapshotHtml = normalizeText(snapshots[conversationId]?.html);
+    if (!snapshotHtml && pendingUtilityBarSnapshot) {
+      snapshotHtml = pendingUtilityBarSnapshot;
+      if (conversationId) {
+        snapshots[conversationId] = { html: snapshotHtml, capturedAt: Date.now() };
+        writeUtilityBarSnapshots(snapshots);
+      }
+    }
+    if (!snapshotHtml) return;
+
+    const persistentBar = utilityBarFromSnapshot(snapshotHtml);
+    if (!persistentBar) return;
+    host.insertBefore(persistentBar, host.firstElementChild);
   }
 
   function createNewChatIcon() {
@@ -120,13 +317,13 @@ function Get-CodexNewChatButtonPayload {
   }
 
   function currentProjectName() {
+    const directContext = normalizeText(window.__CODEX_PLUS_PROJECT_WINDOW_CONTEXT?.name);
+    if (directContext) return directContext;
+
     const currentButton = findCurrentProjectButton();
     const selectedName = readProjectButtonName(currentButton);
     if (selectedName) return selectedName;
     if (findProjectChooserButton()) return '';
-
-    const directContext = normalizeText(window.__CODEX_PLUS_PROJECT_WINDOW_CONTEXT?.name);
-    if (directContext) return directContext;
     return currentSidebarProjectName();
   }
 
@@ -161,18 +358,31 @@ function Get-CodexNewChatButtonPayload {
     const selectedModel = controller ? findModel(controller, controller.model) : null;
     const model = normalizeText(controller?.model || selectedModel?.model || selectedModel?.id);
     const reasoningEffort = normalizeText(controller?.reasoningEffort || selectedModel?.defaultReasoningEffort || '');
-    const projectName = normalizeText(currentProjectName());
-    if (!projectName && !model && !reasoningEffort) return null;
+    const projectName = normalizeText(window.__CODEX_PLUS_PROJECT_WINDOW_CONTEXT?.name || currentProjectName());
+    const sidePanelOpen = isToggleOpen(findVisibleButtonByLabel('Toggle side panel'));
+    const browserUrlInput = findBrowserUrlInput();
+    const browserTabButton = findBrowserTabButton();
+    const browserOptionsButton = findVisibleButtonByLabel('Browser options');
+    const browserWebview = findBrowserWebview();
+    const browserPanelOpen = Boolean(browserUrlInput || browserTabButton || browserOptionsButton || isBrowserWebviewOpen(browserWebview));
+    const browserSrc = browserPanelOpen ? readBrowserUrl() : '';
+    if (!projectName && !model && !reasoningEffort && !sidePanelOpen && !browserPanelOpen && !browserSrc) return null;
 
     const createdAt = Date.now();
     return {
       projectName,
       model,
       reasoningEffort,
+      sidePanelOpen,
+      browserPanelOpen,
+      browserSrc,
       createdAt,
       expiresAt: createdAt + RESTORE_TIMEOUT_MS,
       projectMenuOpenedAt: 0,
       projectSelectionAttemptedAt: 0,
+      sidePanelToggleAttemptedAt: 0,
+      browserPanelToggleAttemptedAt: 0,
+      browserSrcAttemptedAt: 0,
       modelSelectionAttemptedAt: 0,
       effortSelectionAttemptedAt: 0
     };
@@ -223,18 +433,17 @@ function Get-CodexNewChatButtonPayload {
   }
 
   function restoreModelSelection(pending, now) {
+    const targetModelName = normalizeText(pending?.model);
+    const targetEffort = normalizeText(pending?.reasoningEffort);
+    if (!targetModelName && !targetEffort) {
+      return false;
+    }
+
     const controller = getSplitController();
     if (!controller) return true;
 
-    const targetModelName = normalizeText(pending?.model);
-    const targetEffort = normalizeText(pending?.reasoningEffort);
     const currentModelName = normalizeText(controller.model);
     const currentEffort = normalizeText(controller.reasoningEffort);
-
-    if (!targetModelName && !targetEffort) {
-      clearPendingContext();
-      return false;
-    }
 
     if (!targetModelName) {
       if (targetEffort && !controller.reasoningEffortDisabled && currentEffort !== targetEffort) {
@@ -243,7 +452,6 @@ function Get-CodexNewChatButtonPayload {
         controller.onSelectReasoningEffort(targetEffort);
         return true;
       }
-      clearPendingContext();
       return false;
     }
 
@@ -254,7 +462,6 @@ function Get-CodexNewChatButtonPayload {
     const modelMatches = currentModelName === selectedModelName;
     const effortMatches = !targetEffort || currentEffort === targetEffort;
     if (modelMatches && effortMatches) {
-      clearPendingContext();
       return false;
     }
 
@@ -277,6 +484,116 @@ function Get-CodexNewChatButtonPayload {
     return true;
   }
 
+  function restoreSidePanelState(pending, now) {
+    if (!pending?.sidePanelOpen) return false;
+    const sidePanelButton = findVisibleButtonByLabel('Toggle side panel');
+    if (!sidePanelButton) return true;
+    if (isToggleOpen(sidePanelButton)) return false;
+    if (pending.sidePanelToggleAttemptedAt && now - pending.sidePanelToggleAttemptedAt < 1000) return true;
+    pending.sidePanelToggleAttemptedAt = now;
+    sidePanelButton.click();
+    return true;
+  }
+
+  function restoreBrowserPanelState(pending, now) {
+    if (!pending?.browserPanelOpen) return false;
+
+    const browserTabButton = findBrowserTabButton();
+    const browserUrlInput = findBrowserUrlInput();
+    const browserOptionsButton = findVisibleButtonByLabel('Browser options');
+    const browserWebview = findBrowserWebview();
+    const browserOpen = Boolean(browserUrlInput || browserOptionsButton || isBrowserWebviewOpen(browserWebview));
+
+    if (!browserOpen) {
+      if (!browserTabButton) return true;
+      if (pending.browserPanelToggleAttemptedAt && now - pending.browserPanelToggleAttemptedAt < 1000) return true;
+      pending.browserPanelToggleAttemptedAt = now;
+      browserTabButton.click();
+      return true;
+    }
+
+    const browserSrc = normalizeText(pending.browserSrc);
+    if (!browserSrc) return false;
+
+    if (browserUrlInput) {
+      const currentValue = normalizeText(browserUrlInput.value || browserUrlInput.getAttribute('value'));
+      if (currentValue !== browserSrc) {
+        if (pending.browserSrcAttemptedAt && now - pending.browserSrcAttemptedAt < 1000) return true;
+        pending.browserSrcAttemptedAt = now;
+        const setter = Object.getOwnPropertyDescriptor(HTMLInputElement.prototype, 'value')?.set;
+        if (setter) {
+          setter.call(browserUrlInput, browserSrc);
+        } else {
+          browserUrlInput.value = browserSrc;
+        }
+        browserUrlInput.dispatchEvent(new Event('input', { bubbles: true }));
+        browserUrlInput.dispatchEvent(new Event('change', { bubbles: true }));
+        return true;
+      }
+
+      if (!isBrowserWebviewOpen(browserWebview)) {
+        if (pending.browserPanelToggleAttemptedAt && now - pending.browserPanelToggleAttemptedAt < 1000) return true;
+        pending.browserPanelToggleAttemptedAt = now;
+        pressBrowserAddressEnter(browserUrlInput);
+        return true;
+      }
+    }
+
+    if (!browserWebview) return false;
+
+    const currentSrc = readBrowserWebviewSrc(browserWebview);
+    if (currentSrc === browserSrc) return false;
+    if (pending.browserSrcAttemptedAt && now - pending.browserSrcAttemptedAt < 1000) return true;
+    pending.browserSrcAttemptedAt = now;
+    browserWebview.setAttribute('src', browserSrc);
+    return true;
+  }
+
+  function isPendingNewChatContextSatisfied(pending) {
+    const targetProjectName = normalizeText(pending?.projectName);
+    if (targetProjectName && normalizeText(currentProjectName()) !== targetProjectName) return false;
+
+    const targetModelName = normalizeText(pending?.model);
+    const targetEffort = normalizeText(pending?.reasoningEffort);
+    if (targetModelName || targetEffort) {
+      const controller = getSplitController();
+      if (!controller) return false;
+
+      if (targetModelName) {
+        const selectedModel = findModel(controller, targetModelName);
+        if (!selectedModel) return false;
+
+        const selectedModelName = normalizeText(selectedModel.model || selectedModel.id);
+        if (normalizeText(controller.model) !== selectedModelName) return false;
+      }
+
+      if (targetEffort && normalizeText(controller.reasoningEffort) !== targetEffort) return false;
+    }
+
+    if (pending?.sidePanelOpen) {
+      if (!isToggleOpen(findVisibleButtonByLabel('Toggle side panel'))) return false;
+    }
+
+    if (pending?.browserPanelOpen) {
+      const browserUrlInput = findBrowserUrlInput();
+      const browserTabButton = findBrowserTabButton();
+      const browserOptionsButton = findVisibleButtonByLabel('Browser options');
+      const browserWebview = findBrowserWebview();
+      if (!(browserUrlInput || browserTabButton || browserOptionsButton || isBrowserWebviewOpen(browserWebview))) return false;
+
+      const browserSrc = normalizeText(pending?.browserSrc);
+      if (browserSrc) {
+        const currentBrowserSrc = browserUrlInput
+          ? normalizeText(browserUrlInput.value || browserUrlInput.getAttribute('value'))
+          : readBrowserWebviewSrc(browserWebview);
+        if (currentBrowserSrc !== browserSrc) return false;
+        if (browserUrlInput && !isBrowserWebviewOpen(browserWebview)) return false;
+      }
+    }
+
+    return true;
+  }
+
   function restorePendingNewChatContext() {
     const pending = window.__CODEX_PLUS_NEW_CHAT_BUTTON_PENDING_CONTEXT;
     if (!pending) return false;
@@ -291,7 +608,16 @@ function Get-CodexNewChatButtonPayload {
       if (restoreProjectSelection(pending, now)) return true;
     }
 
-    return restoreModelSelection(pending, now);
+    if (restoreSidePanelState(pending, now)) return true;
+    if (restoreBrowserPanelState(pending, now)) return true;
+    if (restoreModelSelection(pending, now)) return true;
+
+    if (isPendingNewChatContextSatisfied(pending)) {
+      clearPendingContext();
+      return false;
+    }
+
+    return true;
   }
 
   function triggerNewChat() {
@@ -329,6 +655,7 @@ function Get-CodexNewChatButtonPayload {
   }
 
   function install() {
+    installPersistentComposerUtilityBar();
     const row = findComposerAccessRow();
     if (!row) return;
 
