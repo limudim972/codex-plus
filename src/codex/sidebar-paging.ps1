@@ -2886,13 +2886,14 @@ function Get-CodexSidebarPagingPayload {
     const threadsHeadingLabel = projectWindowContext
       ? projectWindowContext.name + ' threads'
       : 'Recents';
+    let headerButton = header?.querySelector('button[data-app-action-sidebar-section-toggle]') || header?.querySelector('button') || null;
 
     if (!header || !sectionContainer || !listElement) {
       shell.innerHTML = '';
 
       header = projectsHeading.cloneNode(true);
       header.setAttribute(THREADS_HEADER_ATTR, 'threads');
-      const headerButton = header.querySelector('button[data-app-action-sidebar-section-toggle]') || header.querySelector('button');
+      headerButton = header.querySelector('button[data-app-action-sidebar-section-toggle]') || header.querySelector('button');
       if (headerButton) {
         // Keep the project-style section toggle signature (`group/section-toggle`) in the payload.
         syncThreadToggleButton(headerButton, false, threadsHeadingLabel);
@@ -2919,6 +2920,10 @@ function Get-CodexSidebarPagingPayload {
     }
 
     sectionContainer.hidden = shell.getAttribute(COLLAPSED_ATTR) === 'true';
+    // Late project-context adoption should update an already-rendered header.
+    if (headerButton) {
+      syncThreadToggleButton(headerButton, sectionContainer.hidden, threadsHeadingLabel);
+    }
 
     writeLoaded(listElement, Math.max(0, readLoaded(listElement)));
     syncSyntheticThreadRows(listElement, threadRows);
@@ -2936,11 +2941,6 @@ function Get-CodexSidebarPagingPayload {
         event.stopPropagation();
         event.stopImmediatePropagation();
       });
-    }
-
-    if (!projectWindowContext) {
-      const visibleHeaderLabel = shell.querySelector('[' + THREADS_HEADER_ATTR + '] button span');
-      if (visibleHeaderLabel) visibleHeaderLabel.textContent = 'Recents';
     }
 
     if (shell.parentElement !== projectsShell.parentElement || shell.nextSibling !== projectsShell) {

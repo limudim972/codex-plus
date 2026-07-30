@@ -23,7 +23,8 @@ function Get-CodexNewChatButtonPayload {
   }
 
   function hasInstalledButtons() {
-    return Boolean(document.querySelector('[' + BUTTON_ATTR + ']'));
+    return Array.from(document.querySelectorAll('[' + BUTTON_ATTR + ']'))
+      .some((candidate) => !candidate.closest('[' + PERSISTENT_UTILITY_BAR_ATTR + ']'));
   }
 
   if (window.__CODEX_PLUS_NEW_CHAT_BUTTON && hasInstalledButtons()) return;
@@ -169,6 +170,22 @@ function Get-CodexNewChatButtonPayload {
       || null;
   }
 
+  function findComposerUtilityBarRow(root) {
+    if (!isElement(root)) return null;
+    const scrollArea = Array.from(root.querySelectorAll(UTILITY_BAR_SCROLL_SELECTOR))
+      .find((candidate) => !candidate.closest('[' + PERSISTENT_UTILITY_BAR_ATTR + ']'));
+    if (!scrollArea) return null;
+    return isElement(scrollArea.firstElementChild) ? scrollArea.firstElementChild : null;
+  }
+
+  function findComposerUtilityBarAnchor(row) {
+    if (!isElement(row)) return null;
+    return Array.from(row.children)
+      .find((candidate) => normalizeText(candidate.textContent) === 'main')
+      || row.lastElementChild
+      || null;
+  }
+
   function currentComposerConversationId(root) {
     return normalizeText(root?.querySelector('[' + CONVERSATION_ID_ATTR + ']')?.getAttribute(CONVERSATION_ID_ATTR));
   }
@@ -197,8 +214,6 @@ function Get-CodexNewChatButtonPayload {
     const snapshot = wrapper.cloneNode(true);
     snapshot.setAttribute(PERSISTENT_UTILITY_BAR_ATTR, 'true');
     snapshot.setAttribute('aria-label', 'Composer context');
-    snapshot.setAttribute('inert', '');
-    snapshot.style.pointerEvents = 'none';
     snapshot.style.userSelect = 'none';
     snapshot.querySelectorAll('[id], [aria-controls], [aria-expanded], [data-state]')
       .forEach((element) => {
@@ -209,6 +224,15 @@ function Get-CodexNewChatButtonPayload {
       });
     snapshot.querySelectorAll('button, a, input, select, textarea, [tabindex]')
       .forEach((element) => element.setAttribute('tabindex', '-1'));
+    snapshot.querySelectorAll('button, a, input, select, textarea')
+      .forEach((element) => {
+        if (element.hasAttribute(BUTTON_ATTR)) {
+          element.style.pointerEvents = 'auto';
+          element.removeAttribute('tabindex');
+          return;
+        }
+        element.style.pointerEvents = 'none';
+      });
     return snapshot.outerHTML;
   }
 
@@ -219,6 +243,19 @@ function Get-CodexNewChatButtonPayload {
     const utilityBar = template.content.firstElementChild;
     if (!isElement(utilityBar) || !utilityBar.hasAttribute(PERSISTENT_UTILITY_BAR_ATTR)) return null;
     return utilityBar;
+  }
+
+  function wirePersistentNewChatButton(bar) {
+    if (!isElement(bar)) return;
+    const button = bar.querySelector('button[' + BUTTON_ATTR + ']') || bar.querySelector('button[aria-label="New chat"]');
+    if (!button) return;
+    button.style.pointerEvents = 'auto';
+    button.removeAttribute('tabindex');
+    button.addEventListener('click', (event) => {
+      event.preventDefault();
+      event.stopPropagation();
+      triggerNewChat();
+    });
   }
 
   function installPersistentComposerUtilityBar() {
@@ -262,6 +299,7 @@ function Get-CodexNewChatButtonPayload {
 
     const persistentBar = utilityBarFromSnapshot(snapshotHtml);
     if (!persistentBar) return;
+    wirePersistentNewChatButton(persistentBar);
     host.insertBefore(persistentBar, host.firstElementChild);
   }
 
@@ -644,25 +682,35 @@ function Get-CodexNewChatButtonPayload {
   }
 
   function placeNewChatButton(row, button) {
-    const accessHost = getComposerAccessHost(row);
-    if (!accessHost) {
+    const anchor = findComposerUtilityBarAnchor(row);
+    if (!anchor) {
       row.appendChild(button);
       return;
     }
 
-    if (accessHost.nextElementSibling === button) return;
-    row.insertBefore(button, accessHost.nextSibling);
+    if (anchor.nextElementSibling === button) return;
+    row.insertBefore(button, anchor.nextSibling);
   }
 
   function install() {
-    installPersistentComposerUtilityBar();
-    const row = findComposerAccessRow();
-    if (!row) return;
+    const root = findComposerRoot();
+    if (!root) return;
 
-    hideNativeComposerNewChatButton(row);
+    const accessRow = findComposerAccessRow();
+    if (accessRow) {
+      hideNativeComposerNewChatButton(accessRow);
+    }
+
+    const row = findComposerUtilityBarRow(root);
+    if (!row) {
+      installPersistentComposerUtilityBar();
+      return;
+    }
+
     const existingButton = row.querySelector('[' + BUTTON_ATTR + ']');
     if (existingButton) {
       placeNewChatButton(row, existingButton);
+      installPersistentComposerUtilityBar();
       return;
     }
 
@@ -690,6 +738,7 @@ function Get-CodexNewChatButtonPayload {
     });
 
     placeNewChatButton(row, button);
+    installPersistentComposerUtilityBar();
   }
 
   let installPending = false;
