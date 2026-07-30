@@ -406,6 +406,7 @@ function Get-CodexRtlPayload {
 function Get-CodexPlusPayloadBundle {
     @(
         Get-CodexRtlSharedPayload
+        Get-CodexNewChatButtonPayload
         Get-CodexRtlPayload
         Get-CodexRtlPayloadPlan
         Get-CodexContextBadgePayload

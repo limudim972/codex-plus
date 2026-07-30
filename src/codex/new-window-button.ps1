@@ -12,8 +12,14 @@ function Get-CodexNewWindowButtonPayload {
   // A previous payload can leave the global flag set after its DOM nodes are
   // removed by a native React rerender. Reconcile from the actual DOM instead
   // of permanently disabling installation based on that stale flag.
-  if (window.__CODEX_PLUS_NEW_WINDOW_BUTTON
-      && document.querySelector('[' + BUTTON_ATTR + '], [' + PROJECT_BUTTON_ATTR + ']')) return;
+  function hasInstalledButtons() {
+    return Boolean(
+      document.querySelector('[' + BUTTON_ATTR + ']')
+      && document.querySelector('[' + PROJECT_BUTTON_ATTR + ']')
+    );
+  }
+
+  if (window.__CODEX_PLUS_NEW_WINDOW_BUTTON && hasInstalledButtons()) return;
 
   function getMenuGroup() {
     const helpButton = document.querySelector(HEADER_SELECTOR + ' ' + MENU_GROUP_SELECTOR);
@@ -148,37 +154,41 @@ function Get-CodexNewWindowButtonPayload {
       window.__CODEX_PLUS_PROJECT_WINDOW_CLICK_GUARD = true;
     }
     const menuGroup = getMenuGroup();
-    if (!menuGroup || menuGroup.querySelector('[' + BUTTON_ATTR + ']')) return;
-    const nativeButton = menuGroup.querySelector('button');
-    const button = document.createElement('button');
-    button.type = 'button';
-    button.setAttribute(BUTTON_ATTR, 'true');
-    button.setAttribute('aria-label', 'New window');
-    button.title = 'Open a new Codex window in this Plus session';
-    button.className = nativeButton?.className || 'no-drag rounded-md border border-transparent px-2.5 py-1 text-base font-normal leading-none outline-none transition-colors text-token-text-tertiary hover:bg-token-foreground/5 hover:text-token-description-foreground focus-visible:bg-token-foreground/5 focus-visible:text-token-description-foreground';
-    button.innerHTML = '<span aria-hidden="true" style="font-size:16px;line-height:1">></span><span>New window</span>';
-    button.addEventListener('click', () => {
-      if (button.disabled) return;
-      button.disabled = true;
-      try { launchSharedWindow(currentProjectContext()); }
-      finally { window.setTimeout(() => { button.disabled = false; }, 800); }
-    });
-    menuGroup.appendChild(button);
+    if (menuGroup) {
+      if (!menuGroup.querySelector('[' + BUTTON_ATTR + ']')) {
+        const nativeButton = menuGroup.querySelector('button');
+        const button = document.createElement('button');
+        button.type = 'button';
+        button.setAttribute(BUTTON_ATTR, 'true');
+        button.setAttribute('aria-label', 'New window');
+        button.title = 'Open a new Codex window in this Plus session';
+        button.className = nativeButton?.className || 'no-drag rounded-md border border-transparent px-2.5 py-1 text-base font-normal leading-none outline-none transition-colors text-token-text-tertiary hover:bg-token-foreground/5 hover:text-token-description-foreground focus-visible:bg-token-foreground/5 focus-visible:text-token-description-foreground';
+        button.innerHTML = '<span aria-hidden="true" style="font-size:16px;line-height:1">></span><span>New window</span>';
+        button.addEventListener('click', () => {
+          if (button.disabled) return;
+          button.disabled = true;
+          try { launchSharedWindow(currentProjectContext()); }
+          finally { window.setTimeout(() => { button.disabled = false; }, 800); }
+        });
+        menuGroup.appendChild(button);
+      }
 
-    if (!menuGroup.querySelector('[' + DASHBOARD_BUTTON_ATTR + ']')) {
-      const dashboardButton = document.createElement('button');
-      dashboardButton.type = 'button';
-      dashboardButton.setAttribute(DASHBOARD_BUTTON_ATTR, 'true');
-      dashboardButton.setAttribute('aria-label', 'Usage Dashboard');
-      dashboardButton.title = 'Open the Codex usage dashboard';
-      dashboardButton.className = nativeButton?.className || 'no-drag rounded-md border border-transparent px-2.5 py-1 text-base font-normal leading-none outline-none transition-colors text-token-text-tertiary hover:bg-token-foreground/5 hover:text-token-description-foreground focus-visible:bg-token-foreground/5 focus-visible:text-token-description-foreground';
-      dashboardButton.textContent = 'Usage Dashboard';
-      dashboardButton.addEventListener('click', (event) => {
-        event.preventDefault();
-        event.stopPropagation();
-        openUsageDashboard();
-      });
-      menuGroup.appendChild(dashboardButton);
+      if (!menuGroup.querySelector('[' + DASHBOARD_BUTTON_ATTR + ']')) {
+        const nativeButton = menuGroup.querySelector('button');
+        const dashboardButton = document.createElement('button');
+        dashboardButton.type = 'button';
+        dashboardButton.setAttribute(DASHBOARD_BUTTON_ATTR, 'true');
+        dashboardButton.setAttribute('aria-label', 'Usage Dashboard');
+        dashboardButton.title = 'Open the Codex usage dashboard';
+        dashboardButton.className = nativeButton?.className || 'no-drag rounded-md border border-transparent px-2.5 py-1 text-base font-normal leading-none outline-none transition-colors text-token-text-tertiary hover:bg-token-foreground/5 hover:text-token-description-foreground focus-visible:bg-token-foreground/5 focus-visible:text-token-description-foreground';
+        dashboardButton.textContent = 'Usage Dashboard';
+        dashboardButton.addEventListener('click', (event) => {
+          event.preventDefault();
+          event.stopPropagation();
+          openUsageDashboard();
+        });
+        menuGroup.appendChild(dashboardButton);
+      }
     }
   }
 

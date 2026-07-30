@@ -46,6 +46,7 @@ try {
         'src/shared/prompting.ps1',
         'src/shared/asar.ps1',
         'src/codex/detection.ps1',
+        'src/codex/new-chat-button.ps1',
         'src/codex/new-window-button.ps1',
         'src/codex/rtl-payload.ps1',
         'src/codex/split-model-effort-selector.ps1',
@@ -1026,8 +1027,42 @@ Assert-True (-not ($sidebarPagingPayload.Contains('data-codex-plus-thread-timest
 $payloadBundle = Get-CodexPlusPayloadBundle
 Assert-True (-not ($payloadBundle.Contains('__CODEX_PLUS_WINDOW_TITLE'))) 'Injected payload bundle should not rewrite the webview title for taskbar labeling.'
 Assert-True ($payloadBundle.Contains('__CODEX_RTL_SHARED_HELPERS')) 'Injected payload bundle should include the shared bidi helper payload.'
+Assert-True ($payloadBundle.Contains('data-codex-plus-new-chat-button')) 'Injected payload bundle should include the dedicated composer new-chat payload.'
 Assert-True ($payloadBundle.Contains('__CODEX_PLUS_SPLIT_MODEL_EFFORT_SELECTOR')) 'Injected payload bundle should include the split model and effort selectors.'
 Assert-True ($payloadBundle.Contains('__CODEX_PLUS_PROJECT_SELECTOR_GUARD')) 'Injected payload bundle should include the project selector guard.'
+$newChatPayload = Get-CodexNewChatButtonPayload
+Assert-True ($newChatPayload.Contains('data-codex-plus-new-chat-button')) 'Composer footer should expose a dedicated new-chat action.'
+Assert-True ($newChatPayload.Contains('div.col-start-1.row-start-2')) 'New chat button should anchor to the access selector cell.'
+Assert-True ($newChatPayload.Contains('findComposerAccessRow')) 'New chat button should locate the composer access row before inserting the action.'
+Assert-True ($newChatPayload.Contains('getComposerAccessHost')) 'New chat button should identify the access selector wrapper before placement.'
+Assert-True ($newChatPayload.Contains('accessHost.nextElementSibling')) 'New chat button should insert itself after the access selector.'
+Assert-True ($newChatPayload.Contains('hideNativeComposerNewChatButton')) 'Composer access row should hide the native + new-chat control when present.'
+Assert-True ($newChatPayload.Contains('nativeButton.hidden = true')) 'Native + new-chat control should be hidden once the icon button is installed.'
+Assert-True ($newChatPayload.Contains('createNewChatIcon')) 'Composer new-chat button should reuse the native icon styling.'
+Assert-True ($newChatPayload.Contains('button.appendChild(icon)')) 'Composer new-chat button should render the icon before the label.'
+Assert-True ($newChatPayload.Contains("button.title = 'Start a new chat'")) 'Composer new-chat button should present a descriptive tooltip.'
+Assert-True ($newChatPayload.Contains("label.textContent = 'New chat'")) 'Composer new-chat button should render the visible label.'
+Assert-True ($newChatPayload.Contains('text-token-text-primary')) 'Composer new-chat button should appear as an enabled, colored action.'
+Assert-True ($newChatPayload.Contains('placeNewChatButton')) 'Composer new-chat button should centralize placement after the access selector.'
+Assert-True ($newChatPayload.Contains('row.insertBefore(button, accessHost.nextSibling)')) 'Composer new-chat button should be inserted after the access selector wrapper.'
+Assert-True (-not ($newChatPayload.Contains('Composer utility bar'))) 'Composer new-chat button should no longer target the utility bar.'
+Assert-True ($newChatPayload.Contains('triggerNewChat')) 'Composer new-chat button should proxy the native sidebar new-chat action.'
+Assert-True ($newChatPayload.Contains('captureCurrentChatContext')) 'Composer new-chat button should snapshot the current project and selector state before opening a blank chat.'
+Assert-True ($newChatPayload.Contains('restorePendingNewChatContext')) 'Composer new-chat button should replay the saved chat context after the native new chat opens.'
+Assert-True ($newChatPayload.Contains('currentProjectName')) 'Composer new-chat button should read the current project from the live composer surface.'
+Assert-True ($newChatPayload.Contains('readProjectButtonName')) 'Composer new-chat button should normalize project button labels before restoring them.'
+Assert-True ($newChatPayload.Contains('findProjectChooserButton')) 'Composer new-chat button should find the blank-chat project chooser before restoring a project.'
+Assert-True ($newChatPayload.Contains('getProjectOption')) 'Composer new-chat button should select the matching project from the chooser menu.'
+Assert-True ($newChatPayload.Contains('button[aria-label="Choose project"]')) 'Composer new-chat button should target the blank-chat project chooser.'
+Assert-True ($newChatPayload.Contains('data-composer-navigation-target="workspace-project"')) 'Composer new-chat button should use the composer project navigation target when restoring a project.'
+Assert-True ($newChatPayload.Contains('role="option"')) 'Composer new-chat button should search project menu options by their rendered labels.'
+Assert-True ($newChatPayload.Contains('window.__CODEX_PLUS_NEW_CHAT_BUTTON_PENDING_CONTEXT')) 'Composer new-chat button should persist the pending restore context on the window.'
+Assert-True ($newChatPayload.Contains('modelSelectionAttemptedAt')) 'Composer new-chat button should avoid hammering the model selector while it is re-rendering.'
+Assert-True ($newChatPayload.Contains('effortSelectionAttemptedAt')) 'Composer new-chat button should avoid hammering the effort selector while it is re-rendering.'
+Assert-True ($newChatPayload.Contains('onSelectModel')) 'Composer new-chat button should restore the original model through the live selector controller.'
+Assert-True ($newChatPayload.Contains('onSelectReasoningEffort')) 'Composer new-chat button should restore the original effort through the live selector controller.'
+Assert-True ($newChatPayload.Contains('window.setInterval(restorePendingNewChatContext, RESTORE_POLL_INTERVAL_MS)')) 'Composer new-chat button should keep retrying restoration until the new chat settles.'
+Assert-True ($newChatPayload.Contains('RESTORE_TIMEOUT_MS')) 'Composer new-chat button should abandon stale restore work after a bounded timeout.'
 $reminderHiderPayload = Get-CodexFullAccessReminderHiderPayload
 Assert-True ($reminderHiderPayload.Contains('record.addedNodes')) 'Reminder hiding should scan only newly added mutation subtrees.'
 Assert-True ($reminderHiderPayload.Contains('createTreeWalker')) 'Reminder hiding should use a linear text-node walk instead of repeatedly reading nested container text.'
@@ -1036,10 +1071,13 @@ Assert-True (-not ($reminderHiderPayload.Contains('element.innerText'))) 'Remind
 $newWindowPayload = Get-CodexNewWindowButtonPayload
 Assert-True ($newWindowPayload.Contains('data-codex-plus-shared-window-button')) 'New window payload should expose a dedicated shared-window marker.'
 Assert-True ($newWindowPayload.Contains('data-codex-plus-usage-dashboard-button')) 'New window payload should expose a dedicated dashboard marker.'
+Assert-True (-not ($newWindowPayload.Contains('data-codex-plus-new-chat-button'))) 'New window payload should not own the composer new-chat control.'
+Assert-True (-not ($newWindowPayload.Contains('Composer utility bar'))) 'New window payload should stay focused on the window controls.'
+Assert-True (-not ($newWindowPayload.Contains('installComposerNewChatButtons'))) 'New window payload should not install composer-specific controls.'
 Assert-True ($newWindowPayload.Contains("dashboardButton.textContent = 'Usage Dashboard'")) 'Dashboard button should use an ASCII-only label without a glyph prefix.'
 Assert-True ($newWindowPayload.Contains("http://127.0.0.1:3000/")) 'Dashboard button should open the local PowerShell service URL.'
 Assert-True ($newWindowPayload.Contains('records.some(mutationTouchesInstallSurface)')) 'Window controls should ignore mutations outside their header and sidebar surfaces.'
-Assert-True ($newWindowPayload.Contains("document.querySelector('[' + BUTTON_ATTR + '], [' + PROJECT_BUTTON_ATTR + ']')")) 'New window payload should recover when its installed flag is stale but the DOM buttons are missing.'
+Assert-True ($newWindowPayload.Contains('hasInstalledButtons()')) 'New window payload should recover when its installed flag is stale but the DOM buttons are missing.'
 Assert-True ($newWindowPayload.Contains('open-in-new-window')) 'New window payload should use Codex''s supported open-in-new-window message.'
 Assert-True ($newWindowPayload.Contains('data-codex-plus-project-window-button')) 'New window payload should add a project-row new-window action.'
 Assert-True ($newWindowPayload.Contains('codexPlusProjectId')) 'New window payload should carry the project id.'
