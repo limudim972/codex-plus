@@ -372,6 +372,76 @@ function Get-CodexNextWindowTitleOrdinal {
     return [Math]::Max($managedBrowserProcesses.Count, $maxOrdinal) + 1
 }
 
+function Format-CodexUsageWindowTitle {
+    param(
+        [Parameter(Mandatory)][double]$UsedPercent,
+        [Parameter(Mandatory)][long]$ResetsAt,
+        [DateTimeOffset]$Now = [DateTimeOffset]::UtcNow
+    )
+
+    $resetAt = [DateTimeOffset]::FromUnixTimeSeconds($ResetsAt)
+    $remaining = $resetAt - $Now
+    if ($remaining.TotalSeconds -le 0) {
+        return ('Plus Codex - {0}% used, resets now' -f $UsedPercent.ToString('0.##', [Globalization.CultureInfo]::InvariantCulture))
+    }
+
+    if ($remaining.TotalDays -ge 1) {
+        $value = [Math]::Max(1, [int][Math]::Ceiling($remaining.TotalDays))
+        $unit = if ($value -eq 1) { 'day' } else { 'days' }
+    } elseif ($remaining.TotalHours -ge 1) {
+        $value = [Math]::Max(1, [int][Math]::Ceiling($remaining.TotalHours))
+        $unit = if ($value -eq 1) { 'hour' } else { 'hours' }
+    } else {
+        $value = [Math]::Max(1, [int][Math]::Ceiling($remaining.TotalMinutes))
+        $unit = if ($value -eq 1) { 'minute' } else { 'minutes' }
+    }
+
+    return ('Plus Codex - {0}% used, resets in {1} {2}' -f
+        $UsedPercent.ToString('0.##', [Globalization.CultureInfo]::InvariantCulture),
+        $value,
+        $unit)
+}
+
+$script:CodexPlusRateLimitTitleCache = $null
+
+function Get-CodexUsageWindowTitle {
+    $now = [DateTimeOffset]::UtcNow
+    $cache = $script:CodexPlusRateLimitTitleCache
+    if ($cache -and ($now - $cache.fetched_at).TotalSeconds -lt 30) {
+        if ($null -ne $cache.used_percent -and $null -ne $cache.resets_at) {
+            return Format-CodexUsageWindowTitle -UsedPercent ([double]$cache.used_percent) -ResetsAt ([long]$cache.resets_at) -Now $now
+        }
+        return 'Plus Codex'
+    }
+
+    try {
+        $summary = Invoke-RestMethod -Uri 'http://127.0.0.1:3000/api/summary' -UseBasicParsing -TimeoutSec 1
+        $primary = if ($summary.data) { $summary.data.primary_window } else { $null }
+        $cache = [pscustomobject]@{
+            fetched_at = $now
+            used_percent = if ($primary) { $primary.used_percent } else { $null }
+            resets_at = if ($primary) { $primary.resets_at } else { $null }
+        }
+        $script:CodexPlusRateLimitTitleCache = $cache
+    } catch {
+        if (-not $cache) {
+            $script:CodexPlusRateLimitTitleCache = [pscustomobject]@{
+                fetched_at = $now
+                used_percent = $null
+                resets_at = $null
+            }
+            return 'Plus Codex'
+        }
+        $cache.fetched_at = $now
+        $script:CodexPlusRateLimitTitleCache = $cache
+    }
+
+    if ($null -ne $cache.used_percent -and $null -ne $cache.resets_at) {
+        return Format-CodexUsageWindowTitle -UsedPercent ([double]$cache.used_percent) -ResetsAt ([long]$cache.resets_at) -Now $now
+    }
+    return 'Plus Codex'
+}
+
 function Get-CodexDesiredWindowTitle {
     param([int]$Ordinal = 0, [AllowEmptyString()][string]$ProjectName = '')
 
@@ -500,10 +570,17 @@ function Update-CodexWindowTitles {
         $script:CodexPlusProjectWindowOrder = @()
     }
     $devToolsTargets = @(Get-CodexDevToolsTargets -Port $Port | Where-Object { Test-CodexDevToolsTarget -Target $_ })
+    $usageTitle = Get-CodexUsageWindowTitle
     $projectTargetNames = @()
     $projectTargetNamesById = @{}
     foreach ($target in $devToolsTargets) {
         try {
+            $usageTitleLiteral = ([string]$usageTitle | ConvertTo-Json -Compress)
+            $usagePublish = New-CodexCdpCommand -Id 3 -Method 'Runtime.evaluate' -Params @{
+                expression = "window.__CODEX_PLUS_USAGE_WINDOW_TITLE = $usageTitleLiteral; window.dispatchEvent(new Event('codex-plus-usage-updated'));"
+                returnByValue = $true
+            }
+            Invoke-CodexCdpCommand -WebSocketDebuggerUrl $target.webSocketDebuggerUrl -Command $usagePublish | Out-Null
             $probe = New-CodexCdpCommand -Id 1 -Method 'Runtime.evaluate' -Params @{
                 expression = "window.__CODEX_PLUS_PROJECT_WINDOW_CONTEXT?.name || ''"
                 returnByValue = $true
@@ -627,7 +704,11 @@ function Update-CodexWindowTitles {
                 if (-not $isProjectWindow -and $projectMatch.Success) {
                     $script:CodexPlusWindowProjectNames[[string]$windowHandle] = $projectMatch.Groups[1].Value.Trim()
                 }
-                $desiredTitle = Get-CodexDesiredWindowTitle -Ordinal $windowOrdinal -ProjectName $projectName
+                $desiredTitle = if (-not $isProjectWindow -and $windowHandle -eq $primaryWindowHandle) {
+                    Get-CodexUsageWindowTitle
+                } else {
+                    Get-CodexDesiredWindowTitle -Ordinal $windowOrdinal -ProjectName $projectName
+                }
                 if ((Get-CodexNativeWindowTitle -WindowHandle $windowHandle) -ne $desiredTitle) {
                     if (Set-CodexNativeWindowTitle -WindowHandle $windowHandle -Title $desiredTitle) {
                         $updated = $true
@@ -664,7 +745,7 @@ function Wait-CodexWindowTitleSync {
                     $liveProcess = Get-Process -Id $process.ProcessId -ErrorAction Stop
                     if ($liveProcess.MainWindowHandle -ne 0) {
                         $visibleProcessCount += 1
-                        $desiredTitle = Get-CodexDesiredWindowTitle -Ordinal $processOrdinal
+                        $desiredTitle = Get-CodexUsageWindowTitle
                         if ([string]$liveProcess.MainWindowTitle -ne $desiredTitle) {
                             $allVisibleTitlesMatch = $false
                         }
@@ -1205,6 +1286,14 @@ function Invoke-CodexRtlInjectionForTarget {
     foreach ($command in $commands) {
         Invoke-CodexCdpCommand -WebSocketDebuggerUrl $Target.webSocketDebuggerUrl -Command $command | Out-Null
     }
+
+    $usageTitle = Get-CodexUsageWindowTitle
+    $usageTitleLiteral = ([string]$usageTitle | ConvertTo-Json -Compress)
+    $usagePublish = New-CodexCdpCommand -Id 3 -Method 'Runtime.evaluate' -Params @{
+        expression = "window.__CODEX_PLUS_USAGE_WINDOW_TITLE = $usageTitleLiteral; window.dispatchEvent(new Event('codex-plus-usage-updated'));"
+        returnByValue = $true
+    }
+    Invoke-CodexCdpCommand -WebSocketDebuggerUrl $Target.webSocketDebuggerUrl -Command $usagePublish | Out-Null
 }
 
 function Invoke-CodexRtlInjection {

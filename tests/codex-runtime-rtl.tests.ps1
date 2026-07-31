@@ -611,6 +611,13 @@ Assert-True (Test-CodexProcessIsCodexPlusManaged -Process $windowOrdinalProcess)
 Assert-Equal '1.Codex' (Get-CodexDesiredWindowTitle -Ordinal 1) 'Desired taskbar titles should prefix Codex with the ordinal.'
 Assert-Equal 'codex-plus' (Get-CodexDesiredWindowTitle -ProjectName 'codex-plus') 'The first project window should initially use only the project name.'
 Assert-Equal '2.codex-plus' (Get-CodexDesiredWindowTitle -Ordinal 2 -ProjectName 'codex-plus') 'Project windows should use the project name after the unique ordinal.'
+$fixedNow = [DateTimeOffset]::Parse('2026-07-31T00:00:00Z')
+$sixDayReset = $fixedNow.AddDays(6).ToUnixTimeSeconds()
+$hourReset = $fixedNow.AddHours(3).AddMinutes(20).ToUnixTimeSeconds()
+$minuteReset = $fixedNow.AddMinutes(12).AddSeconds(10).ToUnixTimeSeconds()
+Assert-Equal 'Plus Codex - 67% used, resets in 6 days' (Format-CodexUsageWindowTitle -UsedPercent 67 -ResetsAt $sixDayReset -Now $fixedNow) 'Primary title should show usage and a day countdown.'
+Assert-Equal 'Plus Codex - 67% used, resets in 4 hours' (Format-CodexUsageWindowTitle -UsedPercent 67 -ResetsAt $hourReset -Now $fixedNow) 'Primary title should show hours when the reset is less than a day away.'
+Assert-Equal 'Plus Codex - 67% used, resets in 13 minutes' (Format-CodexUsageWindowTitle -UsedPercent 67 -ResetsAt $minuteReset -Now $fixedNow) 'Primary title should show minutes when the reset is less than an hour away.'
 
 $script:MockCodexProcesses = @(
     [pscustomobject]@{
@@ -824,6 +831,16 @@ Assert-True ($payload.Contains("attributeFilter: ['dir', 'contenteditable', 'dat
 $splitSelectorPayload = Get-CodexSplitModelEffortSelectorPayload
 Assert-True ($splitSelectorPayload.Contains('data-codex-plus-model-select')) 'Split selector should expose a dedicated model select.'
 Assert-True ($splitSelectorPayload.Contains('data-codex-plus-effort-select')) 'Split selector should expose a dedicated effort select.'
+Assert-True ($splitSelectorPayload.Contains('data-codex-plus-speed-button')) 'Split selector should expose a dedicated speed button.'
+Assert-True (-not ($splitSelectorPayload.Contains('data-codex-plus-speed-select'))) 'Speed control should not render a select dropdown.'
+Assert-True ($splitSelectorPayload.Contains('serviceTierOptions')) 'Split selector should derive speed options from Codex service tier state.'
+Assert-True ($splitSelectorPayload.Contains('onSelectServiceTier(nextTier.nativeValue)')) 'Split selector should use Codex native service tier callback values.'
+Assert-True ($splitSelectorPayload.Contains('serviceTierDescription')) 'Speed control should expose the native service tier description.'
+Assert-True ($splitSelectorPayload.Contains('speedButton.title = selectedServiceTier.description')) 'Speed control should show the service tier description on hover.'
+Assert-True ($splitSelectorPayload.Contains('LIGHTNING_EMPTY')) 'Split selector should render an empty lightning icon for standard speed.'
+Assert-True ($splitSelectorPayload.Contains('LIGHTNING_FULL')) 'Split selector should render a full lightning icon for fast speed.'
+Assert-True ($splitSelectorPayload.Contains('data-codex-plus-speed-active')) 'Speed control should expose an active-state marker.'
+Assert-True ($splitSelectorPayload.Contains('stroke="#facc15"')) 'Fast speed should use a yellow lightning-shaped border.'
 Assert-True ($splitSelectorPayload.Contains('supportedReasoningEfforts')) 'Split selector should derive effort options from the selected live model.'
 Assert-True ($splitSelectorPayload.Contains('latest.onSelectModel(model.model || model.id, nextEffort)')) 'Split selector should use Codex native model and effort callback arguments.'
 Assert-True ($splitSelectorPayload.Contains('latest.onSelectReasoningEffort(event.target.value)')) 'Split selector should use Codex native effort callback.'
@@ -1137,11 +1154,14 @@ Assert-True ($launchSource.Contains('$seenProcessIds = [System.Collections.Gener
 Assert-True ($launchSource.Contains('& $stopSeenProcesses')) 'The close watchdog should terminate observed instance processes after the last window closes.'
 Assert-True ($launchSource.Contains('[int]$DashboardProcessId = 0')) 'The close watchdog should accept the dashboard process id passed by the launcher.'
 Assert-True ($launchSource.Contains('A newly opened project target exposes its project context')) 'Native titles should be synchronized after each newly injected target.'
+Assert-True ($launchSource.Contains('__CODEX_PLUS_USAGE_WINDOW_TITLE')) 'Native title synchronization should publish the same usage title to the app header.'
 $contextBadgePayload = Get-CodexContextBadgePayload
 Assert-True ($contextBadgePayload.Contains('readWindowTitle')) 'Context badge should read the current window title context.'
 Assert-True ($contextBadgePayload.Contains('__CODEX_PLUS_NATIVE_WINDOW_TITLE')) 'Context badge should display the synchronized native window title.'
 Assert-True ($contextBadgePayload.Contains('__CODEX_PLUS_PROJECT_WINDOW_CONTEXT')) 'Context badge should include the project title in project windows.'
-Assert-True ($contextBadgePayload.Contains("['Plus', title, statusText, percent]")) 'Context badge should display Plus, status, title, and usage when available.'
+Assert-True ($contextBadgePayload.Contains('readUsageText')) 'Context badge should read the usage title published by the launcher.'
+Assert-True ($contextBadgePayload.Contains("['Plus', title, statusText, usage || percent]")) 'Context badge should display Plus, status, title, and usage when available.'
+Assert-True ($contextBadgePayload.Contains('codex-plus-usage-updated')) 'Context badge should refresh when the launcher updates the usage title.'
 Assert-True ($contextBadgePayload.Contains('setStatus(nextStatus)')) 'Context badge should expose a live status setter.'
 Assert-True ($contextBadgePayload.Contains('records.some(mutationTouchesBadgeSource)')) 'Context badge should ignore unrelated composer and conversation mutations.'
 $sharedPayload = Get-CodexRtlSharedPayload

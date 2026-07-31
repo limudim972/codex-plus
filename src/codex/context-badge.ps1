@@ -45,6 +45,13 @@ function Get-CodexContextBadgePayload {
     return percentMatch ? percentMatch[1] : '';
   }
 
+  function readUsageText() {
+    const usageTitle = normalizeText(window.__CODEX_PLUS_USAGE_WINDOW_TITLE);
+    if (!usageTitle || usageTitle === 'Plus Codex') return '';
+    const match = usageTitle.match(/^Plus Codex\s*-\s*(.+)$/i);
+    return match ? '- ' + match[1] : usageTitle;
+  }
+
   function readWindowTitle(scopeDoc) {
     const runtimeTitle = normalizeText(window.__CODEX_PLUS_NATIVE_WINDOW_TITLE);
     if (runtimeTitle) return runtimeTitle;
@@ -98,7 +105,8 @@ function Get-CodexContextBadgePayload {
 
     const percent = readContextPercent(scopeDoc);
     const title = readWindowTitle(scopeDoc);
-    const nextText = stripBidiMarks(['Plus', title, statusText, percent].filter(Boolean).join(' '));
+    const usage = readUsageText();
+    const nextText = stripBidiMarks(['Plus', title, statusText, usage || percent].filter(Boolean).join(' '));
     if (badge.textContent !== nextText) {
       badge.textContent = nextText;
     }
@@ -188,6 +196,8 @@ function Get-CodexContextBadgePayload {
       apply();
     }
   };
+
+  window.addEventListener('codex-plus-usage-updated', apply);
 
   if (document.readyState === 'loading') {
     document.addEventListener('DOMContentLoaded', start, { once: true });

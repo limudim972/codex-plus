@@ -36,6 +36,8 @@ function Get-CodexSplitModelEffortSelectorPayload {
     'min-w-0'
   ].join(' ');
   const CHEVRON = '<svg width="16" height="16" viewBox="0 0 16 16" fill="currentColor" xmlns="http://www.w3.org/2000/svg" aria-hidden="true" class="cp-split-selector-chevron h-3.5 w-3.5 shrink-0 text-token-text-tertiary"><path d="M12.1338 5.94433C12.3919 5.77382 12.7434 5.80202 12.9707 6.02929C13.1979 6.25656 13.2261 6.60807 13.0556 6.8662L12.9707 6.9707L8.47067 11.4707C8.21097 11.7304 7.78896 11.7304 7.52926 11.4707L3.02926 6.9707L2.9443 6.8662C2.77379 6.60807 2.80199 6.25656 3.02926 6.02929C3.25653 5.80202 3.60804 5.77382 3.86617 5.94433L3.97067 6.02929L7.99996 10.0586L12.0293 6.02929L12.1338 5.94433Z"></path></svg>';
+  const LIGHTNING_EMPTY = '<svg width="16" height="16" viewBox="0 0 16 16" fill="none" xmlns="http://www.w3.org/2000/svg" aria-hidden="true"><path d="M9.271 1.75 3.5 8.5h3.75l-.521 5.75L12.5 7.5H8.75l.521-5.75Z" stroke="currentColor" stroke-width="1.25" stroke-linejoin="round"></path></svg>';
+  const LIGHTNING_FULL = '<svg width="16" height="16" viewBox="0 0 16 16" fill="currentColor" xmlns="http://www.w3.org/2000/svg" aria-hidden="true"><path d="M9.271 1.75 3.5 8.5h3.75l-.521 5.75L12.5 7.5H8.75l.521-5.75Z" fill="currentColor" stroke="#facc15" stroke-width="1.35" stroke-linejoin="round" paint-order="stroke"></path></svg>';
 
   let host = null;
   let pending = false;
@@ -53,6 +55,29 @@ function Get-CodexSplitModelEffortSelectorPayload {
 
   function effortLabel(effort) {
     return EFFORT_LABELS[effort] || String(effort || '').replace(/^./, (value) => value.toUpperCase());
+  }
+
+  function serviceTierLabel(option) {
+    const label = option && option.label;
+    return typeof label === 'string' ? label : (label && label.defaultMessage) || (option && option.value ? 'Fast' : 'Standard');
+  }
+
+  function serviceTierDescription(option) {
+    const description = option && option.description;
+    return typeof description === 'string'
+      ? description
+      : (description && description.defaultMessage) || serviceTierLabel(option);
+  }
+
+  function getServiceTiers(controller) {
+    return (Array.isArray(controller.serviceTierOptions) ? controller.serviceTierOptions : [])
+      .map((option) => ({
+        ...option,
+        nativeValue: option.value == null ? null : option.value,
+        label: serviceTierLabel(option),
+        description: serviceTierDescription(option),
+        iconKind: option.iconKind || (option.value == null ? 'empty' : 'full')
+      }));
   }
 
   function getController(nativeTrigger) {
@@ -166,6 +191,15 @@ function Get-CodexSplitModelEffortSelectorPayload {
         line-height: 18px; max-width: 118px; padding-block: 0; padding-inline-end: 14px; padding-inline-start: 8px;
       }
       [${HOST_ATTR}] .cp-split-selector-effort { max-width: 112px; }
+      [${HOST_ATTR}] .cp-split-selector-speed-button {
+        align-items: center; appearance: none; background-color: transparent; display: inline-flex; height: 28px;
+        justify-content: center; padding: 0; width: 28px;
+      }
+      [${HOST_ATTR}] .cp-split-selector-speed-button:not(:disabled):hover { background-color: var(--token-list-hover-background); }
+      [${HOST_ATTR}] .cp-split-selector-speed-icon {
+        align-items: center; display: inline-flex; justify-content: center; pointer-events: none;
+      }
+      [${HOST_ATTR}] .cp-split-selector-speed-icon svg { height: 16px; width: 16px; }
       [${HOST_ATTR}] .cp-split-selector-chevron {
         inset-inline-end: 0; margin: 0; pointer-events: none; position: absolute; top: 50%; transform: translateY(-50%);
       }
@@ -191,8 +225,11 @@ function Get-CodexSplitModelEffortSelectorPayload {
     const selectedModel = models.find((model) => model.model === controller.model || model.id === controller.model) || models[0];
     if (!selectedModel) return;
     const efforts = getEfforts(selectedModel);
+    const serviceTiers = getServiceTiers(controller);
     const modelSelect = host.querySelector('[data-codex-plus-model-select]');
     const effortSelect = host.querySelector('[data-codex-plus-effort-select]');
+    const speedButton = host.querySelector('[data-codex-plus-speed-button]');
+    const speedIcon = host.querySelector('[data-codex-plus-speed-icon]');
 
     replaceOptions(
       modelSelect,
@@ -204,13 +241,21 @@ function Get-CodexSplitModelEffortSelectorPayload {
       (selectedModel.model || selectedModel.id) + ':' + efforts.join('|'),
       efforts.map((effort) => ({ value: effort, label: effortLabel(effort) }))
     );
-
     modelSelect.value = selectedModel.model || selectedModel.id;
     effortSelect.value = efforts.includes(controller.reasoningEffort) ? controller.reasoningEffort : (selectedModel.defaultReasoningEffort || efforts[0]);
+    const selectedServiceTier = serviceTiers.find((option) => option.nativeValue === (controller.selectedServiceTier == null ? null : controller.selectedServiceTier)) || serviceTiers[0];
+    if (selectedServiceTier) {
+      speedIcon.innerHTML = selectedServiceTier.iconKind === 'fast' ? LIGHTNING_FULL : LIGHTNING_EMPTY;
+      speedIcon.setAttribute('aria-label', selectedServiceTier.label);
+      speedButton.title = selectedServiceTier.description;
+      speedButton.setAttribute('aria-label', 'Speed: ' + selectedServiceTier.label + '. ' + selectedServiceTier.description);
+      speedButton.toggleAttribute('data-codex-plus-speed-active', selectedServiceTier.iconKind === 'fast');
+    }
     syncSelectWidth(modelSelect);
     syncSelectWidth(effortSelect);
     modelSelect.disabled = Boolean(controller.modelOptionsDisabled);
     effortSelect.disabled = Boolean(controller.reasoningEffortDisabled || efforts.length === 0);
+    speedButton.disabled = Boolean(controller.serviceTierOptionsLoading || serviceTiers.length <= 1 || typeof controller.onSelectServiceTier !== 'function');
   }
 
   function buildUi(nativeTrigger, controller) {
@@ -219,7 +264,7 @@ function Get-CodexSplitModelEffortSelectorPayload {
     const anchor = directChildContaining(toolbar, nativeTrigger) || nativeTrigger;
     host = document.createElement('span');
     host.setAttribute(HOST_ATTR, 'true');
-    host.innerHTML = `<span class="cp-split-selector-wrap"><select class="cp-split-selector cp-split-selector-model ${SELECT_CLASSES}" data-codex-plus-model-select aria-label="Model"></select>${CHEVRON}</span><span class="cp-split-selector-wrap"><select class="cp-split-selector cp-split-selector-effort ${SELECT_CLASSES}" data-codex-plus-effort-select aria-label="Effort"></select>${CHEVRON}</span>`;
+    host.innerHTML = `<span class="cp-split-selector-wrap"><select class="cp-split-selector cp-split-selector-model ${SELECT_CLASSES}" data-codex-plus-model-select aria-label="Model"></select>${CHEVRON}</span><span class="cp-split-selector-wrap"><select class="cp-split-selector cp-split-selector-effort ${SELECT_CLASSES}" data-codex-plus-effort-select aria-label="Effort"></select>${CHEVRON}</span><span class="cp-split-selector-wrap cp-split-selector-speed-wrap"><button type="button" class="cp-split-selector-speed-button ${SELECT_CLASSES}" data-codex-plus-speed-button aria-label="Speed"><span class="cp-split-selector-speed-icon" data-codex-plus-speed-icon aria-hidden="true"></span></button></span>`;
     toolbar.insertBefore(host, anchor);
 
     host.querySelector('[data-codex-plus-model-select]').addEventListener('change', (event) => {
@@ -240,6 +285,18 @@ function Get-CodexSplitModelEffortSelectorPayload {
       const latest = getController(document.querySelector(NATIVE_TRIGGER_SELECTOR));
       if (!latest || latest.reasoningEffortDisabled) return;
       latest.onSelectReasoningEffort(event.target.value);
+      window.setTimeout(schedule, 0);
+      window.setTimeout(schedule, 120);
+    });
+
+    host.querySelector('[data-codex-plus-speed-button]').addEventListener('click', () => {
+      const latest = getController(document.querySelector(NATIVE_TRIGGER_SELECTOR));
+      if (!latest || latest.serviceTierOptionsLoading || typeof latest.onSelectServiceTier !== 'function') return;
+      const serviceTiers = getServiceTiers(latest);
+      if (serviceTiers.length <= 1) return;
+      const currentIndex = serviceTiers.findIndex((option) => option.nativeValue === (latest.selectedServiceTier == null ? null : latest.selectedServiceTier));
+      const nextTier = serviceTiers[(currentIndex + 1 + serviceTiers.length) % serviceTiers.length] || serviceTiers[0];
+      latest.onSelectServiceTier(nextTier.nativeValue);
       window.setTimeout(schedule, 0);
       window.setTimeout(schedule, 120);
     });
