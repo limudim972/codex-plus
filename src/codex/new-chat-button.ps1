@@ -19,6 +19,8 @@ function Get-CodexNewChatButtonPayload {
   const RESTORE_TIMEOUT_MS = 15000;
   const RESTORE_POLL_INTERVAL_MS = 120;
   let pendingUtilityBarSnapshot = '';
+  let commitPushAvailabilityObserver = null;
+  let observedNativeCommitPushButton = null;
 
   function normalizeText(value) {
     return String(value || '').replace(/\s+/g, ' ').trim();
@@ -56,6 +58,47 @@ function Get-CodexNewChatButtonPayload {
       .filter((candidate) => !candidate.closest('[' + PERSISTENT_UTILITY_BAR_ATTR + ']'))
       .find((candidate) => isVisibleElement(candidate) && normalizeText(candidate.textContent) === COMMIT_PUSH_LABEL)
       || null;
+  }
+
+  function isCommitPushButtonAvailable(nativeButton) {
+    return Boolean(
+      nativeButton
+      && !nativeButton.disabled
+      && normalizeText(nativeButton.getAttribute('aria-disabled')) !== 'true'
+    );
+  }
+
+  function updateCommitPushButtonAvailability(button, nativeButton) {
+    if (!isElement(button)) return;
+    const disabled = !isCommitPushButtonAvailable(nativeButton);
+    if (button.disabled !== disabled) button.disabled = disabled;
+    if (disabled) {
+      if (button.getAttribute('aria-disabled') !== 'true') button.setAttribute('aria-disabled', 'true');
+    } else if (button.hasAttribute('aria-disabled')) {
+      button.removeAttribute('aria-disabled');
+    }
+  }
+
+  function observeNativeCommitPushButton(nativeButton) {
+    if (nativeButton === observedNativeCommitPushButton) return;
+    if (commitPushAvailabilityObserver) commitPushAvailabilityObserver.disconnect();
+    commitPushAvailabilityObserver = null;
+    observedNativeCommitPushButton = nativeButton || null;
+    if (!nativeButton) return;
+
+    commitPushAvailabilityObserver = new MutationObserver(syncCommitPushAvailability);
+    commitPushAvailabilityObserver.observe(nativeButton, {
+      attributes: true,
+      attributeFilter: ['disabled', 'aria-disabled', 'class']
+    });
+  }
+
+  function syncCommitPushAvailability() {
+    const nativeButton = findVisibleCommitPushButton();
+    observeNativeCommitPushButton(nativeButton);
+    document.querySelectorAll('button[' + COMMIT_PUSH_BUTTON_ATTR + ']').forEach((button) => {
+      updateCommitPushButtonAvailability(button, nativeButton);
+    });
   }
 
   function isToggleOpen(button) {
@@ -714,6 +757,7 @@ function Get-CodexNewChatButtonPayload {
   function triggerCommitOrPush() {
     const nativeButton = findVisibleCommitPushButton();
     if (nativeButton) {
+      if (!isCommitPushButtonAvailable(nativeButton)) return false;
       nativeButton.click();
       return true;
     }
@@ -786,7 +830,7 @@ function Get-CodexNewChatButtonPayload {
     button.setAttribute(COMMIT_PUSH_BUTTON_ATTR, 'true');
     button.setAttribute('aria-label', COMMIT_PUSH_LABEL);
     button.title = COMMIT_PUSH_LABEL;
-    button.className = 'no-drag rounded-md border border-transparent px-2.5 py-1 text-base font-normal leading-none outline-none transition-colors text-token-text-primary hover:bg-token-foreground/5 hover:text-token-foreground focus-visible:bg-token-foreground/5 focus-visible:text-token-foreground flex items-center gap-2 whitespace-nowrap';
+    button.className = 'no-drag rounded-md border border-transparent px-2.5 py-1 text-base font-normal leading-none outline-none transition-colors text-token-text-primary hover:bg-token-foreground/5 hover:text-token-foreground focus-visible:bg-token-foreground/5 focus-visible:text-token-foreground disabled:cursor-not-allowed disabled:opacity-40 disabled:text-token-text-secondary flex items-center gap-2 whitespace-nowrap';
     button.style.marginInlineStart = 'auto';
 
     const icon = createCommitPushIcon();
@@ -817,6 +861,7 @@ function Get-CodexNewChatButtonPayload {
     const row = findComposerUtilityBarRow(root);
     if (!row) {
       installPersistentComposerUtilityBar();
+      syncCommitPushAvailability();
       return;
     }
 
@@ -824,6 +869,7 @@ function Get-CodexNewChatButtonPayload {
     if (existingButton) {
       placeNewChatButton(row, existingButton);
       installCommitPushButton(row);
+      syncCommitPushAvailability();
       installPersistentComposerUtilityBar();
       return;
     }
@@ -853,6 +899,7 @@ function Get-CodexNewChatButtonPayload {
 
     placeNewChatButton(row, button);
     installCommitPushButton(row);
+    syncCommitPushAvailability();
     installPersistentComposerUtilityBar();
   }
 
