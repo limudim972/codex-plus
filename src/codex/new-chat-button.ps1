@@ -2,6 +2,8 @@ function Get-CodexNewChatButtonPayload {
     @'
 (function () {
   const BUTTON_ATTR = 'data-codex-plus-new-chat-button';
+  const COMMIT_PUSH_BUTTON_ATTR = 'data-codex-plus-commit-push-button';
+  const COMMIT_PUSH_LABEL = 'Commit or push';
   const NATIVE_NEW_CHAT_SELECTOR = 'button[aria-label="New chat"]';
   const COMPOSER_ACCESS_CELL_SELECTOR = 'div.col-start-1.row-start-2';
   const PROJECT_BUTTON_SELECTOR = 'button[aria-label^="Project:"], button[aria-label^="Change project:"]';
@@ -46,6 +48,14 @@ function Get-CodexNewChatButtonPayload {
           ? candidate
           : selected;
       }, null);
+  }
+
+  function findVisibleCommitPushButton() {
+    return Array.from(document.querySelectorAll('button'))
+      .filter((candidate) => !candidate.hasAttribute(COMMIT_PUSH_BUTTON_ATTR))
+      .filter((candidate) => !candidate.closest('[' + PERSISTENT_UTILITY_BAR_ATTR + ']'))
+      .find((candidate) => isVisibleElement(candidate) && normalizeText(candidate.textContent) === COMMIT_PUSH_LABEL)
+      || null;
   }
 
   function isToggleOpen(button) {
@@ -226,7 +236,7 @@ function Get-CodexNewChatButtonPayload {
       .forEach((element) => element.setAttribute('tabindex', '-1'));
     snapshot.querySelectorAll('button, a, input, select, textarea')
       .forEach((element) => {
-        if (element.hasAttribute(BUTTON_ATTR)) {
+        if (element.hasAttribute(BUTTON_ATTR) || element.hasAttribute(COMMIT_PUSH_BUTTON_ATTR)) {
           element.style.pointerEvents = 'auto';
           element.removeAttribute('tabindex');
           return;
@@ -255,6 +265,19 @@ function Get-CodexNewChatButtonPayload {
       event.preventDefault();
       event.stopPropagation();
       triggerNewChat();
+    });
+  }
+
+  function wirePersistentCommitPushButton(bar) {
+    if (!isElement(bar)) return;
+    const button = bar.querySelector('button[' + COMMIT_PUSH_BUTTON_ATTR + ']');
+    if (!button) return;
+    button.style.pointerEvents = 'auto';
+    button.removeAttribute('tabindex');
+    button.addEventListener('click', (event) => {
+      event.preventDefault();
+      event.stopPropagation();
+      triggerCommitOrPush();
     });
   }
 
@@ -300,6 +323,7 @@ function Get-CodexNewChatButtonPayload {
     const persistentBar = utilityBarFromSnapshot(snapshotHtml);
     if (!persistentBar) return;
     wirePersistentNewChatButton(persistentBar);
+    wirePersistentCommitPushButton(persistentBar);
     host.insertBefore(persistentBar, host.firstElementChild);
   }
 
@@ -315,6 +339,19 @@ function Get-CodexNewChatButtonPayload {
 
     const template = document.createElement('span');
     template.innerHTML = '<svg width="16" height="16" viewBox="0 0 16 16" fill="none" xmlns="http://www.w3.org/2000/svg" class="icon-xs shrink-0"><path d="M6.33325 1.88379C6.58178 1.88379 6.78345 2.08546 6.78345 2.33398C6.78328 2.58237 6.58168 2.78418 6.33325 2.78418H4.66626C3.62638 2.78435 2.78362 3.62711 2.78345 4.66699V11.334C2.78361 12.3739 3.62637 13.2176 4.66626 13.2178H11.3333C12.3733 13.2178 13.2169 12.374 13.217 11.334V9.66699C13.2172 9.41872 13.418 9.21795 13.6663 9.21777C13.9147 9.21777 14.1163 9.41861 14.1165 9.66699V11.334C14.1163 12.871 12.8703 14.1172 11.3333 14.1172H4.66626C3.12932 14.117 1.88322 12.8709 1.88306 11.334V4.66699C1.88323 3.13006 3.12933 1.88396 4.66626 1.88379H6.33325Z" fill="currentColor"></path><path fill-rule="evenodd" clip-rule="evenodd" d="M10.8948 2.375C11.6494 1.63227 12.8628 1.63698 13.6116 2.38574C14.362 3.13643 14.3637 4.35266 13.6165 5.10644L9.36353 9.39355C9.01402 9.74579 8.56977 9.98985 8.08521 10.0967L6.17603 10.5166C5.74813 10.6107 5.36686 10.2296 5.46118 9.80176L5.88208 7.89746C5.98978 7.4105 6.23578 6.96428 6.59106 6.61426L10.8948 2.375ZM12.9749 3.02148C12.5756 2.62258 11.9289 2.62086 11.5266 3.0166L7.2229 7.25586C6.99148 7.4839 6.83116 7.77457 6.76099 8.0918L6.44165 9.53711L7.89185 9.21777C8.20744 9.14811 8.49721 8.98919 8.72485 8.75976L12.9778 4.47266C13.3759 4.07066 13.375 3.42164 12.9749 3.02148Z" fill="currentColor"></path></svg>';
+    return template.firstElementChild;
+  }
+
+  function createCommitPushIcon() {
+    const nativeIcon = findVisibleCommitPushButton()?.querySelector('svg');
+    if (nativeIcon) {
+      const icon = nativeIcon.cloneNode(true);
+      icon.classList.add('shrink-0');
+      return icon;
+    }
+
+    const template = document.createElement('span');
+    template.innerHTML = '<svg width="20" height="20" viewBox="0 0 20 20" fill="none" xmlns="http://www.w3.org/2000/svg" class="icon-sm shrink-0" aria-hidden="true"><path d="M13.5013 10.0003C13.5013 8.06653 11.9341 6.49856 10.0003 6.49838C8.06641 6.49838 6.49837 8.06642 6.49837 10.0003C6.49855 11.9341 8.06652 13.5013 10.0003 13.5013C11.934 13.5011 13.5011 11.934 13.5013 10.0003ZM14.8314 10.0003C14.8312 12.6685 12.6685 14.8312 10.0003 14.8314C7.33198 14.8314 5.16847 12.6686 5.16829 10.0003C5.16829 7.33188 7.33187 5.1683 10.0003 5.1683C12.6686 5.16848 14.8314 7.33199 14.8314 10.0003Z" fill="currentColor"></path><path d="M5 9.33497C5.36727 9.33497 5.66504 9.63274 5.66504 10C5.66504 10.3673 5.36727 10.665 5 10.665H1.25C0.882731 10.665 0.584961 10.3673 0.584961 10C0.584961 9.63274 0.882731 9.33497 1.25 9.33497H5Z" fill="currentColor"></path><path d="M18.75 9.33497C19.1173 9.33497 19.415 9.63274 19.415 10C19.415 10.3673 19.117 10.665 18.75 10.665H15C14.6327 10.665 14.335 10.3673 14.335 10C14.335 9.63274 14.6327 9.33497 15 9.33497H18.75Z" fill="currentColor"></path></svg>';
     return template.firstElementChild;
   }
 
@@ -674,6 +711,27 @@ function Get-CodexNewChatButtonPayload {
     return true;
   }
 
+  function triggerCommitOrPush() {
+    const nativeButton = findVisibleCommitPushButton();
+    if (nativeButton) {
+      nativeButton.click();
+      return true;
+    }
+
+    const panelToggle = findVisibleButtonByLabel('Toggle bottom panel');
+    if (!panelToggle) return false;
+    if (!isToggleOpen(panelToggle)) panelToggle.click();
+
+    const retry = () => {
+      const nextButton = findVisibleCommitPushButton();
+      if (nextButton) nextButton.click();
+    };
+    window.setTimeout(retry, 0);
+    window.setTimeout(retry, 120);
+    window.setTimeout(retry, 400);
+    return true;
+  }
+
   function hideNativeComposerNewChatButton(row) {
     const nativeButton = row.querySelector('button[aria-label="New chat"]:not([' + BUTTON_ATTR + '])');
     if (!nativeButton) return;
@@ -690,6 +748,61 @@ function Get-CodexNewChatButtonPayload {
 
     if (anchor.nextElementSibling === button) return;
     row.insertBefore(button, anchor.nextSibling);
+  }
+
+  function placeCommitPushButton(row, button) {
+    button.style.marginInlineStart = 'auto';
+    const newChatButton = row.querySelector('button[' + BUTTON_ATTR + ']');
+    if (newChatButton) {
+      if (newChatButton.nextElementSibling !== button) {
+        row.insertBefore(button, newChatButton.nextSibling);
+      }
+      return;
+    }
+
+    const anchor = findComposerUtilityBarAnchor(row);
+    if (!anchor) {
+      row.appendChild(button);
+      return;
+    }
+
+    if (anchor.nextElementSibling !== button) row.insertBefore(button, anchor.nextSibling);
+  }
+
+  function installCommitPushButton(row) {
+    const existingButton = row.querySelector('button[' + COMMIT_PUSH_BUTTON_ATTR + ']');
+    if (!normalizeText(currentProjectName())) {
+      existingButton?.remove();
+      return;
+    }
+
+    if (existingButton) {
+      placeCommitPushButton(row, existingButton);
+      return;
+    }
+
+    const button = document.createElement('button');
+    button.type = 'button';
+    button.setAttribute(COMMIT_PUSH_BUTTON_ATTR, 'true');
+    button.setAttribute('aria-label', COMMIT_PUSH_LABEL);
+    button.title = COMMIT_PUSH_LABEL;
+    button.className = 'no-drag rounded-md border border-transparent px-2.5 py-1 text-base font-normal leading-none outline-none transition-colors text-token-text-primary hover:bg-token-foreground/5 hover:text-token-foreground focus-visible:bg-token-foreground/5 focus-visible:text-token-foreground flex items-center gap-2 whitespace-nowrap';
+    button.style.marginInlineStart = 'auto';
+
+    const icon = createCommitPushIcon();
+    if (icon) button.appendChild(icon);
+
+    const label = document.createElement('span');
+    label.textContent = COMMIT_PUSH_LABEL;
+    button.appendChild(label);
+
+    button.addEventListener('click', (event) => {
+      event.preventDefault();
+      event.stopPropagation();
+      triggerCommitOrPush();
+    });
+
+    placeCommitPushButton(row, button);
   }
 
   function install() {
@@ -710,6 +823,7 @@ function Get-CodexNewChatButtonPayload {
     const existingButton = row.querySelector('[' + BUTTON_ATTR + ']');
     if (existingButton) {
       placeNewChatButton(row, existingButton);
+      installCommitPushButton(row);
       installPersistentComposerUtilityBar();
       return;
     }
@@ -738,6 +852,7 @@ function Get-CodexNewChatButtonPayload {
     });
 
     placeNewChatButton(row, button);
+    installCommitPushButton(row);
     installPersistentComposerUtilityBar();
   }
 
@@ -745,6 +860,7 @@ function Get-CodexNewChatButtonPayload {
   const COMPOSER_SURFACE_SELECTOR = [
     COMPOSER_ACCESS_CELL_SELECTOR,
     '[' + BUTTON_ATTR + ']',
+    '[' + COMMIT_PUSH_BUTTON_ATTR + ']',
     NATIVE_NEW_CHAT_SELECTOR
   ].join(',');
 
