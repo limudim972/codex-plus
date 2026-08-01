@@ -26,10 +26,12 @@ function Get-CodexSidebarPagingPayload {
   const THREAD_NAVIGATION_TIMEOUT_MS = 20000;
   const THREAD_PRELOAD_TIMEOUT_MS = 15000;
   const THREAD_PRELOAD_START_DELAY_MS = 500;
+  const NATIVE_PROJECT_PAGER_MAX_EXPANSIONS = 8;
   const SIDEBAR_REFRESH_DEBOUNCE_MS = 250;
   const SIDEBAR_NAVIGATION_REFRESH_RETRY_MS = 100;
   const SIDEBAR_POLL_INTERVAL_MS = 30000;
   const USER_ACTIVITY_SETTLE_MS = 500;
+  const STARTUP_SORT_RETRY_DELAYS_MS = [0, 100, 500, 1500, 3000, 6000, 10000];
   const PAGER_ATTR = 'data-codex-plus-sidebar-pager';
   const ACTION_ATTR = 'data-codex-plus-sidebar-action';
   const STATE_ATTR = 'data-codex-plus-sidebar-loaded';
@@ -73,6 +75,7 @@ function Get-CodexSidebarPagingPayload {
   let liveCatalogSubscriptions = [];
   const dirtyLiveCatalogBindings = new Set();
   let requestSidebarRefresh = () => {};
+  let nativeProjectPagerExpansionAttempts = 0;
   const LIVE_CATALOG_FULL_REFRESH_MS = 30000;
   const LIVE_CATALOG_FORCE_REFRESH_MS = 5000;
   const PAGE_START_TIME = Number(window.performance?.timeOrigin || Date.now());
@@ -175,8 +178,57 @@ function Get-CodexSidebarPagingPayload {
     return getSidebarSectionList(heading);
   }
 
+  function isNativeSidebarPagerRow(row) {
+    if (!row || row.hasAttribute(PAGER_ATTR)) return false;
+    if (getProjectIdForRow(row) || getThreadIdForRow(row)) return false;
+
+    return Array.from(row.querySelectorAll('button')).some((button) => {
+      const label = normalizeText(button.textContent);
+      return label === 'Show more' || label === 'Show less';
+    });
+  }
+
   function getSidebarRows(sectionList) {
-    return Array.from(sectionList?.children || []).filter((row) => row.getAttribute('role') === 'listitem' && !row.hasAttribute(PAGER_ATTR));
+    return Array.from(sectionList?.children || []).filter((row) => {
+      return row.getAttribute('role') === 'listitem'
+        && !row.hasAttribute(PAGER_ATTR)
+        && !isNativeSidebarPagerRow(row);
+    });
+  }
+
+  function getNativeProjectPagerRow(sectionList) {
+    return Array.from(sectionList?.children || [])
+      .find((row) => row.getAttribute('role') === 'listitem' && isNativeSidebarPagerRow(row)) || null;
+  }
+
+  function hideNativeProjectPagerRow(row) {
+    if (!row) return;
+    row.hidden = true;
+    row.setAttribute('aria-hidden', 'true');
+    row.style.setProperty('display', 'none', 'important');
+    row.style.setProperty('visibility', 'hidden', 'important');
+    row.style.setProperty('pointer-events', 'none', 'important');
+  }
+
+  function expandNativeProjectPager(sectionList) {
+    const pagerRow = getNativeProjectPagerRow(sectionList);
+    if (!pagerRow) return false;
+
+    const showMoreButton = Array.from(pagerRow.querySelectorAll('button')).find((button) => {
+      return normalizeText(button.textContent) === 'Show more'
+        && !button.hidden
+        && getComputedStyle(button).display !== 'none';
+    });
+    const canExpand = Boolean(
+      showMoreButton
+      && nativeProjectPagerExpansionAttempts < NATIVE_PROJECT_PAGER_MAX_EXPANSIONS
+    );
+    if (canExpand) {
+      nativeProjectPagerExpansionAttempts += 1;
+      showMoreButton.click();
+    }
+    hideNativeProjectPagerRow(pagerRow);
+    return canExpand;
   }
 
   function normalizeProjectId(value) {
@@ -1670,14 +1722,30 @@ function Get-CodexSidebarPagingPayload {
     return timestamp < 1e12 ? Math.round(timestamp * 1000) : Math.round(timestamp);
   }
 
-  function getRemoteProjectTimestampMsForRow(row) {
-    const group = getProjectGroupFromRow(row);
+  function getProjectGroupTimestampMs(group) {
     const environment = group?.cloudEnvironment;
     return Math.max(
+      // Local project groups expose these fields directly, while cloud
+      // projects keep their modification metadata on cloudEnvironment.
+      toTimestampMs(group?.projectUpdatedAt),
+      toTimestampMs(group?.project_updated_at),
+      toTimestampMs(group?.updatedAt),
+      toTimestampMs(group?.updated_at),
+      toTimestampMs(group?.modifiedAt),
+      toTimestampMs(group?.modified_at),
       toTimestampMs(environment?.updated_at),
       toTimestampMs(environment?.modified_at),
+      toTimestampMs(group?.projectCreatedAt),
+      toTimestampMs(group?.project_created_at),
+      toTimestampMs(group?.createdAt),
+      toTimestampMs(group?.created_at),
       toTimestampMs(environment?.created_at)
     );
+  }
+
+  function getRemoteProjectTimestampMsForRow(row) {
+    const group = getProjectGroupFromRow(row);
+    return getProjectGroupTimestampMs(group);
   }
 
   function getDisplayedModifiedTimestampMs(row) {
@@ -2254,10 +2322,18 @@ function Get-CodexSidebarPagingPayload {
     }
   }
 
+  function getExplicitUpdatedTimestampMs(row) {
+    if (!row) return 0;
+    const direct = Number(row.getAttribute(THREAD_UPDATED_ATTR) || 0);
+    const projectRow = row.querySelector('[data-app-action-sidebar-project-row]');
+    const nested = Number(projectRow?.getAttribute(THREAD_UPDATED_ATTR) || 0);
+    return nested || direct;
+  }
+
   function getThreadTimestampMsForRow(row) {
     if (!row) return 0;
     return getReconciliationRowValue('threadTimestampForRow', row, () => {
-      const explicit = Number(row.getAttribute(THREAD_UPDATED_ATTR) || '0');
+      const explicit = getExplicitUpdatedTimestampMs(row);
       if (explicit > 0) return explicit;
       return parseThreadTimestampMs(getThreadIdForRow(row));
     });
@@ -2312,6 +2388,35 @@ function Get-CodexSidebarPagingPayload {
     return rows;
   }
 
+  function sortSidebarRowsByRenderedTimestamp(sectionList, rows) {
+    rows.sort((left, right) => {
+      const rightTimestamp = getExplicitUpdatedTimestampMs(right);
+      const leftTimestamp = getExplicitUpdatedTimestampMs(left);
+      if (rightTimestamp !== leftTimestamp) {
+        return rightTimestamp - leftTimestamp;
+      }
+
+      const labelOrder = getSidebarRowSortLabel(left).localeCompare(getSidebarRowSortLabel(right));
+      if (labelOrder !== 0) return labelOrder;
+
+      const leftId = getProjectIdForRow(left) || getThreadIdForRow(left) || '';
+      const rightId = getProjectIdForRow(right) || getThreadIdForRow(right) || '';
+      return String(leftId).localeCompare(String(rightId));
+    });
+
+    const pager = Array.from(sectionList?.children || [])
+      .find((child) => child.hasAttribute(PAGER_ATTR)) || null;
+    const currentRows = getSidebarRows(sectionList);
+    const sameOrder = currentRows.length === rows.length && currentRows.every((row, index) => row === rows[index]);
+    if (!sameOrder && sectionList) {
+      for (const row of rows) {
+        sectionList.insertBefore(row, pager);
+      }
+    }
+
+    return rows;
+  }
+
   function sortUnmanagedSidebarLists() {
     for (const list of Array.from(document.querySelectorAll('[role="list"]'))) {
       if (list.hasAttribute(SYNTHETIC_LIST_ATTR)) continue;
@@ -2326,6 +2431,7 @@ function Get-CodexSidebarPagingPayload {
       if (hasProjectRows) suppressProjectHoverCards(rows);
 
       sortSidebarRows(list, rows, hasProjectRows ? 'projects' : 'threads');
+      if (hasProjectRows) sortSidebarRowsByRenderedTimestamp(list, rows);
     }
   }
 
@@ -2386,12 +2492,7 @@ function Get-CodexSidebarPagingPayload {
       const projectId = normalizeProjectId(group?.projectId || group?.path);
       if (!projectId) continue;
 
-      const environment = group?.cloudEnvironment;
-      updateProjectTimestamp(projectId, Math.max(
-        toTimestampMs(environment?.updated_at),
-        toTimestampMs(environment?.modified_at),
-        toTimestampMs(environment?.created_at)
-      ));
+      updateProjectTimestamp(projectId, getProjectGroupTimestampMs(group));
       for (const threadKey of Array.isArray(group?.threadKeys) ? group.threadKeys : []) {
         const record = catalog.records.get(normalizeLiveThreadKey(threadKey));
         updateProjectTimestamp(projectId, getLiveThreadTimestampMs(record, catalog));
@@ -2445,7 +2546,7 @@ function Get-CodexSidebarPagingPayload {
   function getProjectTimestampMsForRow(row) {
     if (!row) return 0;
     return getReconciliationRowValue('projectTimestampForRow', row, () => {
-    const explicit = Number(row?.getAttribute(THREAD_UPDATED_ATTR) || '0');
+    const explicit = getExplicitUpdatedTimestampMs(row);
     const projectId = normalizeProjectId(getProjectIdForRow(row));
     let liveTimestamp = 0;
     if (projectId) {
@@ -3095,6 +3196,7 @@ function Get-CodexSidebarPagingPayload {
     // placed correctly in the Projects list.
     if (sectionKey === 'projects') {
       sortSidebarRows(sectionList, rows, 'projects');
+      sortSidebarRowsByRenderedTimestamp(sectionList, rows);
     }
 
     let orderedRows = rows;
@@ -3227,6 +3329,13 @@ function Get-CodexSidebarPagingPayload {
         const list = spec.synthetic ? ensureSyntheticThreadsSection() : resolveSidebarSectionList(spec);
         if (!list) continue;
 
+        if (spec.key === 'projects' && expandNativeProjectPager(list)) {
+          // The native Projects list is paged independently of our visibility
+          // pager. Load its next page first, then let the observer reconcile
+          // and sort the newly mounted rows with the complete project set.
+          window.setTimeout(schedule, 0);
+        }
+
         const rows = getSidebarRows(list);
         const visibleCount = Math.min(rows.length, getVisibleCount(rows, spec));
         writeLoaded(list, Math.max(0, Math.min(readLoaded(list), Math.max(0, rows.length - visibleCount))));
@@ -3320,6 +3429,13 @@ function Get-CodexSidebarPagingPayload {
     } finally {
       applying = false;
       observe();
+      // React can mount or reorder the Projects rows after the first apply,
+      // especially while the startup catalog is hydrating. Reconcile a few
+      // times during that settling window so the initial visible order is
+      // determined by modification timestamps, not mount order.
+      for (const delayMs of STARTUP_SORT_RETRY_DELAYS_MS) {
+        window.setTimeout(schedule, delayMs);
+      }
     }
       const beginStartupPreload = () => {
         window.setTimeout(preloadStartupThreads, THREAD_PRELOAD_START_DELAY_MS);

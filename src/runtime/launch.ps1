@@ -579,15 +579,15 @@ function Maximize-CodexPlusWindows {
 
     $matchingProcesses = @(
         Get-CodexDesktopProcesses | Where-Object {
-            Test-CodexProcessMatchesCodexPlusInstance -Process $_ -Port $Port -LauncherKey $LauncherKey
+            Test-CodexProcessHasRtlDebugPort -Process $_ -Port $Port
         }
     )
     if ($matchingProcesses.Count -eq 0) {
         return $false
     }
 
-    if (-not $script:CodexPlusMaximizedWindowHandles) {
-        $script:CodexPlusMaximizedWindowHandles = @{}
+    if (-not $script:CodexPlusKnownWindowHandles) {
+        $script:CodexPlusKnownWindowHandles = @{}
     }
 
     $currentWindowHandleKeys = @{}
@@ -596,8 +596,8 @@ function Maximize-CodexPlusWindows {
         foreach ($windowHandle in @(Get-CodexVisibleWindowHandles -ProcessId $process.ProcessId)) {
             $handleKey = '{0}:{1}' -f $process.ProcessId, [int64]$windowHandle
             $currentWindowHandleKeys[$handleKey] = $true
-            if (-not $script:CodexPlusMaximizedWindowHandles.ContainsKey($handleKey)) {
-                $script:CodexPlusMaximizedWindowHandles[$handleKey] = $true
+            if (-not $script:CodexPlusKnownWindowHandles.ContainsKey($handleKey)) {
+                $script:CodexPlusKnownWindowHandles[$handleKey] = $true
                 if (Set-CodexNativeWindowMaximized -WindowHandle ([IntPtr]$windowHandle)) {
                     $maximized = $true
                 }
@@ -605,9 +605,9 @@ function Maximize-CodexPlusWindows {
         }
     }
 
-    foreach ($handleKey in @($script:CodexPlusMaximizedWindowHandles.Keys)) {
+    foreach ($handleKey in @($script:CodexPlusKnownWindowHandles.Keys)) {
         if (-not $currentWindowHandleKeys.ContainsKey($handleKey)) {
-            $script:CodexPlusMaximizedWindowHandles.Remove($handleKey)
+            $script:CodexPlusKnownWindowHandles.Remove($handleKey)
         }
     }
 
