@@ -17,8 +17,7 @@ This project is derived from [`Ben-Boaron0/codex-rtl-fix`](https://github.com/Be
 ## What It Does
 
 - Creates `Codex Plus` shortcuts that launch Codex with local enhancement injection.
-- Keeps mixed Hebrew or Arabic content readable without changing the installed app package.
-- Preserves normal left-to-right behavior for technical fragments such as code blocks and English-only text.
+- Leaves text direction and bidirectional layout to Codex’s native RTL support.
 
 ## Requirements
 
@@ -57,7 +56,7 @@ At patch time it:
 3. Launches Codex with:
    - `--remote-debugging-port=<port>`
    - `--remote-debugging-address=127.0.0.1`
-4. Injects a small RTL payload through DevTools:
+4. Injects the remaining Codex Plus enhancements through DevTools:
    - `Page.addScriptToEvaluateOnNewDocument` for future documents
    - `Runtime.evaluate` for the currently open document
 
@@ -91,7 +90,7 @@ Codex Desktop: Found
 
 Install or reopen Codex Desktop, then run Codex Plus again.
 
-**Codex opens without RTL fixes**
+**Codex Plus enhancements are not visible**
 
 Launch Codex through a `Codex Plus` shortcut, not the original Codex shortcut. If the shortcut is missing, run `Patch Codex Plus` again.
 

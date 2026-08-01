@@ -165,6 +165,6 @@ function Launch-CodexRtl {
     }
     Start-CodexForRtl -Inspection $installInfo -Port $port -LauncherKey $LauncherKey | Out-Null
     Start-Sleep -Seconds 5
-    Invoke-CodexRtlInjection -Port $port | Out-Null
+    Invoke-CodexPlusInjection -Port $port | Out-Null
     Wait-CodexWindowTitleSync -Port $port -LauncherKey $LauncherKey | Out-Null
 }

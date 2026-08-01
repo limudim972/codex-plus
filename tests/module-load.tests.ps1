@@ -22,7 +22,7 @@ foreach ($moduleDir in $expectedModuleDirs) {
 $expectedFunctions = @(
     'Find-CodexDir',
     'Get-CodexInstallInfo',
-    'Get-CodexRtlPayload',
+    'Get-CodexPlusPayloadBundle',
     'Get-CodexProjectSelectorGuardPayload',
     'Get-CodexNewWindowButtonPayload',
     'Install-CodexRtlPatch',

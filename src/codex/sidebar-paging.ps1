@@ -15,6 +15,8 @@ function Get-CodexSidebarPagingPayload {
   const SOURCE_LIST_ATTR = 'data-codex-plus-source-list-label';
   const SOURCE_TEXT_ATTR = 'data-codex-plus-source-row-text';
   const SOURCE_PROJECT_ID_ATTR = 'data-codex-plus-source-project-id';
+  const THREAD_PROJECT_TITLE_ATTR = 'data-codex-plus-thread-project-title';
+  const THREAD_BRANCH_ATTR = 'data-codex-plus-thread-branch';
   const NAVIGATION_PENDING_ATTR = 'data-codex-plus-thread-navigation-pending';
   const THREAD_SPINNER_ATTR = 'data-codex-plus-thread-spinner';
   const THREAD_PRELOAD_SPINNER_ATTR = 'data-codex-plus-thread-preload-spinner';
@@ -1406,6 +1408,9 @@ function Get-CodexSidebarPagingPayload {
     indicator.style.paddingLeft = '4px';
     indicator.style.paddingRight = '0px';
     indicator.style.justifyContent = 'flex-start';
+    indicator.style.zIndex = '20';
+    indicator.style.pointerEvents = 'none';
+    indicator.style.background = 'var(--background-token-primary, transparent)';
     return indicator;
   }
 
@@ -1759,7 +1764,21 @@ function Get-CodexSidebarPagingPayload {
   function styleThreadTitleElement(element) {
     if (!element) return;
     element.classList.remove('text-token-description-foreground');
-    element.classList.add('text-token-foreground');
+    element.classList.add('text-token-foreground', 'min-w-0', 'flex-1', 'overflow-hidden', 'text-ellipsis', 'whitespace-nowrap');
+    element.style.minWidth = '0';
+    element.style.maxWidth = '100%';
+    element.style.overflow = 'hidden';
+    element.style.textOverflow = 'ellipsis';
+    element.style.whiteSpace = 'nowrap';
+
+    // The timestamp is a sibling of the title. Constrain the title's flex
+    // item explicitly so long LTR/RTL labels cannot paint over that sibling.
+    const titleHost = element.parentElement;
+    if (titleHost) {
+      titleHost.classList.add('min-w-0', 'flex-1');
+      titleHost.style.minWidth = '0';
+      titleHost.style.overflow = 'hidden';
+    }
   }
 
   function isThreadSidebarRow(row) {
@@ -1767,6 +1786,10 @@ function Get-CodexSidebarPagingPayload {
       getThreadIdForRow(row)
       || row?.getAttribute(SYNTHETIC_ROW_ATTR) === 'threads'
     );
+  }
+
+  function isSyntheticRecentRow(row) {
+    return row?.getAttribute(SYNTHETIC_ROW_ATTR) === 'threads';
   }
 
   function syncThreadToggleButton(button, collapsed, headingLabel = 'Threads') {
@@ -2022,12 +2045,61 @@ function Get-CodexSidebarPagingPayload {
 
     row.addEventListener('click', invokeSourceRow, true);
     row.addEventListener('pointerup', invokeSourceRow, true);
+    row.addEventListener('pointerenter', () => showSyntheticThreadHoverCard(row));
+    row.addEventListener('pointerleave', () => hideSyntheticThreadHoverCard(row));
     row.__codexPlusThreadWired = true;
     row.setAttribute('data-codex-plus-thread-wired', 'true');
   }
 
   function getThreadTitleForRow(row) {
     return textOf(getThreadTitleElement(row)) || textOf(row);
+  }
+
+  function showSyntheticThreadHoverCard(row) {
+    if (!row || row.getAttribute(SYNTHETIC_ROW_ATTR) !== 'threads') return;
+    const titleElement = getThreadTitleElement(row);
+    if (!titleElement || titleElement.scrollWidth <= titleElement.clientWidth) {
+      hideSyntheticThreadHoverCard(row);
+      return;
+    }
+    let card = document.getElementById('codex-plus-thread-hover-card');
+    if (!card) {
+      card = document.createElement('div');
+      card.id = 'codex-plus-thread-hover-card';
+      card.setAttribute('role', 'tooltip');
+      card.style.cssText = 'position:fixed;z-index:2147483647;display:none;max-width:360px;padding:10px 12px;border:1px solid var(--border-token-subtle,rgba(128,128,128,.25));border-radius:10px;background:var(--background-token-primary,#fff);box-shadow:0 8px 24px rgba(0,0,0,.18);color:var(--text-token-primary,#222);font-size:13px;line-height:1.35;direction:auto;pointer-events:none;';
+      document.body.appendChild(card);
+    }
+    card.textContent = '';
+    const title = document.createElement('div');
+    title.style.cssText = 'font-weight:600;overflow-wrap:anywhere;';
+    title.textContent = getThreadBaseLabel(row) || getThreadTitleForRow(row);
+    card.appendChild(title);
+    const project = row.getAttribute(THREAD_PROJECT_TITLE_ATTR);
+    const branch = row.getAttribute(THREAD_BRANCH_ATTR);
+    if (project || branch) {
+      const context = document.createElement('div');
+      context.style.cssText = 'margin-top:6px;opacity:.72;overflow-wrap:anywhere;';
+      context.textContent = [project, branch].filter(Boolean).join(' · ');
+      card.appendChild(context);
+    }
+    const timestamp = row.getAttribute(THREAD_TIMESTAMP_ATTR);
+    if (timestamp) {
+      const meta = document.createElement('div');
+      meta.style.cssText = 'margin-top:4px;opacity:.65;';
+      meta.textContent = 'Modified ' + timestamp;
+      card.appendChild(meta);
+    }
+    const rect = row.getBoundingClientRect();
+    card.style.display = 'block';
+    card.style.left = Math.min(window.innerWidth - 372, Math.max(8, rect.right - 360)) + 'px';
+    card.style.top = Math.min(window.innerHeight - card.offsetHeight - 8, Math.max(8, rect.bottom + 6)) + 'px';
+    row.__codexPlusHoverCard = card;
+  }
+
+  function hideSyntheticThreadHoverCard(row) {
+    const card = row?.__codexPlusHoverCard || document.getElementById('codex-plus-thread-hover-card');
+    if (card) card.style.display = 'none';
   }
 
   function getNativeThreadTitleMap() {
@@ -2124,8 +2196,10 @@ function Get-CodexSidebarPagingPayload {
       const timestampText = nextTimestampLabel ? '[' + nextTimestampLabel + ']' : '';
 
       if (timestampText && titleHost) {
-        // Keep thread and task timestamps inset like project rows instead of pushing them to the edge.
-        titleHost.classList.toggle('pr-6', isThreadSidebarRow(row));
+        // Recents own their right-side inset. Do not derive it from the
+        // native project-thread row geometry, which can change independently.
+        titleHost.classList.toggle('pr-6', isThreadSidebarRow(row) && !isSyntheticRecentRow(row));
+        titleHost.style.paddingRight = isSyntheticRecentRow(row) ? '24px' : '';
         positionNativeThreadStatusSlot(row);
         if (!timestampElement) {
           timestampElement = row.ownerDocument.createElement('span');
@@ -2616,11 +2690,48 @@ function Get-CodexSidebarPagingPayload {
     const button = row?.querySelector('[role="button"]');
     if (!button) return;
 
-    // Recents is rendered outside the project tree. Keep its thread labels
-    // aligned with the nested project-thread labels by adding the same 24px
-    // leading inset to the interactive row.
-    button.classList.add('pl-6');
-    button.style.paddingLeft = '24px';
+    // Recents use a fixed inset independent of native project-thread rows;
+    // the preload indicator remains a top-layer overlay in the leading gutter.
+    // A project-open template can carry its nested-row inset on an outer
+    // wrapper rather than on the button, so normalize every inherited
+    // left-indent class in the synthetic row before applying our own value.
+    for (const element of [row, ...Array.from(row.querySelectorAll('*'))]) {
+      if (element === button) continue;
+      element.classList.remove('pl-2', 'pl-6');
+      if (getComputedStyle(element).paddingLeft !== '0px') {
+        element.style.paddingLeft = '0px';
+      }
+    }
+    for (let ancestor = row.parentElement;
+      ancestor
+      && !ancestor.hasAttribute(SYNTHETIC_LIST_ATTR)
+      && !ancestor.hasAttribute(SYNTHETIC_SECTION_ATTR);
+      ancestor = ancestor.parentElement) {
+      ancestor.classList.remove('pl-2', 'pl-6');
+      if (getComputedStyle(ancestor).paddingLeft !== '0px') {
+        ancestor.style.paddingLeft = '0px';
+      }
+    }
+
+    // Project-thread templates also include an empty leading icon slot. It
+    // adds a 16px slot plus the flex gap before the title, so remove that
+    // native-only slot from Recents clones.
+    const titleElement = row.querySelector('[data-thread-title]');
+    const titleHost = titleElement?.parentElement;
+    const titleRow = titleHost?.parentElement;
+    for (const element of Array.from(titleRow?.children || [])) {
+      if (
+        element !== titleHost
+        && element.classList.contains('w-4')
+        && element.classList.contains('shrink-0')
+      ) {
+        element.remove();
+      }
+    }
+
+    if (!button.classList.contains('pl-2')) button.classList.add('pl-2');
+    button.style.paddingLeft = '8px';
+    button.style.paddingRight = '4px';
   }
 
   function createSyntheticThreadRow(label, updatedMs, templateRow) {
@@ -2653,8 +2764,6 @@ function Get-CodexSidebarPagingPayload {
     button.setAttribute('tabindex', '0');
     button.setAttribute('aria-roledescription', 'sortable');
     button.className = 'group relative h-[var(--height-token-row)] cursor-interaction rounded-[var(--radius-token-row)] py-row-y text-sm hover:bg-token-list-hover-background focus-visible:outline focus-visible:outline-offset-[-2px] pr-1 pl-[var(--padding-row-cell-x,var(--padding-row-x))]';
-    button.classList.add('pl-6');
-    button.style.paddingLeft = '24px';
 
     const outer = document.createElement('div');
     outer.className = 'flex h-full w-full items-center text-sm leading-4';
@@ -2807,6 +2916,7 @@ function Get-CodexSidebarPagingPayload {
         cwd,
         projectTitle,
         projectId: normalizeText(projectGroup?.projectId),
+        branch: normalizeText(record.branch || record.branchName || record.gitBranch || projectGroup?.branch || projectGroup?.branchName),
         kind,
         lastModifiedMs,
         sourceListLabel: kind === 'project' ? ('Scheduled tasks in ' + projectTitle) : 'Tasks',
@@ -2862,6 +2972,8 @@ function Get-CodexSidebarPagingPayload {
       clone.setAttribute('data-codex-plus-thread-id', entry.id);
       clone.setAttribute(SYNTHETIC_ROW_ATTR, 'threads');
       clone.setAttribute(THREAD_UPDATED_ATTR, String(entry.lastModifiedMs));
+      if (entry.projectTitle) clone.setAttribute(THREAD_PROJECT_TITLE_ATTR, entry.projectTitle);
+      if (entry.branch) clone.setAttribute(THREAD_BRANCH_ATTR, entry.branch);
       if (!existingRow) {
         setThreadLabel(clone, label, stripThreadTimestampSuffix(label), entry.lastModifiedMs);
         wireSyntheticThreadRow(clone, entry.sourceListLabel || 'Tasks', entry.sourceRowText || entry.title, entry.projectId);

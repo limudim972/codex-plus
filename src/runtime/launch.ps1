@@ -705,7 +705,8 @@ function Update-CodexWindowTitles {
                     $script:CodexPlusWindowProjectNames[[string]$windowHandle] = $projectMatch.Groups[1].Value.Trim()
                 }
                 $desiredTitle = if (-not $isProjectWindow -and $windowHandle -eq $primaryWindowHandle) {
-                    Get-CodexUsageWindowTitle
+                    $usageTitleText = Get-CodexUsageWindowTitle
+                    if ($processOrdinal -gt 0) { "$processOrdinal.$usageTitleText" } else { $usageTitleText }
                 } else {
                     Get-CodexDesiredWindowTitle -Ordinal $windowOrdinal -ProjectName $projectName
                 }
@@ -746,6 +747,7 @@ function Wait-CodexWindowTitleSync {
                     if ($liveProcess.MainWindowHandle -ne 0) {
                         $visibleProcessCount += 1
                         $desiredTitle = Get-CodexUsageWindowTitle
+                        if ($processOrdinal -gt 0) { $desiredTitle = "$processOrdinal.$desiredTitle" }
                         if ([string]$liveProcess.MainWindowTitle -ne $desiredTitle) {
                             $allVisibleTitlesMatch = $false
                         }
@@ -1185,7 +1187,7 @@ function Watch-CodexCloseToQuit {
             $closeCleanupArmed = $true
             $missingVisibleWindowCount = 0
             try {
-                Invoke-CodexRtlInjection -Port $Port | Out-Null
+                Invoke-CodexPlusInjection -Port $Port | Out-Null
             } catch {
             }
             Update-CodexWindowTitles -Port $Port -LauncherKey $LauncherKey | Out-Null
@@ -1296,7 +1298,7 @@ function Invoke-CodexRtlInjectionForTarget {
     Invoke-CodexCdpCommand -WebSocketDebuggerUrl $Target.webSocketDebuggerUrl -Command $usagePublish | Out-Null
 }
 
-function Invoke-CodexRtlInjection {
+function Invoke-CodexPlusInjection {
     param([Parameter(Mandatory)][int]$Port)
 
     if (-not $script:CodexPlusInjectedTargetIds) {
