@@ -405,7 +405,10 @@ function Get-CodexSidebarPagingPayload {
           return route && (
             route === startupRoute
             || route === decodedRoute
-            || (!startupRoute && route === '/')
+            // Recent Codex builds accept the open-in-new-window message but
+            // normalize its path back to the bare app URL. In that case the
+            // shared Plus-session queue is the only remaining handoff.
+            || (!startupRoute)
           ) && isNewWindowRequest;
         });
         if (matchIndex >= 0) {
@@ -3110,7 +3113,7 @@ function Get-CodexSidebarPagingPayload {
     let sectionContainer = shell.querySelector('[' + THREADS_CONTAINER_ATTR + ']');
     listElement = shell.querySelector('[' + SYNTHETIC_LIST_ATTR + ']');
     const threadsHeadingLabel = projectWindowContext
-      ? projectWindowContext.name + ' threads'
+      ? 'Recents (' + projectWindowContext.name + ')'
       : 'Recents';
     let headerButton = header?.querySelector('button[data-app-action-sidebar-section-toggle]') || header?.querySelector('button') || null;
 
@@ -3157,12 +3160,12 @@ function Get-CodexSidebarPagingPayload {
     const collapseButton = shell.querySelector('[' + ACTION_ATTR + '="collapse-list"]');
     if (collapseButton && sectionContainer) {
       const collapsed = sectionContainer.hidden || shell.getAttribute(COLLAPSED_ATTR) === 'true';
-      syncThreadToggleButton(collapseButton, collapsed, projectWindowContext ? projectWindowContext.name + ' threads' : 'Recents');
+      syncThreadToggleButton(collapseButton, collapsed, projectWindowContext ? 'Recents (' + projectWindowContext.name + ')' : 'Recents');
       bindSingleActivation(collapseButton, (event) => {
         const nextCollapsed = !sectionContainer.hidden;
         sectionContainer.hidden = nextCollapsed;
         shell.setAttribute(COLLAPSED_ATTR, nextCollapsed ? 'true' : 'false');
-        syncThreadToggleButton(collapseButton, nextCollapsed, projectWindowContext ? projectWindowContext.name + ' threads' : 'Recents');
+        syncThreadToggleButton(collapseButton, nextCollapsed, projectWindowContext ? 'Recents (' + projectWindowContext.name + ')' : 'Recents');
         event.preventDefault();
         event.stopPropagation();
         event.stopImmediatePropagation();

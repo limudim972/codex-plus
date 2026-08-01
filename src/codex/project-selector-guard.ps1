@@ -8,7 +8,6 @@ function Get-CodexProjectSelectorGuardPayload {
   const PROJECT_SELECTOR = 'button[data-composer-navigation-target="workspace-project"], button[aria-label^="Change project:"]';
   const EMPTY_PROJECT_SELECTOR = 'button[data-composer-navigation-target="workspace-project"][aria-label="Choose project"]';
   const CLEAR_PROJECT_SELECTOR = '[data-clear-project-button], button[aria-label="Don\'t work in a project"]';
-  const PROJECT_WINDOW_CLEAR_SELECTOR = '[' + PROJECT_WINDOW_MARKER + '] [data-clear-project-button], [' + PROJECT_WINDOW_MARKER + '] button[aria-label="Don\'t work in a project"]';
   const LOCKED_ATTR = 'data-codex-plus-project-selector-locked';
   const PENDING_ATTR = 'data-codex-plus-project-selector-pending';
   const STYLE_ID = 'codex-plus-project-selector-guard-style';
@@ -17,6 +16,7 @@ function Get-CodexProjectSelectorGuardPayload {
   let pendingButton = null;
   let lastAttemptAt = 0;
   let scheduled = false;
+  let projectClearedByUser = false;
   const ownedState = new WeakMap();
 
   function normalize(value) {
@@ -73,7 +73,7 @@ function Get-CodexProjectSelectorGuardPayload {
 
   function menuItemForContext(context) {
     const names = projectNames(context);
-    return Array.from(document.querySelectorAll('[role="menuitem"]')).find((item) => {
+    return Array.from(document.querySelectorAll('[role="menuitem"],[role="option"],[cmdk-item]')).find((item) => {
       const firstLine = normalize((item.innerText || '').split('\n')[0]);
       return names.some((name) => firstLine === name);
     }) || null;
@@ -124,14 +124,20 @@ function Get-CodexProjectSelectorGuardPayload {
     if (Date.now() - lastAttemptAt < 1000) return;
 
     const props = reactProps(button);
-    if (typeof props?.onPointerDown !== 'function') return;
+    const openProjectMenu = props?.onPointerDown;
+    const usesNativeClick = typeof openProjectMenu !== 'function';
     lastAttemptAt = Date.now();
     pending = true;
     pendingButton = button;
-    setPending(button);
 
     try {
-      props.onPointerDown(syntheticPointerEvent(button));
+      if (usesNativeClick) {
+        button.click();
+        setPending(button);
+      } else {
+        setPending(button);
+        openProjectMenu(syntheticPointerEvent(button));
+      }
     } catch {
       pending = false;
       pendingButton = null;
@@ -171,11 +177,6 @@ function Get-CodexProjectSelectorGuardPayload {
       '  opacity: 0.72 !important;',
       '  pointer-events: none !important;',
       '}',
-      PROJECT_WINDOW_CLEAR_SELECTOR + ' {',
-      '  cursor: default !important;',
-      '  pointer-events: none !important;',
-      '  display: none !important;',
-      '}',
       EMPTY_PROJECT_SELECTOR + ' [data-tooltip-visibility-target="true"] {',
       '  font-size: 0 !important;',
       '}',
@@ -190,7 +191,7 @@ function Get-CodexProjectSelectorGuardPayload {
 
   function isGuardedTarget(target) {
     const element = target instanceof Element
-      ? target.closest('[' + LOCKED_ATTR + '="true"],[' + PENDING_ATTR + '="true"],' + CLEAR_PROJECT_SELECTOR)
+      ? target.closest('[' + LOCKED_ATTR + '="true"],[' + PENDING_ATTR + '="true"]')
       : null;
     return Boolean(element);
   }
@@ -206,7 +207,7 @@ function Get-CodexProjectSelectorGuardPayload {
 
     for (const button of buttons) {
       if (selectedProjectName(button) === normalize(context.name)) lock(button);
-      else if (!pending) selectCurrentProject(button, context);
+      else if (!projectClearedByUser && !pending) selectCurrentProject(button, context);
     }
   }
 
@@ -221,6 +222,10 @@ function Get-CodexProjectSelectorGuardPayload {
 
   for (const eventType of ['pointerdown', 'click', 'keydown']) {
     document.addEventListener(eventType, (event) => {
+      if (projectWindowContext() && event.target instanceof Element && event.target.closest(CLEAR_PROJECT_SELECTOR)) {
+        projectClearedByUser = true;
+        return;
+      }
       if (!projectWindowContext() || !isGuardedTarget(event.target)) return;
       event.preventDefault();
       event.stopImmediatePropagation();

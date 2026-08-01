@@ -2,7 +2,7 @@ function Get-CodexNewWindowButtonPayload {
     @'
 (function () {
   const HEADER_SELECTOR = '.app-header-tint';
-  const MENU_GROUP_SELECTOR = 'button[aria-label="Help"]';
+  const MENU_GROUP_SELECTOR = '[role="menubar"][aria-label="Application menu"]';
   const BUTTON_ATTR = 'data-codex-plus-shared-window-button';
   const DASHBOARD_BUTTON_ATTR = 'data-codex-plus-usage-dashboard-button';
   const DASHBOARD_URL = 'http://127.0.0.1:3000/';
@@ -22,8 +22,10 @@ function Get-CodexNewWindowButtonPayload {
   if (window.__CODEX_PLUS_NEW_WINDOW_BUTTON && hasInstalledButtons()) return;
 
   function getMenuGroup() {
-    const helpButton = document.querySelector(HEADER_SELECTOR + ' ' + MENU_GROUP_SELECTOR);
-    return helpButton?.parentElement || null;
+    return document.querySelector(HEADER_SELECTOR + ' ' + MENU_GROUP_SELECTOR)
+      || document.querySelector(MENU_GROUP_SELECTOR)
+      || document.querySelector('button[aria-label="Help"]')?.parentElement
+      || null;
   }
 
   function projectContextFromRow(row) {
@@ -67,14 +69,20 @@ function Get-CodexNewWindowButtonPayload {
   }
 
   function getProjectStartupPath(context) {
-    // Carry the project identity in the native startup URL as well as the
-    // shared Plus-session queue. A newly created Electron window can begin
-    // loading before its localStorage view has observed the queue update.
-    if (!context?.id || !context?.name) return '/';
-    const params = new URLSearchParams();
-    params.set('codexPlusProjectId', context.id);
-    params.set('codexPlusProjectName', context.name);
-    return '/?' + params.toString();
+    // Codex validates this native route and silently rejects custom query
+    // parameters or the bare home route. Use a real local thread route to
+    // satisfy the native window validator; the project metadata still travels
+    // through the shared queue.
+    const activeThread = document.querySelector('[data-app-action-sidebar-thread-active="true"]')
+      || document.querySelector('[data-app-action-sidebar-thread-id]');
+    const projectThread = Array.from(document.querySelectorAll('[data-app-action-sidebar-thread-id]'))
+      .find((thread) => {
+        const projectName = thread.getAttribute('data-codex-plus-thread-project-title');
+        return context?.name && projectName === context.name;
+      });
+    const threadId = projectThread?.getAttribute('data-app-action-sidebar-thread-id')
+      || activeThread?.getAttribute('data-app-action-sidebar-thread-id');
+    return threadId ? '/local/' + encodeURIComponent(threadId) : '/local/' + encodeURIComponent('00000000-0000-0000-0000-000000000000');
   }
 
   function launchSharedWindow(context) {

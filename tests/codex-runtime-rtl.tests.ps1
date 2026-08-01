@@ -859,6 +859,8 @@ $projectSelectorGuardPayload = Get-CodexProjectSelectorGuardPayload
 Assert-True ($projectSelectorGuardPayload.Contains('data-composer-navigation-target="workspace-project"')) 'Project selector guard should target the native composer project control.'
 Assert-True ($projectSelectorGuardPayload.Contains('__CODEX_PLUS_PROJECT_WINDOW_CONTEXT')) 'Project selector guard should use the current project-window context.'
 Assert-True ($projectSelectorGuardPayload.Contains('onPointerDown')) 'Project selector guard should open the native project menu through its React control.'
+Assert-True ($projectSelectorGuardPayload.Contains('[role="option"],[cmdk-item]')) 'Project selector guard should support Codex project pickers rendered as command-menu options.'
+Assert-True ($projectSelectorGuardPayload.Contains('button.click()')) 'Project selector guard should fall back to the native DOM click when React props expose no menu opener.'
 Assert-True ($projectSelectorGuardPayload.Contains("dispatchEvent(new MouseEvent('click'")) 'Project selector guard should select the current project through the native menu item.'
 Assert-True ($projectSelectorGuardPayload.Contains('data-codex-plus-project-selector-locked')) 'Project selector guard should publish a locked-state marker.'
 Assert-True ($projectSelectorGuardPayload.Contains('pointer-events: none')) 'Project selector guard should make the current project control non-clickable.'
@@ -867,11 +869,10 @@ Assert-True ($projectSelectorGuardPayload.Contains('content: "Task"')) 'Project 
 Assert-True ($projectSelectorGuardPayload.Contains('font-size: 0 !important')) 'Project selector guard should hide the native Choose project text without changing the DOM text.'
 Assert-True ($projectSelectorGuardPayload.Contains("installStyle();`n    const context = projectWindowContext();")) 'Project selector guard should keep the Task label style active outside project windows.'
 Assert-True ($projectSelectorGuardPayload.Contains('data-clear-project-button')) 'Project selector guard should target the project clear control.'
-Assert-True ($projectSelectorGuardPayload.Contains('CLEAR_PROJECT_SELECTOR')) 'Project selector guard should keep the project clear control non-interactive.'
-Assert-True ($projectSelectorGuardPayload.Contains('PROJECT_WINDOW_CLEAR_SELECTOR')) 'Project selector guard should scope clear-control hiding to project windows.'
-Assert-True ($projectSelectorGuardPayload.Contains('display: none !important')) 'Project selector guard should hide the project clear X.'
+Assert-True ($projectSelectorGuardPayload.Contains('projectClearedByUser')) 'Project selector guard should remember when the user clears the project to return to a task.'
+Assert-True ($projectSelectorGuardPayload.Contains('projectClearedByUser = true')) 'Project selector guard should allow the user to clear the project and keep the composer in Task mode.'
 Assert-True ($projectSelectorGuardPayload.Contains('records.some(mutationTouchesGuard)')) 'Project selector guard should ignore unrelated composer and conversation mutations.'
-Assert-True ($projectSelectorGuardPayload.Contains("closest('[' + LOCKED_ATTR + '=""true""],[' + PENDING_ATTR + '=""true""],' + CLEAR_PROJECT_SELECTOR)")) 'Project selector guard should block clear-project events before native state changes.'
+Assert-True (-not ($projectSelectorGuardPayload.Contains('PROJECT_WINDOW_CLEAR_SELECTOR'))) 'Project selector guard should not hide the project clear X.'
 
 $sidebarPagingPayload = Get-CodexSidebarPagingPayload
 Assert-True ($sidebarPagingPayload.Contains("key: 'threads'")) 'Sidebar paging should define the synthetic Threads section.'
@@ -930,7 +931,7 @@ Assert-True ($sidebarPagingPayload.Contains("homeUrl.searchParams.set('initialRo
 Assert-True ($sidebarPagingPayload.Contains('__CODEX_PLUS_PROJECT_WINDOW_CONTEXT')) 'Project context should remain available to the menu action after route normalization.'
 Assert-True ($sidebarPagingPayload.Contains('reinforceProjectWindowMetadata')) 'Project-window metadata should remain visible to native title synchronization.'
 Assert-True ($sidebarPagingPayload.Contains('codexPlusPendingProjectWindows')) 'Project windows should claim queued context from the shared Plus session.'
-Assert-True ($sidebarPagingPayload.Contains("projectWindowContext.name + ' threads'")) 'Project windows should name the synthetic section after the project.'
+Assert-True ($sidebarPagingPayload.Contains("'Recents (' + projectWindowContext.name + ')'")) 'Project windows should name the synthetic section Recents with the project name.'
 Assert-True ($sidebarPagingPayload.Contains("spec.key === 'projects'")) 'Project windows should hide the native Projects section.'
 Assert-True ($sidebarPagingPayload.Contains("recentThreadEntries.length === 0 && !projectWindowContext")) 'Project windows should keep their named Threads section when the project has no threads.'
 Assert-True ($sidebarPagingPayload.Contains('data-codex-plus-thread-id')) 'Synthetic Threads rows should retain the source thread id for click proxying.'
@@ -1158,6 +1159,10 @@ Assert-True ($newWindowPayload.Contains('open-in-new-window')) 'New window paylo
 Assert-True ($newWindowPayload.Contains('data-codex-plus-project-window-button')) 'New window payload should add a project-row new-window action.'
 Assert-True ($newWindowPayload.Contains('codexPlusProjectId')) 'New window payload should carry the project id.'
 Assert-True ($newWindowPayload.Contains('codexPlusProjectName')) 'New window payload should carry the project name.'
+Assert-True ($newWindowPayload.Contains('[role="menubar"][aria-label="Application menu"]')) 'Top-menu controls should target the native application menubar.'
+Assert-True ($newWindowPayload.Contains("document.querySelector(MENU_GROUP_SELECTOR)")) 'Top-menu controls should work when the menubar is outside the header tint wrapper.'
+Assert-True ($newWindowPayload.Contains('Codex validates this native route')) 'New-window requests should use a route accepted by the native validator.'
+Assert-True ($newWindowPayload.Contains("return threadId ? '/local/'")) 'New-window requests should use a valid local conversation route.'
 Assert-True ($newWindowPayload.Contains("return '/';")) 'Project new-window payload should use the native bridge home route.'
 Assert-True ($newWindowPayload.Contains('createdAt: Date.now()')) 'Project new-window payload should timestamp the handoff for the newly created page.'
 Assert-True ($newWindowPayload.Contains('codexPlusPendingProjectWindows')) 'Project context should be queued through the shared Plus session.'
@@ -1197,6 +1202,9 @@ Assert-True ($planPayload.Contains('__CODEX_RTL_SHARED_HELPERS')) 'Plan payload 
 Assert-True ($planPayload.Contains("textAlign !== 'start'")) 'Plan payload should keep the plan surface aligned to the natural block start edge.'
 Assert-True ($planPayload.Contains('hasNestedTextBlock')) 'Plan payload should avoid flattening nested mixed-direction blocks.'
 Assert-True ($planPayload.Contains('records.some(mutationTouchesPlan)')) 'Plan RTL should ignore mutations outside the Plan panel.'
+$sidebarPayload = Get-CodexSidebarPagingPayload
+Assert-True ($sidebarPayload.Contains('Recent Codex builds accept the open-in-new-window message')) 'Project handoff should document the normalized new-window route fallback.'
+Assert-True ($sidebarPayload.Contains('|| (!startupRoute)')) 'Project handoff should consume a recent queued context when the native window strips the route.'
 
 $nodeCommand = Get-Command -Name node -ErrorAction SilentlyContinue
 if ($nodeCommand) {
