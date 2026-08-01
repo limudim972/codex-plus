@@ -506,6 +506,12 @@ public static class CodexPlusNativeWindows {
     [DllImport("user32.dll")]
     private static extern bool IsWindowVisible(IntPtr hWnd);
 
+    [DllImport("user32.dll")]
+    private static extern bool IsZoomed(IntPtr hWnd);
+
+    [DllImport("user32.dll")]
+    private static extern bool ShowWindow(IntPtr hWnd, int command);
+
     [DllImport("user32.dll", CharSet = CharSet.Unicode)]
     private static extern int GetWindowText(IntPtr hWnd, StringBuilder text, int count);
 
@@ -527,6 +533,13 @@ public static class CodexPlusNativeWindows {
         GetWindowText(hWnd, text, text.Capacity);
         return text.ToString();
     }
+
+    public static bool MaximizeWindow(IntPtr hWnd) {
+        if (hWnd == IntPtr.Zero || IsZoomed(hWnd)) {
+            return false;
+        }
+        return ShowWindow(hWnd, 3);
+    }
 }
 '@
     }
@@ -542,6 +555,63 @@ function Get-CodexVisibleWindowHandles {
     }
 
     return @([CodexPlusNativeWindows]::GetVisibleTopLevelWindows($ProcessId) | ForEach-Object { $_ })
+}
+
+function Set-CodexNativeWindowMaximized {
+    param([Parameter(Mandatory)][IntPtr]$WindowHandle)
+
+    if ($WindowHandle -eq [IntPtr]::Zero) {
+        return $false
+    }
+
+    if (-not ('CodexPlusNativeWindows' -as [type])) {
+        Get-CodexNativeWindowTitle -WindowHandle ([IntPtr]::Zero) | Out-Null
+    }
+
+    return [CodexPlusNativeWindows]::MaximizeWindow($WindowHandle)
+}
+
+function Maximize-CodexPlusWindows {
+    param(
+        [Parameter(Mandatory)][int]$Port,
+        [AllowEmptyString()][string]$LauncherKey
+    )
+
+    $matchingProcesses = @(
+        Get-CodexDesktopProcesses | Where-Object {
+            Test-CodexProcessMatchesCodexPlusInstance -Process $_ -Port $Port -LauncherKey $LauncherKey
+        }
+    )
+    if ($matchingProcesses.Count -eq 0) {
+        return $false
+    }
+
+    if (-not $script:CodexPlusMaximizedWindowHandles) {
+        $script:CodexPlusMaximizedWindowHandles = @{}
+    }
+
+    $currentWindowHandleKeys = @{}
+    $maximized = $false
+    foreach ($process in $matchingProcesses) {
+        foreach ($windowHandle in @(Get-CodexVisibleWindowHandles -ProcessId $process.ProcessId)) {
+            $handleKey = '{0}:{1}' -f $process.ProcessId, [int64]$windowHandle
+            $currentWindowHandleKeys[$handleKey] = $true
+            if (-not $script:CodexPlusMaximizedWindowHandles.ContainsKey($handleKey)) {
+                $script:CodexPlusMaximizedWindowHandles[$handleKey] = $true
+                if (Set-CodexNativeWindowMaximized -WindowHandle ([IntPtr]$windowHandle)) {
+                    $maximized = $true
+                }
+            }
+        }
+    }
+
+    foreach ($handleKey in @($script:CodexPlusMaximizedWindowHandles.Keys)) {
+        if (-not $currentWindowHandleKeys.ContainsKey($handleKey)) {
+            $script:CodexPlusMaximizedWindowHandles.Remove($handleKey)
+        }
+    }
+
+    return $maximized
 }
 
 function Update-CodexWindowTitles {
@@ -1186,6 +1256,10 @@ function Watch-CodexCloseToQuit {
         if ($visibleProcessCount -gt 0) {
             $closeCleanupArmed = $true
             $missingVisibleWindowCount = 0
+            try {
+                Maximize-CodexPlusWindows -Port $Port -LauncherKey $LauncherKey | Out-Null
+            } catch {
+            }
             try {
                 Invoke-CodexPlusInjection -Port $Port | Out-Null
             } catch {

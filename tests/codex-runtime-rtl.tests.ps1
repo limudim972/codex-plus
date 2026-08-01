@@ -150,7 +150,7 @@ Assert-True (-not $installBody.Contains('Invoke-CodexRtlInjection')) 'Patch flow
 $launchBody = (Get-Command -Name Launch-CodexRtl -CommandType Function).ScriptBlock.ToString()
 Assert-True ($launchBody.Contains('Start-CodexForRtl')) 'Codex launch should delegate to the approved-verb launch helper.'
 $watchBody = (Get-Command -Name Watch-CodexCloseToQuit -CommandType Function).ScriptBlock.ToString()
-Assert-True ($watchBody.Contains('Invoke-CodexRtlInjection')) 'Codex watchdog should inject the Plus payload into newly created windows.'
+Assert-True ($watchBody.Contains('Invoke-CodexPlusInjection')) 'Codex watchdog should inject the Plus payload into newly created windows.'
 Assert-True ($watchBody.Contains('MissingProcessGracePolls')) 'Codex watchdog should tolerate transient process-discovery gaps instead of abandoning the instance.'
 Assert-True ($watchBody.Contains('$missingProcessCount = 0')) 'Codex watchdog should reset its transient process-discovery counter after the instance reappears.'
 Assert-True ($watchBody.Contains('$closeCleanupArmed = $false')) 'Codex watchdog cleanup should start disarmed while the initial window is launching.'
@@ -959,6 +959,9 @@ Assert-True ($sidebarPagingPayload.Contains("indicator.style.left = '0px'")) 'Pr
 Assert-True ($sidebarPagingPayload.Contains("button.classList.add('pl-2')")) 'Synthetic thread rows should match the project-thread text inset without moving the preload indicator.'
 Assert-True ($sidebarPagingPayload.Contains("button.style.paddingLeft = '8px'")) 'Synthetic thread rows should apply the small project-thread text inset explicitly.'
 Assert-True ($sidebarPagingPayload.Contains("element.classList.contains('w-4')")) 'Synthetic thread rows should remove the inherited project-thread icon slot.'
+Assert-True ($sidebarPagingPayload.Contains("titleElement.style.direction = 'ltr'")) 'Synthetic Recents titles should keep a stable visual starting edge across languages.'
+Assert-True ($sidebarPagingPayload.Contains("titleElement.style.textAlign = 'left'")) 'Synthetic Recents titles should not inherit per-language right alignment.'
+Assert-True ($sidebarPagingPayload.Contains("titleHost.style.paddingLeft = '24px'")) 'Synthetic Recents titles should reserve a fixed left inset for status indicators.'
 Assert-True ($sidebarPagingPayload.Contains('applySyntheticThreadIndent(row);')) 'Synthetic thread rows should normalize the inset when existing rows are reused.'
 Assert-True ($sidebarPagingPayload.Contains("aria-label', 'Preloading thread'")) 'Preload loading indicators should be accessible.'
 Assert-True ($sidebarPagingPayload.Contains("aria-label', 'Thread preloaded'")) 'Preload completion indicators should be accessible.'
@@ -1158,6 +1161,12 @@ Assert-True ($launchSource.Contains('[int]$PollMilliseconds = 250')) 'The close 
 Assert-True ($launchSource.Contains('$seenProcessIds = [System.Collections.Generic.HashSet[int]]::new()')) 'The close watchdog should retain observed instance process ids for reliable cleanup.'
 Assert-True ($launchSource.Contains('& $stopSeenProcesses')) 'The close watchdog should terminate observed instance processes after the last window closes.'
 Assert-True ($launchSource.Contains('[int]$DashboardProcessId = 0')) 'The close watchdog should accept the dashboard process id passed by the launcher.'
+Assert-True ($launchSource.Contains('ShowWindow(IntPtr hWnd, int command)')) 'Native window handling should expose the Windows maximize operation.'
+Assert-True ($launchSource.Contains('MaximizeWindow(IntPtr hWnd)')) 'Native window handling should maximize only the managed window handle.'
+Assert-True ($launchSource.Contains('function Maximize-CodexPlusWindows')) 'The Plus runtime should have a managed-window maximize helper.'
+Assert-True ($watchBody.Contains('Maximize-CodexPlusWindows -Port $Port -LauncherKey $LauncherKey')) 'The close watchdog should maximize newly opened Plus windows.'
+Assert-True ($launchSource.Contains('$script:CodexPlusMaximizedWindowHandles')) 'Window maximization should retain per-handle state.'
+Assert-True ($launchSource.Contains('$currentWindowHandleKeys')) 'Window maximization should distinguish closed windows from minimized windows.'
 Assert-True ($launchSource.Contains('A newly opened project target exposes its project context')) 'Native titles should be synchronized after each newly injected target.'
 Assert-True ($launchSource.Contains('__CODEX_PLUS_USAGE_WINDOW_TITLE')) 'Native title synchronization should publish the same usage title to the app header.'
 $contextBadgePayload = Get-CodexContextBadgePayload

@@ -2719,6 +2719,19 @@ function Get-CodexSidebarPagingPayload {
     const titleElement = row.querySelector('[data-thread-title]');
     const titleHost = titleElement?.parentElement;
     const titleRow = titleHost?.parentElement;
+    if (titleElement) {
+      // Recents use one stable visual starting edge for every language. The
+      // native row may carry a per-title RTL direction attribute, which
+      // right-aligns Hebrew text and makes otherwise identical Recents rows
+      // appear to have different margins.
+      titleElement.style.direction = 'ltr';
+      titleElement.style.textAlign = 'left';
+      titleElement.style.unicodeBidi = 'normal';
+      if (titleHost) {
+        titleHost.style.paddingLeft = '24px';
+        titleHost.style.paddingRight = '24px';
+      }
+    }
     for (const element of Array.from(titleRow?.children || [])) {
       if (
         element !== titleHost
