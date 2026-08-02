@@ -403,6 +403,56 @@ function Format-CodexUsageWindowTitle {
 }
 
 $script:CodexPlusRateLimitTitleCache = $null
+$script:CodexPlusUsageRefreshRequested = $false
+$script:CodexPlusUsageWatcher = $null
+$script:CodexPlusUsageWatcherEvents = @()
+
+function Start-CodexUsageSessionWatcher {
+    if ($script:CodexPlusUsageWatcher) { return }
+    $sessionsRoot = Join-Path $env:USERPROFILE '.codex\sessions'
+    if (-not (Test-Path -LiteralPath $sessionsRoot -PathType Container)) { return }
+    $watcher = [System.IO.FileSystemWatcher]::new($sessionsRoot, '*.jsonl')
+    $watcher.IncludeSubdirectories = $true
+    $watcher.NotifyFilter = [System.IO.NotifyFilters]'FileName, LastWrite, Size'
+    $watcher.EnableRaisingEvents = $true
+    $action = { $script:CodexPlusUsageRefreshRequested = $true }
+    $script:CodexPlusUsageWatcherEvents = @(
+        Register-ObjectEvent -InputObject $watcher -EventName Changed -Action $action
+        Register-ObjectEvent -InputObject $watcher -EventName Created -Action $action
+        Register-ObjectEvent -InputObject $watcher -EventName Renamed -Action $action
+    )
+    $script:CodexPlusUsageWatcher = $watcher
+}
+
+function Stop-CodexUsageSessionWatcher {
+    foreach ($event in @($script:CodexPlusUsageWatcherEvents)) {
+        Unregister-Event -SourceIdentifier $event.Name -ErrorAction SilentlyContinue
+        Remove-Job -Id $event.Id -Force -ErrorAction SilentlyContinue
+    }
+    $script:CodexPlusUsageWatcherEvents = @()
+    if ($script:CodexPlusUsageWatcher) {
+        $script:CodexPlusUsageWatcher.EnableRaisingEvents = $false
+        $script:CodexPlusUsageWatcher.Dispose()
+        $script:CodexPlusUsageWatcher = $null
+    }
+}
+
+function Get-CodexLatestRateLimitSummary {
+    $sessionsRoot = Join-Path $env:USERPROFILE '.codex\sessions'
+    $latest = Get-ChildItem -LiteralPath $sessionsRoot -Recurse -Filter '*.jsonl' -File -ErrorAction SilentlyContinue |
+        Sort-Object LastWriteTime -Descending | Select-Object -First 1
+    if (-not $latest) { return $null }
+
+    $primary = $null
+    foreach ($line in Get-Content -LiteralPath $latest.FullName -ErrorAction SilentlyContinue) {
+        try { $obj = $line | ConvertFrom-Json } catch { continue }
+        $payload = if ($obj.payload -is [pscustomobject]) { $obj.payload } elseif ($obj.event_msg -is [pscustomobject]) { $obj.event_msg } else { $null }
+        if ($payload -and $payload.rate_limits -and $payload.rate_limits.primary) {
+            $primary = $payload.rate_limits.primary
+        }
+    }
+    return $primary
+}
 
 function Get-CodexUsageWindowTitle {
     $now = [DateTimeOffset]::UtcNow
@@ -415,8 +465,7 @@ function Get-CodexUsageWindowTitle {
     }
 
     try {
-        $summary = Invoke-RestMethod -Uri 'http://127.0.0.1:3000/api/summary' -UseBasicParsing -TimeoutSec 1
-        $primary = if ($summary.data) { $summary.data.primary_window } else { $null }
+        $primary = Get-CodexLatestRateLimitSummary
         $cache = [pscustomobject]@{
             fetched_at = $now
             used_percent = if ($primary) { $primary.used_percent } else { $null }
@@ -1181,6 +1230,7 @@ function Watch-CodexCloseToQuit {
     $closeCleanupArmed = $false
     $missingVisibleWindowCount = 0
     $missingProcessCount = 0
+    Start-CodexUsageSessionWatcher
     $seenProcessIds = [System.Collections.Generic.HashSet[int]]::new()
     $stopSeenProcesses = {
         foreach ($processId in @($seenProcessIds)) {
@@ -1211,6 +1261,7 @@ function Watch-CodexCloseToQuit {
             }
             if (-not $seenMatchingProcess) {
                 & $stopDashboard
+                Stop-CodexUsageSessionWatcher
                 return
             }
 
@@ -1220,6 +1271,7 @@ function Watch-CodexCloseToQuit {
                 # this instance has exposed its initial visible window.
                 if ([DateTime]::UtcNow -ge $startupDeadline) {
                     & $stopDashboard
+                    Stop-CodexUsageSessionWatcher
                     return
                 }
                 Start-Sleep -Milliseconds $PollMilliseconds
@@ -1262,7 +1314,10 @@ function Watch-CodexCloseToQuit {
                 Invoke-CodexPlusInjection -Port $Port | Out-Null
             } catch {
             }
-            Update-CodexWindowTitles -Port $Port -LauncherKey $LauncherKey | Out-Null
+            if ($script:CodexPlusUsageRefreshRequested) {
+                $script:CodexPlusUsageRefreshRequested = $false
+                Update-CodexWindowTitles -Port $Port -LauncherKey $LauncherKey | Out-Null
+            }
         } else {
             if ($closeCleanupArmed) {
                 $missingVisibleWindowCount++
