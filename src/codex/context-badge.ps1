@@ -201,6 +201,64 @@ function Get-CodexContextBadgePayload {
   };
 
   window.addEventListener('codex-plus-usage-updated', apply);
+  window.addEventListener('codex-plus-session-alert', (event) => {
+    const detail = event?.detail || {};
+    if (document.querySelector('[data-codex-plus-session-alert]')) return;
+    const alert = document.createElement('div');
+    alert.setAttribute('data-codex-plus-session-alert', 'true');
+    alert.setAttribute('role', 'alertdialog');
+    alert.setAttribute('aria-label', 'Codex session monitor alert');
+    const title = document.createElement('div');
+    title.textContent = 'Session may have stopped early';
+    title.style.fontWeight = '700';
+    const details = document.createElement('div');
+    details.textContent = [
+      'Project: ' + String(detail.project || 'unknown'),
+      'Name: ' + String(detail.name || detail.session || 'unknown'),
+      'Session: ' + String(detail.session || 'unknown'),
+      'Turn: ' + String(detail.turn || 'unknown'),
+      'Path: ' + String(detail.path || 'unknown'),
+      'Last event: ' + String(detail.last_type || 'unknown'),
+      'Age: ' + String(detail.age_seconds || '?') + ' seconds',
+      'Triggered by: ' + String(detail.trigger || 'missing terminal event')
+    ].join('\n');
+    details.style.whiteSpace = 'pre-wrap';
+    details.style.marginTop = '6px';
+    const dismiss = document.createElement('button');
+    dismiss.type = 'button';
+    dismiss.textContent = 'Dismiss';
+    dismiss.setAttribute('aria-label', 'Dismiss session monitor alert');
+    dismiss.style.marginTop = '10px';
+    dismiss.style.padding = '4px 10px';
+    dismiss.style.cursor = 'pointer';
+    dismiss.addEventListener('click', () => alert.remove());
+    const copy = document.createElement('button');
+    copy.type = 'button';
+    copy.textContent = 'Copy';
+    copy.setAttribute('aria-label', 'Copy session monitor alert details');
+    copy.style.marginTop = '10px';
+    copy.style.marginInlineStart = '6px';
+    copy.style.padding = '4px 10px';
+    copy.style.cursor = 'pointer';
+    copy.addEventListener('click', async () => {
+      const text = [title.textContent, details.textContent].join('\n');
+      try {
+        await navigator.clipboard.writeText(text);
+      } catch {
+        const input = document.createElement('textarea');
+        input.value = text;
+        document.body.appendChild(input);
+        input.select();
+        document.execCommand('copy');
+        input.remove();
+      }
+      copy.textContent = 'Copied';
+      alert.remove();
+    });
+    alert.append(title, details, dismiss, copy);
+    Object.assign(alert.style, { position:'fixed', top:'56px', left:'50%', transform:'translateX(-50%)', zIndex:'2147483647', padding:'12px 16px', minWidth:'360px', maxWidth:'min(720px, calc(100vw - 32px))', borderRadius:'8px', background:'#7f1d1d', color:'#fff', font:'13px system-ui', boxShadow:'0 4px 18px #0008' });
+    (document.body || document.documentElement).appendChild(alert);
+  });
 
   if (document.readyState === 'loading') {
     document.addEventListener('DOMContentLoaded', start, { once: true });

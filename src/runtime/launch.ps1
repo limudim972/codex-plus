@@ -403,9 +403,115 @@ function Format-CodexUsageWindowTitle {
 }
 
 $script:CodexPlusRateLimitTitleCache = $null
+$script:CodexPlusUsageChangedPaths = @()
 $script:CodexPlusUsageRefreshRequested = $false
 $script:CodexPlusUsageWatcher = $null
 $script:CodexPlusUsageWatcherEvents = @()
+$script:CodexPlusPrematureAlerted = @{}
+$script:CodexPlusPrematurePending = [hashtable]::Synchronized(@{})
+$script:CodexPlusChangedSessionPaths = [hashtable]::Synchronized(@{})
+
+function Get-CodexSessionDisplayName {
+    param([Parameter(Mandatory)][string]$SessionId)
+    $indexPath = Join-Path $env:USERPROFILE '.codex\session_index.jsonl'
+    if (-not (Test-Path -LiteralPath $indexPath)) { return $SessionId }
+    foreach ($line in @(Get-Content -LiteralPath $indexPath -ErrorAction SilentlyContinue)) {
+        try { $entry = $line | ConvertFrom-Json } catch { continue }
+        if ([string]$entry.id -eq $SessionId -and $entry.thread_name) { return [string]$entry.thread_name }
+    }
+    return $SessionId
+}
+
+function Update-CodexPrematureSessionState {
+    param([Parameter(Mandatory)][string[]]$Paths)
+    $sessionsRoot = Join-Path $env:USERPROFILE '.codex\sessions'
+    if (-not (Test-Path -LiteralPath $sessionsRoot -PathType Container)) { return @() }
+    foreach ($path in @($Paths | Select-Object -Unique)) {
+        if (-not $path.StartsWith($sessionsRoot, [StringComparison]::OrdinalIgnoreCase)) { continue }
+        if (-not (Test-Path -LiteralPath $path -PathType Leaf)) { $script:CodexPlusPrematurePending.Remove($path); continue }
+        $file = Get-Item -LiteralPath $path -ErrorAction SilentlyContinue
+        if (-not $file -or $file.Extension -ne '.jsonl') { continue }
+        $last = @(Get-Content -LiteralPath $file.FullName -Tail 4 -ErrorAction SilentlyContinue | ForEach-Object { try { $_ | ConvertFrom-Json } catch { $null } } | Where-Object { $_ } | Select-Object -Last 1)
+        if ($last.Count -eq 0) { continue }
+        $payload = $last[0].payload
+        if (-not $payload) { continue }
+        if ($payload.type -in @('task_complete', 'turn_aborted')) {
+            $script:CodexPlusPrematurePending.Remove($path)
+            continue
+        }
+        $project = if ($payload.cwd) { Split-Path -Leaf ([string]$payload.cwd) } else { 'unknown' }
+        $sessionId = if ($file.BaseName -match '(?<id>[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12})$') { $Matches.id } else { $file.BaseName }
+        $script:CodexPlusPrematurePending[$path] = [pscustomobject]@{ name = Get-CodexSessionDisplayName -SessionId $sessionId; session = $sessionId; turn = if ($payload.turn_id) { [string]$payload.turn_id } else { '' }; project = $project; path = $file.FullName; last_type = [string]$payload.type; last_activity = $file.LastWriteTimeUtc }
+    }
+}
+
+function Get-CodexPrematureSessionAlerts {
+    $now = [DateTime]::UtcNow
+    $alerts = @()
+    foreach ($path in @($script:CodexPlusPrematurePending.Keys)) {
+        $pending = $script:CodexPlusPrematurePending[$path]
+        if (-not $pending) { continue }
+        $ageSeconds = [int]($now - $pending.last_activity).TotalSeconds
+        if ($ageSeconds -lt 120) { continue }
+        $key = "$path|$($pending.last_activity.Ticks)"
+        if ($script:CodexPlusPrematureAlerted.ContainsKey($key)) { continue }
+        $script:CodexPlusPrematureAlerted[$key] = $true
+        $pending | Add-Member -NotePropertyName age_seconds -NotePropertyValue $ageSeconds -Force
+        $alerts += $pending
+    }
+    return $alerts
+}
+
+function Show-CodexPrematureSessionAlert {
+    param([Parameter(Mandatory)]$Alert)
+    $message = @"
+Codex session may have stopped early.
+
+Project: $($Alert.project)
+Name: $($Alert.name)
+Session: $($Alert.session)
+Path: $($Alert.path)
+Last event: $($Alert.last_type)
+Age: $($Alert.age_seconds) seconds
+Triggered by: No new session row was written for at least 120 seconds, and the last row was not task_complete or turn_aborted.
+"@
+    $popupScript = @'
+Add-Type -AssemblyName System.Windows.Forms
+Add-Type -AssemblyName System.Drawing
+$form = New-Object Windows.Forms.Form
+$form.Text = 'Codex Plus session monitor'
+$form.Size = New-Object Drawing.Size(680, 330)
+$form.StartPosition = 'CenterScreen'
+$form.TopMost = $true
+$form.MinimizeBox = $false
+$form.MaximizeBox = $false
+$form.FormBorderStyle = 'FixedDialog'
+$label = New-Object Windows.Forms.Label
+$label.Text = __CODEX_MESSAGE__
+$label.Dock = 'Fill'
+$label.Padding = New-Object Windows.Forms.Padding(18)
+$label.Font = New-Object Drawing.Font('Segoe UI', 10)
+$label.AutoSize = $false
+$label.Height = 240
+$label.Anchor = 'Top,Left,Right'
+$form.Controls.Add($label)
+$button = New-Object Windows.Forms.Button
+$button.Text = 'Dismiss'
+$button.Width = 100
+$button.Height = 32
+$button.Left = 550
+$button.Top = 255
+$button.Add_Click({ $form.Close() })
+$form.Controls.Add($button)
+$form.AcceptButton = $button
+[void]$form.ShowDialog()
+'@
+    $popupScript = $popupScript.Replace('__CODEX_MESSAGE__', ($message | ConvertTo-Json -Compress))
+    $encoded = [Convert]::ToBase64String([Text.Encoding]::Unicode.GetBytes($popupScript))
+    try { Start-Process powershell.exe -WindowStyle Hidden -ArgumentList @('-NoProfile','-ExecutionPolicy','Bypass','-EncodedCommand',$encoded) | Out-Null } catch { }
+    $literal = (@{ name=$Alert.name; session=$Alert.session; turn=$Alert.turn; project=$Alert.project; path=$Alert.path; last_type=$Alert.last_type; age_seconds=$Alert.age_seconds; trigger='A new turn started after monitor startup and remained without task_complete or turn_aborted for at least 120 seconds.' } | ConvertTo-Json -Compress).Replace('\\', '\\\\').Replace('`"', '\\`"')
+    $script:CodexPlusPrematureAlertPayload = $literal
+}
 
 function Start-CodexUsageSessionWatcher {
     if ($script:CodexPlusUsageWatcher) { return }
@@ -415,7 +521,11 @@ function Start-CodexUsageSessionWatcher {
     $watcher.IncludeSubdirectories = $true
     $watcher.NotifyFilter = [System.IO.NotifyFilters]'FileName, LastWrite, Size'
     $watcher.EnableRaisingEvents = $true
-    $action = { $script:CodexPlusUsageRefreshRequested = $true }
+    $action = {
+        $script:CodexPlusUsageRefreshRequested = $true
+        $changedPath = [string]$Event.SourceEventArgs.FullPath
+        if ($changedPath) { $script:CodexPlusChangedSessionPaths[$changedPath] = $true }
+    }
     $script:CodexPlusUsageWatcherEvents = @(
         Register-ObjectEvent -InputObject $watcher -EventName Changed -Action $action
         Register-ObjectEvent -InputObject $watcher -EventName Created -Action $action
@@ -438,13 +548,22 @@ function Stop-CodexUsageSessionWatcher {
 }
 
 function Get-CodexLatestRateLimitSummary {
+    param([string[]]$Paths = @())
     $sessionsRoot = Join-Path $env:USERPROFILE '.codex\sessions'
-    $latest = Get-ChildItem -LiteralPath $sessionsRoot -Recurse -Filter '*.jsonl' -File -ErrorAction SilentlyContinue |
-        Sort-Object LastWriteTime -Descending | Select-Object -First 1
+    $latest = if (@($Paths).Count -gt 0) {
+        @($Paths | Where-Object { $_ -and (Test-Path -LiteralPath $_ -PathType Leaf) } | ForEach-Object { Get-Item -LiteralPath $_ -ErrorAction SilentlyContinue } |
+            Where-Object { $_.Extension -eq '.jsonl' } | Sort-Object LastWriteTime -Descending | Select-Object -First 1)
+    } else {
+        Get-ChildItem -LiteralPath $sessionsRoot -Recurse -Filter '*.jsonl' -File -ErrorAction SilentlyContinue |
+            Sort-Object LastWriteTime -Descending | Select-Object -First 1
+    }
     if (-not $latest) { return $null }
 
     $primary = $null
-    foreach ($line in Get-Content -LiteralPath $latest.FullName -ErrorAction SilentlyContinue) {
+    # Usage refreshes inspect only the newest changed session and its last
+    # ten JSONL records. Keep the previous usage cache when no token_count is
+    # present in that bounded window.
+    foreach ($line in Get-Content -LiteralPath $latest.FullName -Tail 10 -ErrorAction SilentlyContinue) {
         try { $obj = $line | ConvertFrom-Json } catch { continue }
         $payload = if ($obj.payload -is [pscustomobject]) { $obj.payload } elseif ($obj.event_msg -is [pscustomobject]) { $obj.event_msg } else { $null }
         if ($payload -and $payload.rate_limits -and $payload.rate_limits.primary) {
@@ -465,7 +584,9 @@ function Get-CodexUsageWindowTitle {
     }
 
     try {
-        $primary = Get-CodexLatestRateLimitSummary
+        $changedPaths = @($script:CodexPlusUsageChangedPaths)
+        $script:CodexPlusUsageChangedPaths = @()
+        $primary = Get-CodexLatestRateLimitSummary -Paths $changedPaths
         $cache = [pscustomobject]@{
             fetched_at = $now
             used_percent = if ($primary) { $primary.used_percent } else { $null }
@@ -1314,7 +1435,22 @@ function Watch-CodexCloseToQuit {
             }
             if ($script:CodexPlusUsageRefreshRequested) {
                 $script:CodexPlusUsageRefreshRequested = $false
+                $changedPaths = @($script:CodexPlusChangedSessionPaths.Keys)
+                foreach ($changedPath in $changedPaths) { $script:CodexPlusChangedSessionPaths.Remove($changedPath) }
+                $script:CodexPlusUsageChangedPaths = $changedPaths
+                $script:CodexPlusRateLimitTitleCache = $null
                 Update-CodexWindowTitles -Port $Port -LauncherKey $LauncherKey | Out-Null
+                if ($changedPaths.Count -gt 0) {
+                    Update-CodexPrematureSessionState -Paths $changedPaths
+                }
+            }
+            foreach ($alert in @(Get-CodexPrematureSessionAlerts)) {
+                Show-CodexPrematureSessionAlert -Alert $alert
+                try {
+                    $alertJson = $script:CodexPlusPrematureAlertPayload
+                    $command = New-CodexCdpCommand -Id 91 -Method 'Runtime.evaluate' -Params @{ expression = "window.dispatchEvent(new CustomEvent('codex-plus-session-alert',{detail:$alertJson}));" }
+                    foreach ($target in @(Get-CodexDevToolsTargets -Port $Port | Where-Object { $_.type -eq 'page' -and $_.webSocketDebuggerUrl })) { Invoke-CodexCdpCommand -WebSocketDebuggerUrl $target.webSocketDebuggerUrl -Command $command | Out-Null }
+                } catch { }
             }
         } else {
             if ($closeCleanupArmed) {
@@ -1455,6 +1591,15 @@ function Invoke-CodexPlusInjection {
             # A newly opened project target exposes its project context as soon as
             # this injection completes. Sync native titles before moving on to
             # other targets so the taskbar does not wait for the whole batch.
+            Update-CodexWindowTitles -Port $Port | Out-Null
+            # A newly-created project target can finish adopting its pending
+            # context just after Runtime.evaluate returns. Retry briefly so
+            # the native taskbar title observes the project name as soon as it
+            # becomes available, instead of leaving the window on its launch
+            # title until the next polling cycle.
+            Start-Sleep -Milliseconds 100
+            Update-CodexWindowTitles -Port $Port | Out-Null
+            Start-Sleep -Milliseconds 250
             Update-CodexWindowTitles -Port $Port | Out-Null
         } catch {
             Write-Warn "Codex Plus injection failed for target '$($target.title)': $($_.Exception.Message)"

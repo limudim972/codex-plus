@@ -6,7 +6,7 @@ function Get-CodexNewChatButtonPayload {
   const COMMIT_PUSH_LABEL = 'Commit or push';
   const NATIVE_NEW_CHAT_SELECTOR = 'button[aria-label="New chat"]';
   const COMPOSER_ACCESS_CELL_SELECTOR = 'div.col-start-1.row-start-2';
-  const PROJECT_BUTTON_SELECTOR = 'button[aria-label^="Project:"], button[aria-label^="Change project:"]';
+  const PROJECT_BUTTON_SELECTOR = 'button[aria-label^="Project:"], button[aria-label^="Change project:"], button[aria-label="Choose project"]';
   const PROJECT_CHOOSER_SELECTOR = 'button[aria-label="Choose project"], button[data-composer-navigation-target="workspace-project"][aria-label="Choose project"]';
   const PROJECT_OPTION_SELECTOR = '[role="option"], [role="menuitem"]';
   const COMPOSER_ROOT_SELECTOR = '[data-codex-composer-root]';
@@ -15,6 +15,7 @@ function Get-CodexNewChatButtonPayload {
   const PERSISTENT_UTILITY_BAR_ATTR = 'data-codex-plus-persistent-composer-utility-bar';
   const CONVERSATION_ID_ATTR = 'data-above-composer-conversation-id';
   const UTILITY_BAR_STORAGE_KEY = 'codex-plus-composer-utility-bars-v1';
+  const PENDING_CONTEXT_STORAGE_KEY = 'codex-plus-new-chat-pending-context-v1';
   const MAX_STORED_UTILITY_BARS = 50;
   const RESTORE_TIMEOUT_MS = 15000;
   const RESTORE_POLL_INTERVAL_MS = 120;
@@ -22,6 +23,7 @@ function Get-CodexNewChatButtonPayload {
   let selectedThreadProjectName = '';
   let selectedThreadProjectKnown = false;
   let selectedThreadIsTask = false;
+  let projectSelectionInFlight = '';
   let commitPushAvailabilityObserver = null;
   let observedNativeCommitPushButton = null;
 
@@ -466,7 +468,10 @@ function Get-CodexNewChatButtonPayload {
 
   function findCurrentProjectButton() {
     return Array.from(document.querySelectorAll(PROJECT_BUTTON_SELECTOR))
-      .find((button) => isVisibleElement(button) && readProjectButtonName(button))
+      .find((button) => isVisibleElement(button)
+        && !button.closest('[' + PERSISTENT_UTILITY_BAR_ATTR + ']')
+        && getComputedStyle(button).pointerEvents !== 'none'
+        && readProjectButtonName(button))
       || null;
   }
 
@@ -484,24 +489,34 @@ function Get-CodexNewChatButtonPayload {
 
   function findProjectChooserButton() {
     return Array.from(document.querySelectorAll(PROJECT_CHOOSER_SELECTOR))
-      .find((button) => isVisibleElement(button))
+      .find((button) => isVisibleElement(button)
+        && !button.closest('[' + PERSISTENT_UTILITY_BAR_ATTR + ']')
+        && getComputedStyle(button).pointerEvents !== 'none')
       || null;
   }
 
   function currentProjectName() {
-    if (selectedThreadProjectKnown && selectedThreadIsTask) return '';
     const directContext = normalizeText(window.__CODEX_PLUS_PROJECT_WINDOW_CONTEXT?.name);
     if (directContext) return directContext;
 
-    if (selectedThreadProjectKnown) return selectedThreadIsTask ? '' : selectedThreadProjectName;
-
-    const sidebarProject = currentSidebarProjectName();
-    if (sidebarProject) return sidebarProject;
+    const activeSyntheticThread = document.querySelector('[data-codex-plus-sidebar-synthetic-row="threads"][data-app-action-sidebar-thread-active="true"]');
+    if (activeSyntheticThread) {
+      const activeProjectName = normalizeText(activeSyntheticThread.getAttribute('data-codex-plus-thread-project-title'));
+      if (activeProjectName) return activeProjectName;
+      if (normalizeText(activeSyntheticThread.getAttribute('data-codex-plus-source-list-label')) === 'Tasks') return '';
+    }
 
     const currentButton = findCurrentProjectButton();
     const selectedName = readProjectButtonName(currentButton);
     if (selectedName) return selectedName;
     if (findProjectChooserButton()) return '';
+
+    if (selectedThreadProjectKnown && selectedThreadIsTask) return '';
+    if (selectedThreadProjectKnown) return selectedThreadProjectName;
+
+    const sidebarProject = currentSidebarProjectName();
+    if (sidebarProject) return sidebarProject;
+
     return '';
   }
 
@@ -527,13 +542,10 @@ function Get-CodexNewChatButtonPayload {
     selectedThreadIsTask = !projectName;
     if (projectName) {
       window.setTimeout(() => selectComposerProject(projectName), 120);
-      window.setTimeout(() => selectComposerProject(projectName), 600);
     } else {
       window.setTimeout(clearComposerProject, 120);
-      window.setTimeout(clearComposerProject, 600);
     }
     window.setTimeout(syncPersistentProjectLabels, 120);
-    window.setTimeout(syncPersistentProjectLabels, 600);
   }
 
   function syncSelectedThreadFromDom() {
@@ -541,25 +553,55 @@ function Get-CodexNewChatButtonPayload {
     if (!row) return;
     const projectName = normalizeText(row.getAttribute('data-codex-plus-thread-project-title'));
     const isTask = !projectName && normalizeText(row.getAttribute('data-codex-plus-source-list-label')) === 'Tasks';
-    if (selectedThreadProjectKnown && selectedThreadIsTask === isTask && selectedThreadProjectName === projectName) return;
+    const currentButton = findCurrentProjectButton();
+    const currentName = readProjectButtonName(currentButton);
+    const needsProjectSelection = Boolean(projectName && (!currentButton || currentName !== projectName));
+    const threadStateUnchanged = selectedThreadProjectKnown
+      && selectedThreadIsTask === isTask
+      && selectedThreadProjectName === projectName;
+    if (threadStateUnchanged && !needsProjectSelection) return;
     selectedThreadProjectKnown = true;
     selectedThreadIsTask = isTask;
     selectedThreadProjectName = projectName;
     syncPersistentProjectLabels();
+    if (projectName && needsProjectSelection) {
+      window.setTimeout(() => selectComposerProject(projectName), 120);
+    } else if (isTask && !currentButton) {
+      window.setTimeout(clearComposerProject, 120);
+    }
   }
 
   function selectComposerProject(projectName) {
     const target = normalizeText(projectName);
-    const button = findCurrentProjectButton();
-    if (!target || !button || readProjectButtonName(button) === target) return;
+    // Existing threads can render the composer in its blank/Choose project
+    // state even though the active sidebar thread already has a project.
+    // In that state there is no current-project button, so open the chooser
+    // itself and select the matching project option.
+    if (!target || projectSelectionInFlight === target) return;
+    const button = findCurrentProjectButton() || findProjectChooserButton();
+    if (!button || readProjectButtonName(button) === target) return;
+    projectSelectionInFlight = target;
     button.click();
-    window.setTimeout(() => {
+    const chooseProjectOption = () => {
       const option = Array.from(document.querySelectorAll(PROJECT_OPTION_SELECTOR)).find((candidate) => {
-        return normalizeText((candidate.textContent || '').split('\n')[0]) === target;
+        return isVisibleElement(candidate)
+          && normalizeText((candidate.textContent || '').split('\n')[0]) === target;
       });
-      option?.click();
-      window.setTimeout(syncPersistentProjectLabels, 120);
-    }, 80);
+      if (option) {
+        option.click();
+        projectSelectionInFlight = '';
+        window.setTimeout(syncPersistentProjectLabels, 120);
+        return;
+      }
+      if (projectSelectionInFlight !== target) return;
+      if (Date.now() < chooseProjectOption.expiresAt) {
+        window.setTimeout(chooseProjectOption, 100);
+      } else {
+        projectSelectionInFlight = '';
+      }
+    };
+    chooseProjectOption.expiresAt = Date.now() + 2000;
+    window.setTimeout(chooseProjectOption, 80);
   }
 
   function clearComposerProject() {
@@ -634,10 +676,32 @@ function Get-CodexNewChatButtonPayload {
     };
   }
 
-  function clearPendingContext() {
-    if (window.__CODEX_PLUS_NEW_CHAT_BUTTON_PENDING_CONTEXT) {
-      window.__CODEX_PLUS_NEW_CHAT_BUTTON_PENDING_CONTEXT = null;
+  function setPendingContext(context) {
+    window.__CODEX_PLUS_NEW_CHAT_BUTTON_PENDING_CONTEXT = context || null;
+    try {
+      if (context) sessionStorage.setItem(PENDING_CONTEXT_STORAGE_KEY, JSON.stringify(context));
+      else sessionStorage.removeItem(PENDING_CONTEXT_STORAGE_KEY);
+    } catch {
     }
+  }
+
+  function readPendingContext() {
+    if (window.__CODEX_PLUS_NEW_CHAT_BUTTON_PENDING_CONTEXT) {
+      return window.__CODEX_PLUS_NEW_CHAT_BUTTON_PENDING_CONTEXT;
+    }
+    try {
+      const stored = sessionStorage.getItem(PENDING_CONTEXT_STORAGE_KEY);
+      if (!stored) return null;
+      const context = JSON.parse(stored);
+      window.__CODEX_PLUS_NEW_CHAT_BUTTON_PENDING_CONTEXT = context;
+      return context;
+    } catch {
+      return null;
+    }
+  }
+
+  function clearPendingContext() {
+    setPendingContext(null);
   }
 
   function getProjectOption(projectName) {
@@ -841,7 +905,7 @@ function Get-CodexNewChatButtonPayload {
   }
 
   function restorePendingNewChatContext() {
-    const pending = window.__CODEX_PLUS_NEW_CHAT_BUTTON_PENDING_CONTEXT;
+    const pending = readPendingContext();
     if (!pending) return false;
     if (Date.now() > Number(pending.expiresAt || 0)) {
       clearPendingContext();
@@ -872,7 +936,9 @@ function Get-CodexNewChatButtonPayload {
 
     const context = captureCurrentChatContext();
     if (context) {
-      window.__CODEX_PLUS_NEW_CHAT_BUTTON_PENDING_CONTEXT = context;
+      setPendingContext(context);
+    } else {
+      clearPendingContext();
     }
 
     nativeButton.click();

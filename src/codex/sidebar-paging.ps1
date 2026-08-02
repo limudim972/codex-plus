@@ -86,8 +86,8 @@ function Get-CodexSidebarPagingPayload {
 
   const SECTION_SPECS = [
     { key: 'threads', title: 'Recents', minVisibleCount: 3, synthetic: true },
-    { key: 'projects', title: 'Projects', minVisibleCount: 2 },
-    { key: 'tasks', labels: ['Tasks', 'Chats'], minVisibleCount: 3 }
+    { key: 'projects', title: 'Projects', minVisibleCount: 3 },
+    { key: 'tasks', title: 'Tasks', labels: ['Tasks', 'Chats'], minVisibleCount: 3 }
   ];
 
   function normalizeText(text) {
@@ -119,6 +119,23 @@ function Get-CodexSidebarPagingPayload {
 
   function getSidebarSectionTitle(scopeDoc, label) {
     return Array.from(scopeDoc.querySelectorAll(SECTION_SELECTOR)).find((title) => textOf(title) === label) || null;
+  }
+
+  function renameNativeRecentsHeading() {
+    const syntheticSectionSelector = '[' + SYNTHETIC_SECTION_ATTR + ']';
+    const nativeRecentsLabels = new Set(['Recents', 'Recents by Codex']);
+
+    for (const element of Array.from(document.querySelectorAll('*'))) {
+      if (element.closest(syntheticSectionSelector)) continue;
+      if (element.children.length > 0 || !nativeRecentsLabels.has(textOf(element))) continue;
+
+      element.textContent = 'Tasks';
+      const sectionButton = element.closest('button');
+      if (sectionButton) {
+        const ariaLabel = sectionButton.getAttribute('aria-label');
+        if (ariaLabel) sectionButton.setAttribute('aria-label', ariaLabel.replace(/Recents(?: by Codex)?/g, 'Tasks'));
+      }
+    }
   }
 
   function getSidebarSectionListByLabel(scopeDoc, labels) {
@@ -170,6 +187,20 @@ function Get-CodexSidebarPagingPayload {
   }
 
   function resolveSidebarSectionList(spec) {
+    if (spec.key === 'tasks') {
+      const nativeTasksList = Array.from(document.querySelectorAll('[role="list"]')).find((list) => {
+        if (list.hasAttribute(SYNTHETIC_LIST_ATTR)) return false;
+        const rows = getSidebarRows(list);
+        if (!normalizeText(list.getAttribute('aria-label'))
+          && rows.length >= 3
+          && !rows.some((row) => getProjectIdForRow(row))) return true;
+        const shellText = normalizeText(list.parentElement?.parentElement?.innerText || '');
+        return shellText.startsWith('Tasks ')
+          || shellText.startsWith('Tasks\n');
+      });
+      if (nativeTasksList) return nativeTasksList;
+    }
+
     const directList = getSidebarSectionListByLabel(document, spec.labels);
     if (directList) return directList;
 
@@ -3317,6 +3348,7 @@ function Get-CodexSidebarPagingPayload {
     if (wasObserving) disconnect();
     try {
       installNativeThreadStatusSlotStyle();
+      renameNativeRecentsHeading();
       if (projectWindowContext) {
         document.documentElement?.setAttribute(PROJECT_WINDOW_MARKER, projectWindowContext.id);
         document.title = 'Codex Plus Project: ' + projectWindowContext.name;
@@ -3332,7 +3364,7 @@ function Get-CodexSidebarPagingPayload {
         const list = spec.synthetic ? ensureSyntheticThreadsSection() : resolveSidebarSectionList(spec);
         if (!list) continue;
 
-        if (spec.key === 'projects' && expandNativeProjectPager(list)) {
+        if ((spec.key === 'projects' || spec.key === 'tasks') && expandNativeProjectPager(list)) {
           // The native Projects list is paged independently of our visibility
           // pager. Load its next page first, then let the observer reconcile
           // and sort the newly mounted rows with the complete project set.

@@ -17,6 +17,7 @@ This repo-local copy includes a Codex Plus method for attaching to an already-ru
 2. Launch Codex Plus through the installed launcher path when you need a fresh Plus window.
    - Prefer the Desktop shortcut at Desktop\Codex Plus.lnk.
    - Command form: Start-Process -FilePath Desktop\Codex Plus.lnk. 
+   - After launching a fresh Plus window, wait 60 seconds before attaching to its debugger or inspecting its UI. This gives the launcher, profile, splash flow, and renderer time to settle.
    - Do not launch raw ChatGPT.exe when the goal is to reproduce Codex Plus runtime behavior.
    - The launcher sets up the scoped profile, debug port, splash helper, and watchdog flow used by Codex Plus.
    - Before launching, record the existing Codex Plus --remote-debugging-port and --user-data-dir pairs.
