@@ -822,8 +822,7 @@ function Update-CodexWindowTitles {
                     $script:CodexPlusWindowProjectNames[[string]$windowHandle] = $projectMatch.Groups[1].Value.Trim()
                 }
                 $desiredTitle = if (-not $isProjectWindow -and $windowHandle -eq $primaryWindowHandle) {
-                    $usageTitleText = Get-CodexUsageWindowTitle
-                    if ($processOrdinal -gt 0) { "$processOrdinal.$usageTitleText" } else { $usageTitleText }
+                    Get-CodexDesiredWindowTitle -Ordinal $processOrdinal
                 } else {
                     Get-CodexDesiredWindowTitle -Ordinal $windowOrdinal -ProjectName $projectName
                 }
@@ -863,8 +862,7 @@ function Wait-CodexWindowTitleSync {
                     $liveProcess = Get-Process -Id $process.ProcessId -ErrorAction Stop
                     if ($liveProcess.MainWindowHandle -ne 0) {
                         $visibleProcessCount += 1
-                        $desiredTitle = Get-CodexUsageWindowTitle
-                        if ($processOrdinal -gt 0) { $desiredTitle = "$processOrdinal.$desiredTitle" }
+                        $desiredTitle = Get-CodexDesiredWindowTitle -Ordinal $processOrdinal
                         if ([string]$liveProcess.MainWindowTitle -ne $desiredTitle) {
                             $allVisibleTitlesMatch = $false
                         }
