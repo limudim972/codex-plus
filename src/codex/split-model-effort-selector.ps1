@@ -45,6 +45,8 @@ function Get-CodexSplitModelEffortSelectorPayload {
   let syncInterval = null;
   let hiddenNativeTrigger = null;
   let hiddenNativeTriggerState = null;
+  let modelMenu = null;
+  let effortMenu = null;
 
   function modelLabel(model) {
     return String(model.displayName || model.model || model.id || 'Model')
@@ -107,23 +109,20 @@ function Get-CodexSplitModelEffortSelectorPayload {
       .filter(Boolean);
   }
 
-  function syncSelectWidth(select) {
-    if (!select || !select.options.length) return;
-    const selectedOption = select.options[select.selectedIndex];
-    if (!selectedOption) return;
+  function syncButtonWidth(button, label) {
+    if (!button) return;
 
-    const styles = getComputedStyle(select);
+    const styles = getComputedStyle(button);
     const canvas = document.createElement('canvas');
     const context = canvas.getContext('2d');
     if (!context) return;
 
     context.font = [styles.fontStyle, styles.fontWeight, styles.fontSize, styles.fontFamily].join(' ');
-    const label = selectedOption.textContent || '';
     const letterSpacing = parseFloat(styles.letterSpacing) || 0;
     const textWidth = context.measureText(label).width + letterSpacing * Math.max(0, label.length - 1);
     const horizontalPadding = parseFloat(styles.paddingInlineStart) + parseFloat(styles.paddingInlineEnd);
     const horizontalBorder = parseFloat(styles.borderInlineStartWidth) + parseFloat(styles.borderInlineEndWidth);
-    select.style.width = Math.ceil(textWidth + horizontalPadding + horizontalBorder) + 'px';
+    button.style.width = Math.ceil(textWidth + horizontalPadding + horizontalBorder) + 'px';
   }
 
   function findToolbar(nativeTrigger) {
@@ -187,10 +186,29 @@ function Get-CodexSplitModelEffortSelectorPayload {
       [${HOST_ATTR}] { align-items: center; display: inline-flex; gap: 0; min-width: 0; }
       [${HOST_ATTR}] .cp-split-selector-wrap { display: inline-flex; min-width: 0; position: relative; }
       [${HOST_ATTR}] .cp-split-selector {
-        appearance: none; background-color: transparent; font-size: 13px; font-weight: 445; height: 28px;
+        align-items: center; appearance: none; background-color: transparent; display: inline-flex;
+        font-size: 13px; font-weight: 445; height: 28px; justify-content: space-between;
         line-height: 18px; max-width: 118px; padding-block: 0; padding-inline-end: 14px; padding-inline-start: 8px;
       }
       [${HOST_ATTR}] .cp-split-selector-effort { max-width: 112px; }
+      .cp-split-selector-menu {
+        background: var(--token-main-surface); border: 1px solid var(--token-border);
+        border-radius: 8px; box-shadow: 0 8px 24px rgba(0, 0, 0, 0.18); display: none;
+        isolation: isolate; max-height: 320px; min-width: 132px; overflow: auto; padding: 4px;
+        pointer-events: auto; position: fixed; z-index: 2147483647;
+      }
+      .cp-split-selector-menu[hidden] { display: none !important; }
+      .cp-split-selector-menu[data-open="true"] { display: block !important; }
+      .cp-split-selector-option {
+        background: transparent; border: 0; border-radius: 6px; color: #000;
+        cursor: pointer; display: block; font: inherit; min-height: 28px; padding: 5px 8px;
+        text-align: start; width: 100%;
+      }
+      .cp-split-selector-option:hover {
+        background-color: rgba(0, 0, 0, 0.08); color: inherit;
+      }
+      [${HOST_ATTR}] .cp-split-selector:not(:disabled):hover { background-color: rgba(0, 0, 0, 0.08); color: inherit; }
+      .cp-split-selector-option:focus-visible { outline: 2px solid var(--token-focus-border); outline-offset: -2px; }
       [${HOST_ATTR}] .cp-split-selector-speed-button {
         align-items: center; appearance: none; background-color: transparent; display: inline-flex; height: 28px;
         justify-content: center; padding: 0; width: 28px;
@@ -207,16 +225,79 @@ function Get-CodexSplitModelEffortSelectorPayload {
     document.head.appendChild(style);
   }
 
-  function replaceOptions(select, signature, options) {
-    if (select.dataset.signature === signature) return;
-    select.replaceChildren();
-    for (const optionData of options) {
-      const option = document.createElement('option');
-      option.value = optionData.value;
-      option.textContent = optionData.label;
-      select.appendChild(option);
+  function replaceMenuOptions(menu, signature, options, selectedValue, onSelect) {
+    if (!menu) return;
+    if (menu.dataset.signature === signature) {
+      for (const option of menu.querySelectorAll('[data-codex-plus-selector-option]')) {
+        option.toggleAttribute('data-selected', option.dataset.value === selectedValue);
+        option.setAttribute('aria-selected', option.dataset.value === selectedValue ? 'true' : 'false');
+      }
+      return;
     }
-    select.dataset.signature = signature;
+    menu.replaceChildren();
+    for (const optionData of options) {
+      const option = document.createElement('button');
+      option.type = 'button';
+      option.className = 'cp-split-selector-option';
+      option.setAttribute('role', 'option');
+      option.setAttribute('data-codex-plus-selector-option', 'true');
+      option.dataset.value = optionData.value;
+      option.textContent = optionData.label;
+      option.setAttribute('aria-selected', optionData.value === selectedValue ? 'true' : 'false');
+      option.toggleAttribute('data-selected', optionData.value === selectedValue);
+      option.addEventListener('click', () => onSelect(optionData.value));
+      menu.appendChild(option);
+    }
+    menu.dataset.signature = signature;
+  }
+
+  function closeMenus() {
+    for (const menu of [modelMenu, effortMenu]) {
+      if (!menu) continue;
+      menu.dataset.open = 'false';
+      menu.hidden = true;
+    }
+    if (host) {
+      for (const button of host.querySelectorAll('[data-codex-plus-selector-button]')) {
+        button.setAttribute('aria-expanded', 'false');
+      }
+    }
+  }
+
+  function removeMenus() {
+    closeMenus();
+    modelMenu?.remove();
+    effortMenu?.remove();
+    modelMenu = null;
+    effortMenu = null;
+  }
+
+  function positionMenu(button, menu) {
+    if (!button || !menu) return;
+    const rect = button.getBoundingClientRect();
+    const surface = document.querySelector('[class*="bg-token-side-bar-background"], [class*="bg-token-main-surface"]');
+    const surfaceColor = surface ? getComputedStyle(surface).backgroundColor : '';
+    if (surfaceColor && surfaceColor !== 'rgba(0, 0, 0, 0)') menu.style.backgroundColor = surfaceColor;
+    menu.style.color = getComputedStyle(button).color;
+    const width = Math.max(rect.width, 132);
+    const left = Math.max(8, Math.min(rect.left, window.innerWidth - width - 8));
+    const estimatedHeight = Math.min(320, Math.max(36, menu.scrollHeight || 36));
+    const top = rect.bottom + estimatedHeight + 8 <= window.innerHeight
+      ? rect.bottom + 4
+      : Math.max(8, rect.top - estimatedHeight - 4);
+    menu.style.left = left + 'px';
+    menu.style.top = top + 'px';
+    menu.style.minWidth = width + 'px';
+  }
+
+  function toggleMenu(button, menu) {
+    const isOpen = menu?.dataset.open === 'true';
+    closeMenus();
+    if (isOpen || !menu || button.disabled) return;
+    menu.hidden = false;
+    menu.dataset.open = 'true';
+    button.setAttribute('aria-expanded', 'true');
+    positionMenu(button, menu);
   }
 
   function render(controller) {
@@ -226,23 +307,49 @@ function Get-CodexSplitModelEffortSelectorPayload {
     if (!selectedModel) return;
     const efforts = getEfforts(selectedModel);
     const serviceTiers = getServiceTiers(controller);
-    const modelSelect = host.querySelector('[data-codex-plus-model-select]');
-    const effortSelect = host.querySelector('[data-codex-plus-effort-select]');
+    const modelButton = host.querySelector('[data-codex-plus-model-button]');
+    const effortButton = host.querySelector('[data-codex-plus-effort-button]');
     const speedButton = host.querySelector('[data-codex-plus-speed-button]');
     const speedIcon = host.querySelector('[data-codex-plus-speed-icon]');
 
-    replaceOptions(
-      modelSelect,
+    const selectedModelValue = selectedModel.model || selectedModel.id;
+    const selectedEffort = efforts.includes(controller.reasoningEffort) ? controller.reasoningEffort : (selectedModel.defaultReasoningEffort || efforts[0]);
+    replaceMenuOptions(
+      modelMenu,
       models.map((model) => model.model || model.id).join('|'),
-      models.map((model) => ({ value: model.model || model.id, label: modelLabel(model) }))
+      models.map((model) => ({ value: model.model || model.id, label: modelLabel(model) })),
+      selectedModelValue,
+      (value) => {
+        const latest = getController(document.querySelector(NATIVE_TRIGGER_SELECTOR));
+        if (!latest || latest.modelOptionsDisabled) return;
+        const model = getVisibleModels(latest).find((candidate) => candidate.model === value || candidate.id === value);
+        if (!model) return;
+        const modelEfforts = getEfforts(model);
+        const nextEffort = modelEfforts.includes(latest.reasoningEffort)
+          ? latest.reasoningEffort
+          : (model.defaultReasoningEffort || modelEfforts[0]);
+        closeMenus();
+        latest.onSelectModel(model.model || model.id, nextEffort);
+        window.setTimeout(schedule, 0);
+        window.setTimeout(schedule, 120);
+      }
     );
-    replaceOptions(
-      effortSelect,
+    replaceMenuOptions(
+      effortMenu,
       (selectedModel.model || selectedModel.id) + ':' + efforts.join('|'),
-      efforts.map((effort) => ({ value: effort, label: effortLabel(effort) }))
+      efforts.map((effort) => ({ value: effort, label: effortLabel(effort) })),
+      selectedEffort,
+      (value) => {
+        const latest = getController(document.querySelector(NATIVE_TRIGGER_SELECTOR));
+        if (!latest || latest.reasoningEffortDisabled) return;
+        closeMenus();
+        latest.onSelectReasoningEffort(value);
+        window.setTimeout(schedule, 0);
+        window.setTimeout(schedule, 120);
+      }
     );
-    modelSelect.value = selectedModel.model || selectedModel.id;
-    effortSelect.value = efforts.includes(controller.reasoningEffort) ? controller.reasoningEffort : (selectedModel.defaultReasoningEffort || efforts[0]);
+    modelButton.querySelector('[data-codex-plus-selector-label]').textContent = modelLabel(selectedModel);
+    effortButton.querySelector('[data-codex-plus-selector-label]').textContent = effortLabel(selectedEffort);
     const selectedServiceTier = serviceTiers.find((option) => option.nativeValue === (controller.selectedServiceTier == null ? null : controller.selectedServiceTier)) || serviceTiers[0];
     if (selectedServiceTier) {
       speedIcon.innerHTML = selectedServiceTier.iconKind === 'fast' ? LIGHTNING_FULL : LIGHTNING_EMPTY;
@@ -251,10 +358,12 @@ function Get-CodexSplitModelEffortSelectorPayload {
       speedButton.setAttribute('aria-label', 'Speed: ' + selectedServiceTier.label + '. ' + selectedServiceTier.description);
       speedButton.toggleAttribute('data-codex-plus-speed-active', selectedServiceTier.iconKind === 'fast');
     }
-    syncSelectWidth(modelSelect);
-    syncSelectWidth(effortSelect);
-    modelSelect.disabled = Boolean(controller.modelOptionsDisabled);
-    effortSelect.disabled = Boolean(controller.reasoningEffortDisabled || efforts.length === 0);
+    syncButtonWidth(modelButton, modelLabel(selectedModel));
+    syncButtonWidth(effortButton, effortLabel(selectedEffort));
+    modelButton.disabled = Boolean(controller.modelOptionsDisabled);
+    effortButton.disabled = Boolean(controller.reasoningEffortDisabled || efforts.length === 0);
+    if (modelMenu?.dataset.open === 'true') positionMenu(modelButton, modelMenu);
+    if (effortMenu?.dataset.open === 'true') positionMenu(effortButton, effortMenu);
     speedButton.disabled = Boolean(controller.serviceTierOptionsLoading || serviceTiers.length <= 1 || typeof controller.onSelectServiceTier !== 'function');
   }
 
@@ -264,29 +373,19 @@ function Get-CodexSplitModelEffortSelectorPayload {
     const anchor = directChildContaining(toolbar, nativeTrigger) || nativeTrigger;
     host = document.createElement('span');
     host.setAttribute(HOST_ATTR, 'true');
-    host.innerHTML = `<span class="cp-split-selector-wrap"><select class="cp-split-selector cp-split-selector-model ${SELECT_CLASSES}" data-codex-plus-model-select aria-label="Model"></select>${CHEVRON}</span><span class="cp-split-selector-wrap"><select class="cp-split-selector cp-split-selector-effort ${SELECT_CLASSES}" data-codex-plus-effort-select aria-label="Effort"></select>${CHEVRON}</span><span class="cp-split-selector-wrap cp-split-selector-speed-wrap"><button type="button" class="cp-split-selector-speed-button ${SELECT_CLASSES}" data-codex-plus-speed-button aria-label="Speed"><span class="cp-split-selector-speed-icon" data-codex-plus-speed-icon aria-hidden="true"></span></button></span>`;
+    host.innerHTML = `<span class="cp-split-selector-wrap"><button type="button" class="cp-split-selector cp-split-selector-model ${SELECT_CLASSES}" data-codex-plus-model-button data-codex-plus-selector-button aria-haspopup="listbox" aria-expanded="false" aria-label="Model"><span data-codex-plus-selector-label></span>${CHEVRON}</button><div class="cp-split-selector-menu" data-codex-plus-model-menu role="listbox" hidden></div></span><span class="cp-split-selector-wrap"><button type="button" class="cp-split-selector cp-split-selector-effort ${SELECT_CLASSES}" data-codex-plus-effort-button data-codex-plus-selector-button aria-haspopup="listbox" aria-expanded="false" aria-label="Effort"><span data-codex-plus-selector-label></span>${CHEVRON}</button><div class="cp-split-selector-menu" data-codex-plus-effort-menu role="listbox" hidden></div></span><span class="cp-split-selector-wrap cp-split-selector-speed-wrap"><button type="button" class="cp-split-selector-speed-button ${SELECT_CLASSES}" data-codex-plus-speed-button aria-label="Speed"><span class="cp-split-selector-speed-icon" data-codex-plus-speed-icon aria-hidden="true"></span></button></span>`;
+    modelMenu = host.querySelector('[data-codex-plus-model-menu]');
+    effortMenu = host.querySelector('[data-codex-plus-effort-menu]');
+    document.body.append(modelMenu, effortMenu);
     toolbar.insertBefore(host, anchor);
 
-    host.querySelector('[data-codex-plus-model-select]').addEventListener('change', (event) => {
-      const latest = getController(document.querySelector(NATIVE_TRIGGER_SELECTOR));
-      if (!latest || latest.modelOptionsDisabled) return;
-      const model = getVisibleModels(latest).find((candidate) => candidate.model === event.target.value || candidate.id === event.target.value);
-      if (!model) return;
-      const efforts = getEfforts(model);
-      const nextEffort = efforts.includes(latest.reasoningEffort)
-        ? latest.reasoningEffort
-        : (model.defaultReasoningEffort || efforts[0]);
-      latest.onSelectModel(model.model || model.id, nextEffort);
-      window.setTimeout(schedule, 0);
-      window.setTimeout(schedule, 120);
+    host.querySelector('[data-codex-plus-model-button]').addEventListener('click', (event) => {
+      event.stopPropagation();
+      toggleMenu(event.currentTarget, document.querySelector('[data-codex-plus-model-menu]'));
     });
-
-    host.querySelector('[data-codex-plus-effort-select]').addEventListener('change', (event) => {
-      const latest = getController(document.querySelector(NATIVE_TRIGGER_SELECTOR));
-      if (!latest || latest.reasoningEffortDisabled) return;
-      latest.onSelectReasoningEffort(event.target.value);
-      window.setTimeout(schedule, 0);
-      window.setTimeout(schedule, 120);
+    host.querySelector('[data-codex-plus-effort-button]').addEventListener('click', (event) => {
+      event.stopPropagation();
+      toggleMenu(event.currentTarget, document.querySelector('[data-codex-plus-effort-menu]'));
     });
 
     host.querySelector('[data-codex-plus-speed-button]').addEventListener('click', () => {
@@ -300,6 +399,15 @@ function Get-CodexSplitModelEffortSelectorPayload {
       window.setTimeout(schedule, 0);
       window.setTimeout(schedule, 120);
     });
+    document.addEventListener('pointerdown', (event) => {
+      if (
+        host && !host.contains(event.target) &&
+        !modelMenu?.contains(event.target) && !effortMenu?.contains(event.target)
+      ) closeMenus();
+    });
+    document.addEventListener('keydown', (event) => {
+      if (event.key === 'Escape') closeMenus();
+    });
     render(controller);
   }
 
@@ -310,6 +418,7 @@ function Get-CodexSplitModelEffortSelectorPayload {
     const controller = getController(nativeTrigger);
     if (!nativeTrigger || !controller) {
       if (host) host.hidden = true;
+      removeMenus();
       restoreNativeTrigger();
       return;
     }
@@ -318,6 +427,7 @@ function Get-CodexSplitModelEffortSelectorPayload {
     const toolbar = findToolbar(nativeTrigger);
     const anchor = directChildContaining(toolbar, nativeTrigger) || nativeTrigger;
     if (!host || !host.isConnected) {
+      removeMenus();
       buildUi(nativeTrigger, controller);
     } else {
       host.hidden = false;
@@ -340,6 +450,7 @@ function Get-CodexSplitModelEffortSelectorPayload {
     observer.disconnect();
     if (syncInterval) window.clearInterval(syncInterval);
     if (host) host.remove();
+    removeMenus();
     restoreNativeTrigger();
   }
 

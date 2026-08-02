@@ -57,6 +57,9 @@ function Get-CodexContextBadgePayload {
     if (runtimeTitle) return runtimeTitle;
     const projectContext = window.__CODEX_PLUS_PROJECT_WINDOW_CONTEXT;
     if (projectContext?.name) return normalizeText(projectContext.name);
+    const activeThread = scopeDoc?.querySelector('[data-codex-plus-sidebar-synthetic-row="threads"][data-app-action-sidebar-thread-active]:not([data-app-action-sidebar-thread-active="false"])');
+    const activeProject = normalizeText(activeThread?.getAttribute('data-codex-plus-thread-project-title'));
+    if (activeProject) return activeProject;
     const title = normalizeText(scopeDoc?.title);
     if (title.startsWith('Codex Plus Project:')) return normalizeText(title.slice('Codex Plus Project:'.length));
     return title;

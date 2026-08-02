@@ -24,6 +24,7 @@ function Install-CodexRtlRuntimeFiles {
         'src/codex/rtl-payload.ps1',
         'src/codex/rtl-payload-Plan.ps1',
         'src/codex/payload-bundle.ps1',
+        'src/codex/activity-onboarding-hider.ps1',
         'src/codex/context-badge.ps1',
         'src/codex/full-access-reminder-hider.ps1',
         'src/codex/split-model-effort-selector.ps1',

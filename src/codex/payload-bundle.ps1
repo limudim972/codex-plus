@@ -6,6 +6,7 @@ function Get-CodexPlusPayloadBundle {
         Get-CodexRtlPayloadPlan
         Get-CodexContextBadgePayload
         Get-CodexFullAccessReminderHiderPayload
+        Get-CodexActivityOnboardingHiderPayload
         Get-CodexSplitModelEffortSelectorPayload
         Get-CodexProjectSelectorGuardPayload
         Get-CodexSidebarPagingPayload

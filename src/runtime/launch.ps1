@@ -740,25 +740,23 @@ function Update-CodexWindowTitles {
                 } else {
                     ''
                 }
-                if ($isProjectWindow) {
-                    $projectPosition = [Array]::IndexOf([string[]]$script:CodexPlusProjectWindowOrder, $windowHandleKey)
-                    $windowOrdinal = if ($projectWindowCount -gt 1) { $projectPosition + 1 } else { 0 }
+                # Project windows share the same taskbar/window namespace as
+                # regular windows. Their project name changes the title text,
+                # but must not restart ordinal enumeration at 1 per project.
+                $windowOrdinal = if ($windowHandle -eq $primaryWindowHandle) {
+                    $processOrdinal
                 } else {
-                    $windowOrdinal = if ($windowHandle -eq $primaryWindowHandle) {
-                        $processOrdinal
-                    } else {
-                        $currentTitle = Get-CodexNativeWindowTitle -WindowHandle $windowHandle
-                        $titleMatch = [regex]::Match([string]$currentTitle, '^(\d+)\.Codex$')
-                        if ($titleMatch.Success) {
-                            $candidateOrdinal = [int]$titleMatch.Groups[1].Value
-                            if ($candidateOrdinal -gt 0 -and $candidateOrdinal -notin $usedOrdinals) {
-                                $candidateOrdinal
-                            } else {
-                                Get-CodexNextWindowTitleOrdinal
-                            }
+                    $currentTitle = Get-CodexNativeWindowTitle -WindowHandle $windowHandle
+                    $titleMatch = [regex]::Match([string]$currentTitle, '^(\d+)\..+$')
+                    if ($titleMatch.Success) {
+                        $candidateOrdinal = [int]$titleMatch.Groups[1].Value
+                        if ($candidateOrdinal -gt 0 -and $candidateOrdinal -notin $usedOrdinals) {
+                            $candidateOrdinal
                         } else {
                             Get-CodexNextWindowTitleOrdinal
                         }
+                    } else {
+                        Get-CodexNextWindowTitleOrdinal
                     }
                 }
 

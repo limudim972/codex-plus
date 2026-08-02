@@ -19,6 +19,9 @@ function Get-CodexNewChatButtonPayload {
   const RESTORE_TIMEOUT_MS = 15000;
   const RESTORE_POLL_INTERVAL_MS = 120;
   let pendingUtilityBarSnapshot = '';
+  let selectedThreadProjectName = '';
+  let selectedThreadProjectKnown = false;
+  let selectedThreadIsTask = false;
   let commitPushAvailabilityObserver = null;
   let observedNativeCommitPushButton = null;
 
@@ -268,6 +271,20 @@ function Get-CodexNewChatButtonPayload {
     snapshot.setAttribute(PERSISTENT_UTILITY_BAR_ATTR, 'true');
     snapshot.setAttribute('aria-label', 'Composer context');
     snapshot.style.userSelect = 'none';
+    // This is a non-interactive copy of the native composer row. Remove the
+    // native hover affordances from the copied project control only; the live
+    // composer row below remains untouched and keeps its normal hover state.
+    snapshot.querySelectorAll('[class]').forEach((element) => {
+      Array.from(element.classList)
+        .filter((className) => className.startsWith('hover:'))
+        .forEach((className) => element.classList.remove(className));
+    });
+    snapshot.querySelectorAll('[data-tooltip-trigger], [data-tooltip-visibility-target], [title]')
+      .forEach((element) => {
+        element.removeAttribute('data-tooltip-trigger');
+        element.removeAttribute('data-tooltip-visibility-target');
+        element.removeAttribute('title');
+      });
     snapshot.querySelectorAll('[id], [aria-controls], [aria-expanded], [data-state]')
       .forEach((element) => {
         element.removeAttribute('id');
@@ -296,6 +313,37 @@ function Get-CodexNewChatButtonPayload {
     const utilityBar = template.content.firstElementChild;
     if (!isElement(utilityBar) || !utilityBar.hasAttribute(PERSISTENT_UTILITY_BAR_ATTR)) return null;
     return utilityBar;
+  }
+
+  function createFallbackUtilityBar() {
+    const bar = document.createElement('div');
+    bar.setAttribute(PERSISTENT_UTILITY_BAR_ATTR, 'true');
+    bar.setAttribute('aria-label', 'Composer context');
+    bar.className = 'z-0 relative -mb-2 flex min-w-0 items-center gap-1 px-2 py-1 text-sm text-token-text-tertiary';
+    const project = document.createElement('button');
+    project.type = 'button';
+    project.textContent = currentProjectName() || 'Choose project';
+    project.setAttribute('aria-label', 'Change project: ' + project.textContent);
+    project.setAttribute('data-composer-navigation-target', 'workspace-project');
+    project.className = 'no-drag rounded-md border border-transparent px-1.5 py-1 text-sm text-token-text-tertiary';
+    project.style.pointerEvents = 'none';
+    const location = document.createElement('span');
+    location.textContent = 'Local';
+    location.className = 'px-1.5 py-1';
+    const newChat = document.createElement('button');
+    newChat.type = 'button';
+    newChat.textContent = 'New chat';
+    newChat.setAttribute(BUTTON_ATTR, 'true');
+    newChat.setAttribute('aria-label', 'New chat');
+    newChat.className = 'no-drag rounded-md border border-transparent px-2.5 py-1 text-sm text-token-text-primary';
+    const commit = document.createElement('button');
+    commit.type = 'button';
+    commit.textContent = 'Commit or push';
+    commit.setAttribute(COMMIT_PUSH_BUTTON_ATTR, 'true');
+    commit.setAttribute('aria-label', 'Commit or push');
+    commit.className = 'no-drag ms-auto rounded-md border border-transparent px-2.5 py-1 text-sm text-token-text-primary';
+    bar.append(project, location, newChat, commit);
+    return bar;
   }
 
   function wirePersistentNewChatButton(bar) {
@@ -361,7 +409,13 @@ function Get-CodexNewChatButtonPayload {
         writeUtilityBarSnapshots(snapshots);
       }
     }
-    if (!snapshotHtml) return;
+    if (!snapshotHtml) {
+      const fallbackBar = createFallbackUtilityBar();
+      wirePersistentNewChatButton(fallbackBar);
+      wirePersistentCommitPushButton(fallbackBar);
+      host.insertBefore(fallbackBar, host.firstElementChild);
+      return;
+    }
 
     const persistentBar = utilityBarFromSnapshot(snapshotHtml);
     if (!persistentBar) return;
@@ -417,9 +471,9 @@ function Get-CodexNewChatButtonPayload {
   }
 
   function currentSidebarProjectName() {
-    const activeThread = document.querySelector('[data-app-action-sidebar-thread-active="true"]');
+    const activeThread = document.querySelector('[data-app-action-sidebar-thread-active]:not([data-app-action-sidebar-thread-active="false"])');
     const projectRow = activeThread?.closest('[data-app-action-sidebar-project-row]')
-      || Array.from(document.querySelectorAll('[data-app-action-sidebar-project-row]')).find((row) => row.querySelector('[data-app-action-sidebar-thread-active="true"]'));
+      || Array.from(document.querySelectorAll('[data-app-action-sidebar-project-row]')).find((row) => row.querySelector('[data-app-action-sidebar-thread-active]:not([data-app-action-sidebar-thread-active="false"])'));
     if (!projectRow) return '';
 
     const label = projectRow.getAttribute('data-app-action-sidebar-project-label')
@@ -435,14 +489,88 @@ function Get-CodexNewChatButtonPayload {
   }
 
   function currentProjectName() {
+    if (selectedThreadProjectKnown && selectedThreadIsTask) return '';
     const directContext = normalizeText(window.__CODEX_PLUS_PROJECT_WINDOW_CONTEXT?.name);
     if (directContext) return directContext;
+
+    if (selectedThreadProjectKnown) return selectedThreadIsTask ? '' : selectedThreadProjectName;
+
+    const sidebarProject = currentSidebarProjectName();
+    if (sidebarProject) return sidebarProject;
 
     const currentButton = findCurrentProjectButton();
     const selectedName = readProjectButtonName(currentButton);
     if (selectedName) return selectedName;
     if (findProjectChooserButton()) return '';
-    return currentSidebarProjectName();
+    return '';
+  }
+
+  function syncPersistentProjectLabels() {
+    const projectName = normalizeText(currentProjectName());
+    const label = projectName || (selectedThreadIsTask ? 'Task' : 'Choose project');
+    for (const button of document.querySelectorAll(PROJECT_BUTTON_SELECTOR)) {
+      const value = button.querySelector('[data-tooltip-overflow-target]') || button.querySelector('._dropdownLabelValueContent_2l838_2');
+      if (value) value.textContent = label;
+      else if (button.closest('[' + PERSISTENT_UTILITY_BAR_ATTR + ']')) button.textContent = label;
+      button.setAttribute('aria-label', projectName ? 'Change project: ' + projectName : (selectedThreadIsTask ? 'Task' : 'Choose project'));
+    }
+  }
+
+  function rememberSyntheticThreadProject(event) {
+    const row = event.target instanceof Element
+      ? event.target.closest('[data-codex-plus-sidebar-synthetic-row="threads"][data-codex-plus-thread-project-title]')
+      : null;
+    if (!row) return;
+    const projectName = normalizeText(row.getAttribute('data-codex-plus-thread-project-title'));
+    selectedThreadProjectKnown = true;
+    selectedThreadProjectName = projectName;
+    selectedThreadIsTask = !projectName;
+    if (projectName) {
+      window.setTimeout(() => selectComposerProject(projectName), 120);
+      window.setTimeout(() => selectComposerProject(projectName), 600);
+    } else {
+      window.setTimeout(clearComposerProject, 120);
+      window.setTimeout(clearComposerProject, 600);
+    }
+    window.setTimeout(syncPersistentProjectLabels, 120);
+    window.setTimeout(syncPersistentProjectLabels, 600);
+  }
+
+  function syncSelectedThreadFromDom() {
+    const row = document.querySelector('[data-codex-plus-sidebar-synthetic-row="threads"][data-app-action-sidebar-thread-active="true"]');
+    if (!row) return;
+    const projectName = normalizeText(row.getAttribute('data-codex-plus-thread-project-title'));
+    const isTask = !projectName && normalizeText(row.getAttribute('data-codex-plus-source-list-label')) === 'Tasks';
+    if (selectedThreadProjectKnown && selectedThreadIsTask === isTask && selectedThreadProjectName === projectName) return;
+    selectedThreadProjectKnown = true;
+    selectedThreadIsTask = isTask;
+    selectedThreadProjectName = projectName;
+    syncPersistentProjectLabels();
+  }
+
+  function selectComposerProject(projectName) {
+    const target = normalizeText(projectName);
+    const button = findCurrentProjectButton();
+    if (!target || !button || readProjectButtonName(button) === target) return;
+    button.click();
+    window.setTimeout(() => {
+      const option = Array.from(document.querySelectorAll(PROJECT_OPTION_SELECTOR)).find((candidate) => {
+        return normalizeText((candidate.textContent || '').split('\n')[0]) === target;
+      });
+      option?.click();
+      window.setTimeout(syncPersistentProjectLabels, 120);
+    }, 80);
+  }
+
+  function clearComposerProject() {
+    const button = findCurrentProjectButton();
+    if (!button || readProjectButtonName(button) === '') return;
+    button.click();
+    window.setTimeout(() => {
+      const clear = document.querySelector('[data-clear-project-button], button[aria-label="Don\'t work in a project"]');
+      clear?.click();
+      window.setTimeout(syncPersistentProjectLabels, 120);
+    }, 80);
   }
 
   function getSplitController() {
@@ -850,6 +978,7 @@ function Get-CodexNewChatButtonPayload {
   }
 
   function install() {
+    syncSelectedThreadFromDom();
     const root = findComposerRoot();
     if (!root) return;
 
@@ -922,6 +1051,7 @@ function Get-CodexNewChatButtonPayload {
 
   install();
   window.__CODEX_PLUS_NEW_CHAT_BUTTON = true;
+  document.addEventListener('click', rememberSyntheticThreadProject, true);
   new MutationObserver(schedule).observe(document.documentElement, { childList: true, subtree: true });
   window.setInterval(install, 5000);
   window.setInterval(restorePendingNewChatContext, RESTORE_POLL_INTERVAL_MS);
