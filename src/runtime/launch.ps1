@@ -108,6 +108,7 @@ function Get-CodexLaunchSplashIconSource {
 function Show-CodexLaunchSplash {
     param(
         [AllowEmptyString()][string]$LauncherKey,
+        [int]$PreferredPort = 0,
         [int]$TimeoutSeconds = 20
     )
 
@@ -176,8 +177,12 @@ function Show-CodexLaunchSplash {
         $visibleProcessCount = 0
         try {
             $state = Read-CodexRtlState
-            $preferredPort = if ($state -and $state.Port) { [int]$state.Port } else { 0 }
-            $port = Get-CodexRtlLaunchPort -PreferredPort $preferredPort -LauncherKey $LauncherKey
+            $statePreferredPort = if ($state -and $state.Port) { [int]$state.Port } else { 0 }
+            $port = if ($PreferredPort -gt 0) {
+                $PreferredPort
+            } else {
+                Get-CodexRtlLaunchPort -PreferredPort $statePreferredPort -LauncherKey $LauncherKey
+            }
             if ($port -gt 0) {
                 $visibleProcessCount = Get-CodexVisibleProcessCount -Port $port -LauncherKey $LauncherKey
             }

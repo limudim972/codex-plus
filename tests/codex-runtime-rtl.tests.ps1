@@ -106,6 +106,9 @@ Assert-True ($launcherScript.Contains('powershell.exe')) 'VBS launcher should ru
 Assert-True ($launcherScript.Contains('-LaunchCodexRtl')) 'VBS launcher should call the explicit Codex launch entrypoint.'
 Assert-True ($launcherScript.Contains('-ShowLaunchSplash')) 'VBS launcher should start the launch splash helper before Codex appears.'
 Assert-True ($launcherScript.Contains('WScript.Arguments(0)')) 'VBS launcher should forward the shortcut-specific launcher identity.'
+Assert-True ($launcherScript.Contains('WScript.Arguments.Count > 2')) 'VBS launcher should accept an installer-selected port argument.'
+Assert-True ($launcherScript.Contains('-PreferredPort')) 'VBS launcher should forward an installer-selected port to PowerShell.'
+Assert-True ($launcherScript.Contains('CODEX_PLUS_REQUESTED_PORT')) 'VBS launcher should inherit an installer-selected port from the Desktop launch environment.'
 Assert-True ($launcherScript.Contains('CODEX_PLUS_LAUNCHER_KEY')) 'VBS launcher should pass the launcher identity through the process environment.'
 Assert-True ($launcherScript.Contains('WScript.Arguments(0)')) 'VBS launcher should forward the shortcut-specific launcher identity.'
 Assert-True ($launcherScript.Contains('CODEX_PLUS_LAUNCHER_KEY')) 'VBS launcher should pass the launcher identity through the process environment.'
@@ -379,7 +382,7 @@ try {
         $script:StartedProcesses += 'rtl'
         'started'
     }
-    function Invoke-CodexRtlInjection { param([int]$Port) $true }
+    function Invoke-CodexPlusInjection { param([int]$Port) $true }
     Install-CodexRtlPatch
 
     $fallbackStartMenuShortcut = Get-CodexRtlShortcutPath
@@ -727,7 +730,7 @@ try {
         }
     }
 
-    function Invoke-CodexRtlInjection {
+    function Invoke-CodexPlusInjection {
         param([int]$Port)
         $script:InjectedPorts += $Port
         $true

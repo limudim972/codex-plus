@@ -45,6 +45,14 @@ cd codex-plus
 powershell.exe -ExecutionPolicy Bypass -File .\patch.ps1
 ```
 
+The local installer can reserve an exact DevTools port before opening the new Codex Plus window:
+
+```powershell
+powershell.exe -ExecutionPolicy Bypass -File .\install.ps1 -LocalDev -Port 30113
+```
+
+The installer stops if that loopback port is already in use; it does not switch to another port.
+
 ## How It Works
 
 Codex Plus keeps the Microsoft Store installation untouched and works entirely through a local runtime under `%LOCALAPPDATA%\Codex Plus`.

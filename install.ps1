@@ -1,7 +1,9 @@
 # Codex Plus installer.
 #
 param(
-    [switch]$LocalDev
+    [switch]$LocalDev,
+    [ValidateRange(1024, 65535)]
+    [int]$Port = 0
 )
 
 function Pause-ForInstallerExit {
@@ -19,7 +21,27 @@ function Pause-ForInstallerExit {
     }
 }
 
+function Test-InstallerPortAvailable {
+    param([Parameter(Mandatory)][int]$Port)
+
+    $listener = $null
+    try {
+        $listener = [System.Net.Sockets.TcpListener]::new(
+            [System.Net.IPAddress]::Parse('127.0.0.1'),
+            $Port
+        )
+        $listener.Start()
+        return $true
+    } catch {
+        return $false
+    } finally {
+        if ($listener) { $listener.Stop() }
+    }
+}
+
 function Start-CodexPlusAfterInstall {
+    param([int]$Port = 0)
+
     $shortcutCandidates = @(
         (Join-Path $env:USERPROFILE 'Desktop\Codex Plus.lnk'),
         (Join-Path $env:APPDATA 'Microsoft\Windows\Start Menu\Programs\Codex Plus.lnk')
@@ -31,12 +53,41 @@ function Start-CodexPlusAfterInstall {
     }
 
     Write-Host "Launching Codex Plus from $shortcutPath ..." -ForegroundColor Green
-    Start-Process -FilePath $shortcutPath | Out-Null
+    if ($Port -gt 0) {
+        Write-Host "Using requested Codex Plus port $Port." -ForegroundColor Green
+        $shell = New-Object -ComObject WScript.Shell
+        $shortcut = $shell.CreateShortcut($shortcutPath)
+        if ([string]::IsNullOrWhiteSpace($shortcut.TargetPath)) {
+            throw "Codex Plus shortcut target could not be resolved: $shortcutPath"
+        }
+        $launcherArguments = [string]$shortcut.Arguments
+        if (-not [string]::IsNullOrWhiteSpace($launcherArguments)) { $launcherArguments += ' ' }
+        $launcherArguments += [string]$Port
+        Start-Process -FilePath $shortcut.TargetPath -ArgumentList $launcherArguments -WorkingDirectory $shortcut.WorkingDirectory | Out-Null
+    } else {
+        Start-Process -FilePath $shortcutPath | Out-Null
+    }
 }
 
 if ($env:OS -ne 'Windows_NT') {
     Write-Host "Codex Plus is Windows-only. Please run it on Windows 10/11." -ForegroundColor Red
     exit 1
+}
+
+$requestedPort = $Port
+if ($requestedPort -le 0 -and -not [string]::IsNullOrWhiteSpace($env:CODEX_PLUS_REQUESTED_PORT)) {
+    $parsedPort = 0
+    if (-not [int]::TryParse($env:CODEX_PLUS_REQUESTED_PORT, [ref]$parsedPort)) {
+        throw "CODEX_PLUS_REQUESTED_PORT '$($env:CODEX_PLUS_REQUESTED_PORT)' is not a valid TCP port."
+    }
+    if ($parsedPort -lt 1024 -or $parsedPort -gt 65535) {
+        throw "CODEX_PLUS_REQUESTED_PORT '$parsedPort' is outside the valid TCP port range."
+    }
+    $requestedPort = $parsedPort
+}
+
+if ($requestedPort -gt 0 -and -not (Test-InstallerPortAvailable -Port $requestedPort)) {
+    throw "Requested Codex Plus port $requestedPort is already in use. Choose another port and retry."
 }
 
 $RepoBase = 'https://raw.githubusercontent.com/limudim972/codex-plus/main'
@@ -95,7 +146,7 @@ if ($LocalDev) {
     Write-Host "Launching local Codex Plus installer..." -ForegroundColor Green
     & (Join-Path $SourceRoot 'patch.ps1') -InstallCodexPlus
     Write-Host "Codex Plus installer finished." -ForegroundColor Green
-    Start-CodexPlusAfterInstall
+    Start-CodexPlusAfterInstall -Port $requestedPort
 } else {
     $content = [System.Text.Encoding]::UTF8.GetString($patchBytes)
     if ($content.Length -gt 0 -and $content[0] -eq [char]0xFEFF) { $content = $content.Substring(1) }
@@ -125,5 +176,5 @@ if ($LocalDev) {
     Write-Host "Codex Plus downloaded ($($patchBytes.Length) bytes) and modules staged. Running installer..." -ForegroundColor Green
     & $TmpFile -InstallCodexPlus
     Write-Host "Codex Plus installer finished." -ForegroundColor Green
-    Start-CodexPlusAfterInstall
+    Start-CodexPlusAfterInstall -Port $requestedPort
 }

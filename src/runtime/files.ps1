@@ -81,6 +81,18 @@ End If
 If WScript.Arguments.Count > 1 Then
     desktopLaunch = (LCase(WScript.Arguments(1)) = "desktop")
 End If
+preferredPort = 0
+portFromEnvironment = shell.Environment("Process")("CODEX_PLUS_REQUESTED_PORT")
+If portFromEnvironment <> "" Then
+    On Error Resume Next
+    preferredPort = CInt(portFromEnvironment)
+    On Error GoTo 0
+End If
+If WScript.Arguments.Count > 2 Then
+    On Error Resume Next
+    preferredPort = CInt(WScript.Arguments(2))
+    On Error GoTo 0
+End If
 If launcherKey <> "" Then
     instanceKey = launcherKey & "-" & Replace(Replace(CreateObject("Scriptlet.TypeLib").Guid, "{", ""), "}", "")
     shell.Environment("Process")("CODEX_PLUS_LAUNCHER_KEY") = instanceKey
@@ -92,6 +104,10 @@ If desktopLaunch Then
 End If
 command = "powershell.exe -NoProfile -ExecutionPolicy Bypass -WindowStyle Hidden -File " & Chr(34) & "$escapedPatchScriptPath" & Chr(34) & " -LaunchCodexRtl"
 launchSplashCommand = "powershell.exe -NoProfile -ExecutionPolicy Bypass -WindowStyle Hidden -File " & Chr(34) & "$escapedPatchScriptPath" & Chr(34) & " -ShowLaunchSplash"
+If preferredPort > 0 Then
+    command = command & " -PreferredPort " & CStr(preferredPort)
+    launchSplashCommand = launchSplashCommand & " -PreferredPort " & CStr(preferredPort)
+End If
 If instanceKey <> "" Then
     launchSplashCommand = launchSplashCommand & " -LauncherKey " & Chr(34) & instanceKey & Chr(34)
 End If

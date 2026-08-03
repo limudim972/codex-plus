@@ -139,7 +139,10 @@ function Restore-CodexRtlPatch {
 }
 
 function Launch-CodexRtl {
-    param([AllowEmptyString()][string]$LauncherKey)
+    param(
+        [AllowEmptyString()][string]$LauncherKey,
+        [int]$PreferredPort = 0
+    )
 
     $installInfo = Get-CodexInstallInfo
     if (-not $installInfo.PackageFound -or -not $installInfo.AppExe -or -not (Test-Path -LiteralPath $installInfo.AppExe)) {
@@ -150,9 +153,13 @@ function Launch-CodexRtl {
         $LauncherKey = $env:CODEX_PLUS_LAUNCHER_KEY
     }
     $state = Read-CodexRtlState
-    $preferredPort = if ($state -and $state.Port) { [int]$state.Port } else { 0 }
-    $port = Get-CodexRtlLaunchPort -PreferredPort $preferredPort -LauncherKey $LauncherKey
-    if (([string]::IsNullOrWhiteSpace($LauncherKey)) -and $state -and $state.Port -ne $port) {
+    $statePreferredPort = if ($state -and $state.Port) { [int]$state.Port } else { 0 }
+    $port = if ($PreferredPort -gt 0) {
+        $PreferredPort
+    } else {
+        Get-CodexRtlLaunchPort -PreferredPort $statePreferredPort -LauncherKey $LauncherKey
+    }
+    if ($PreferredPort -le 0 -and ([string]::IsNullOrWhiteSpace($LauncherKey)) -and $state -and $state.Port -ne $port) {
         $state.Port = $port
         $state.UpdatedAt = [DateTimeOffset]::Now.ToString('o')
         Save-CodexRtlState -State $state

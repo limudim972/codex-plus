@@ -10,6 +10,7 @@ param(
     [switch]$StartCloseWatchdog,
     [int]$WatchPort,
     [int]$DashboardProcessId,
+    [int]$PreferredPort,
     [AllowEmptyString()][string]$LauncherKey,
     [switch]$InstallCodexPlus,
     [switch]$SkipMain
@@ -69,7 +70,7 @@ if ($StartCloseWatchdog) {
 $script:CodexRtlPatchScriptPath = $PSCommandPath
 
 if ($ShowLaunchSplash) {
-    Show-CodexLaunchSplash -LauncherKey $LauncherKey
+    Show-CodexLaunchSplash -LauncherKey $LauncherKey -PreferredPort $PreferredPort
     return
 }
 
@@ -83,7 +84,7 @@ if ($InstallCodexPlus) {
 }
 
 if ($LaunchCodexRtl) {
-    Launch-CodexRtl
+    Launch-CodexRtl -PreferredPort $PreferredPort
     return
 }
 

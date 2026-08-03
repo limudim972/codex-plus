@@ -14,12 +14,22 @@ This repo-local copy includes a Codex Plus method for attaching to an already-ru
 ## Workflow
 
 1. Inspect the running Codex target before restarting anything.
-2. Launch Codex Plus through the installed launcher path when you need a fresh Plus window.
-   - Prefer the Desktop shortcut at Desktop\Codex Plus.lnk.
-   - Command form: Start-Process -FilePath Desktop\Codex Plus.lnk. 
+2. Launch Codex Plus through the Desktop installer when you need a fresh Plus window or need to verify checked-in runtime changes.
+   - Prefer the Desktop shortcut at Desktop\Codex Plus Install Local.lnk.
+   - The installer runs the local checkout with `-LocalDev`, synchronizes the installed runtime, and launches a fresh Codex Plus window. Do not separately copy runtime files or inject the changed script into an existing window.
+   - Choose a random requested port before launching and pass it through the inherited environment so the AI already knows which port to attach to:
+     ```powershell
+     $requestedPort = Get-Random -Minimum 20000 -Maximum 45000
+     $env:CODEX_PLUS_REQUESTED_PORT = [string]$requestedPort
+     Start-Process -FilePath (Join-Path $env:USERPROFILE 'Desktop\Codex Plus Install Local.lnk')
+     Start-Sleep -Seconds 10
+     Remove-Item Env:CODEX_PLUS_REQUESTED_PORT -ErrorAction SilentlyContinue
+     ```
+   - Keep the environment variable set until the installer has had time to start; `.lnk` launches are asynchronous and clearing it immediately can race the installer.
+   - The installer checks the requested loopback port and fails if it is occupied; it does not choose a replacement port.
    - After launching a fresh Plus window, wait 60 seconds before attaching to its debugger or inspecting its UI. This gives the launcher, profile, splash flow, and renderer time to settle.
    - Do not launch raw ChatGPT.exe when the goal is to reproduce Codex Plus runtime behavior.
-   - The launcher sets up the scoped profile, debug port, splash helper, and watchdog flow used by Codex Plus.
+   - The installer and launcher set up the scoped profile, requested debug port, splash helper, and watchdog flow used by Codex Plus.
    - Before launching, record the existing Codex Plus --remote-debugging-port and --user-data-dir pairs.
    - After launching, attach only to the newly appeared port/profile pair, not to any pre-existing Codex window.
    - If you updated the local Plus runtime or checked-in payload files, do not inject the script into an already-open page; launch a fresh Plus window and verify the change there.
@@ -104,6 +114,17 @@ When writing down verification results, prefer concrete observations over impres
 - what interaction was triggered
 - what changed afterward
 - whether the result still held after restart
+
+### Codex Plus UI-specific checks
+
+- Do not treat `data-app-action-sidebar-thread-active` as the only proof that a synthetic thread opened. Confirm the URL, conversation id, composer content, project label, and other live composer markers as well.
+- Preserve the full identity of every inspected window as a tuple of `port`, matching `--user-data-dir`, and window ordinal. When comparing old and new windows, attach only to the port/profile pair introduced by the fresh launch.
+- A fresh Plus profile may initially show `avatar-overlay`. Wait for the launcher flow to settle, then verify that the page is `app://-/index.html` before inspecting the composer. If the launcher leaves the new profile on the overlay, record that as an incomplete live verification rather than silently using an older window.
+- For visual comparisons, measure the actual UI as well as its text: use `getBoundingClientRect()`, computed height and width, classes, icon presence, `pointer-events`, and `tabindex`. Compare the same composer row in the old and new windows.
+- Persistent composer snapshots are session state. When their structure changes, bump the storage key version so stale serialized markup cannot make a new runtime appear unchanged.
+- Distinguish the live composer controls from the persistent informational copy. A persistent control with `pointer-events: none` is not an interactive source of truth and must not be clicked during verification.
+- When testing a synthetic-row click, target the real descendant with `role="button"` when present, rather than assuming the outer `role="listitem"` wrapper owns the click handler.
+- Context that must survive the native new-chat navigation cannot rely only on `window` globals. Persist it in `sessionStorage`, and clear it only after the live composer itself reflects the restored project and other settings.
 
 ## Practical Rules
 
