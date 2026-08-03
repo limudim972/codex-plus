@@ -14,12 +14,15 @@ function Get-CodexNewChatButtonPayload {
   const UTILITY_BAR_SCROLL_SELECTOR = '[data-composer-utility-bar-scroll-area]';
   const PERSISTENT_UTILITY_BAR_ATTR = 'data-codex-plus-persistent-composer-utility-bar';
   const CONVERSATION_ID_ATTR = 'data-above-composer-conversation-id';
-  const UTILITY_BAR_STORAGE_KEY = 'codex-plus-composer-utility-bars-v1';
+  const UTILITY_BAR_STORAGE_KEY = 'codex-plus-composer-utility-bars-v2';
   const PENDING_CONTEXT_STORAGE_KEY = 'codex-plus-new-chat-pending-context-v1';
   const MAX_STORED_UTILITY_BARS = 50;
   const RESTORE_TIMEOUT_MS = 15000;
   const RESTORE_POLL_INTERVAL_MS = 120;
   let pendingUtilityBarSnapshot = '';
+  let persistentSnapshotRetryPending = false;
+  let persistentSnapshotSignature = '';
+  let persistentSnapshotStableSince = 0;
   let selectedThreadProjectName = '';
   let selectedThreadProjectKnown = false;
   let selectedThreadIsTask = false;
@@ -244,6 +247,42 @@ function Get-CodexNewChatButtonPayload {
       || null;
   }
 
+  function getComposerUtilityBarSignature(wrapper) {
+    if (!isElement(wrapper)) return '';
+    const scrollArea = Array.from(wrapper.querySelectorAll(UTILITY_BAR_SCROLL_SELECTOR))
+      .find((candidate) => !candidate.closest('[' + PERSISTENT_UTILITY_BAR_ATTR + ']'));
+    const row = scrollArea?.firstElementChild;
+    if (!isElement(row)) return '';
+
+    // The native row is assembled in stages. Do not cache the early state,
+    // otherwise the persistent copy can permanently miss Local and branch.
+    const projectButton = row.querySelector('button[data-composer-navigation-target="workspace-project"]');
+    const locationButton = row.querySelector('[data-composer-navigation-target="run-location"]');
+    const nativeNewChatButton = row.querySelector('button[aria-label="New chat"]:not([' + BUTTON_ATTR + '])');
+    if (!projectButton || !locationButton || !nativeNewChatButton) return '';
+
+    return Array.from(row.children)
+      .map((child) => [
+        child.getAttribute('data-composer-navigation-target') || '',
+        child.getAttribute('aria-label') || '',
+        normalizeText(child.textContent)
+      ].join(':'))
+      .join('|');
+  }
+
+  function isComposerUtilityBarReady(wrapper) {
+    return Boolean(getComposerUtilityBarSignature(wrapper));
+  }
+
+  function retryPersistentUtilityBarSnapshot() {
+    if (persistentSnapshotRetryPending) return;
+    persistentSnapshotRetryPending = true;
+    window.setTimeout(() => {
+      persistentSnapshotRetryPending = false;
+      installPersistentComposerUtilityBar();
+    }, 160);
+  }
+
   function currentComposerConversationId(root) {
     return normalizeText(root?.querySelector('[' + CONVERSATION_ID_ATTR + ']')?.getAttribute(CONVERSATION_ID_ATTR));
   }
@@ -386,6 +425,24 @@ function Get-CodexNewChatButtonPayload {
     if (nativeScrollArea) {
       existingPersistentBars.forEach((bar) => bar.remove());
       const nativeWrapper = Array.from(host.children).find((candidate) => candidate.contains(nativeScrollArea));
+      if (!isComposerUtilityBarReady(nativeWrapper)) {
+        pendingUtilityBarSnapshot = '';
+        persistentSnapshotSignature = '';
+        persistentSnapshotStableSince = 0;
+        retryPersistentUtilityBarSnapshot();
+        return;
+      }
+      const snapshotSignature = getComposerUtilityBarSignature(nativeWrapper);
+      if (snapshotSignature !== persistentSnapshotSignature) {
+        persistentSnapshotSignature = snapshotSignature;
+        persistentSnapshotStableSince = Date.now();
+        retryPersistentUtilityBarSnapshot();
+        return;
+      }
+      if (Date.now() - persistentSnapshotStableSince < 320) {
+        retryPersistentUtilityBarSnapshot();
+        return;
+      }
       const snapshotHtml = createPersistentUtilityBarSnapshot(nativeWrapper);
       if (!snapshotHtml) return;
 

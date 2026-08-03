@@ -88,11 +88,14 @@ If portFromEnvironment <> "" Then
     preferredPort = CInt(portFromEnvironment)
     On Error GoTo 0
 End If
-If WScript.Arguments.Count > 2 Then
-    On Error Resume Next
-    preferredPort = CInt(WScript.Arguments(2))
-    On Error GoTo 0
-End If
+For argumentIndex = 1 To WScript.Arguments.Count - 1
+    If IsNumeric(WScript.Arguments(argumentIndex)) Then
+        On Error Resume Next
+        preferredPort = CInt(WScript.Arguments(argumentIndex))
+        On Error GoTo 0
+        Exit For
+    End If
+Next
 If launcherKey <> "" Then
     instanceKey = launcherKey & "-" & Replace(Replace(CreateObject("Scriptlet.TypeLib").Guid, "{", ""), "}", "")
     shell.Environment("Process")("CODEX_PLUS_LAUNCHER_KEY") = instanceKey
@@ -109,6 +112,7 @@ If preferredPort > 0 Then
     launchSplashCommand = launchSplashCommand & " -PreferredPort " & CStr(preferredPort)
 End If
 If instanceKey <> "" Then
+    command = command & " -LauncherKey " & Chr(34) & instanceKey & Chr(34)
     launchSplashCommand = launchSplashCommand & " -LauncherKey " & Chr(34) & instanceKey & Chr(34)
 End If
 dashboardServerPath = Replace("$escapedPatchScriptPath", "patch.ps1", "src\runtime\dashboard-server.ps1")

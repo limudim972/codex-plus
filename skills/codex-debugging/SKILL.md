@@ -17,21 +17,20 @@ This repo-local copy includes a Codex Plus method for attaching to an already-ru
 2. Launch Codex Plus through the Desktop installer when you need a fresh Plus window or need to verify checked-in runtime changes.
    - Prefer the Desktop shortcut at Desktop\Codex Plus Install Local.lnk.
    - The installer runs the local checkout with `-LocalDev`, synchronizes the installed runtime, and launches a fresh Codex Plus window. Do not separately copy runtime files or inject the changed script into an existing window.
-   - Choose a random requested port before launching and pass it through the inherited environment so the AI already knows which port to attach to:
+   - Run the local installer synchronously so it chooses a free random port and returns it on stdout. Capture the machine-readable `CODEX_PLUS_LAUNCH_PORT=<port>` line; do not scan the post-launch process list to discover the port:
      ```powershell
-     $requestedPort = Get-Random -Minimum 20000 -Maximum 45000
-     $env:CODEX_PLUS_REQUESTED_PORT = [string]$requestedPort
-     Start-Process -FilePath (Join-Path $env:USERPROFILE 'Desktop\Codex Plus Install Local.lnk')
-     Start-Sleep -Seconds 10
-     Remove-Item Env:CODEX_PLUS_REQUESTED_PORT -ErrorAction SilentlyContinue
+     $repoRoot = 'C:\Users\Noam\Documents\code\codex-plus'
+     $launchOutput = & (Join-Path $repoRoot 'Codex Plus Install Local.bat') 2>&1
+     $portLine = @($launchOutput | Where-Object { $_ -match '^CODEX_PLUS_LAUNCH_PORT=(\d+)$' }) | Select-Object -Last 1
+     if (-not $portLine) { throw 'Codex Plus installer did not return a launch port.' }
+     $requestedPort = [int](($portLine -split '=', 2)[1])
      ```
-   - Keep the environment variable set until the installer has had time to start; `.lnk` launches are asynchronous and clearing it immediately can race the installer.
-   - The installer checks the requested loopback port and fails if it is occupied; it does not choose a replacement port.
+   - The installer checks the selected loopback port before launch and returns the exact port only after starting the fresh window.
    - After launching a fresh Plus window, wait 60 seconds before attaching to its debugger or inspecting its UI. This gives the launcher, profile, splash flow, and renderer time to settle.
    - Do not launch raw ChatGPT.exe when the goal is to reproduce Codex Plus runtime behavior.
    - The installer and launcher set up the scoped profile, requested debug port, splash helper, and watchdog flow used by Codex Plus.
    - Before launching, record the existing Codex Plus --remote-debugging-port and --user-data-dir pairs.
-   - After launching, attach only to the newly appeared port/profile pair, not to any pre-existing Codex window.
+   - After launch, use the returned port and attach only to the matching newly appeared port/profile pair, not to any pre-existing Codex window.
    - If you updated the local Plus runtime or checked-in payload files, do not inject the script into an already-open page; launch a fresh Plus window and verify the change there.
 3. Resolve the active debug port for the running Codex instance.
    - Check the running `ChatGPT.exe` command line for `--remote-debugging-port=...`.

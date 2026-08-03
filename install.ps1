@@ -39,6 +39,23 @@ function Test-InstallerPortAvailable {
     }
 }
 
+function Get-RandomInstallerPort {
+    param(
+        [int]$Minimum = 20000,
+        [int]$Maximum = 45000,
+        [int]$Attempts = 100
+    )
+
+    for ($attempt = 0; $attempt -lt $Attempts; $attempt++) {
+        $candidate = Get-Random -Minimum $Minimum -Maximum ($Maximum + 1)
+        if (Test-InstallerPortAvailable -Port $candidate) {
+            return $candidate
+        }
+    }
+
+    throw "Could not find an available Codex Plus port between $Minimum and $Maximum after $Attempts attempts."
+}
+
 function Start-CodexPlusAfterInstall {
     param([int]$Port = 0)
 
@@ -53,20 +70,33 @@ function Start-CodexPlusAfterInstall {
     }
 
     Write-Host "Launching Codex Plus from $shortcutPath ..." -ForegroundColor Green
-    if ($Port -gt 0) {
-        Write-Host "Using requested Codex Plus port $Port." -ForegroundColor Green
-        $shell = New-Object -ComObject WScript.Shell
-        $shortcut = $shell.CreateShortcut($shortcutPath)
-        if ([string]::IsNullOrWhiteSpace($shortcut.TargetPath)) {
-            throw "Codex Plus shortcut target could not be resolved: $shortcutPath"
-        }
-        $launcherArguments = [string]$shortcut.Arguments
-        if (-not [string]::IsNullOrWhiteSpace($launcherArguments)) { $launcherArguments += ' ' }
-        $launcherArguments += [string]$Port
-        Start-Process -FilePath $shortcut.TargetPath -ArgumentList $launcherArguments -WorkingDirectory $shortcut.WorkingDirectory | Out-Null
-    } else {
-        Start-Process -FilePath $shortcutPath | Out-Null
+    Write-Host "Using requested Codex Plus port $Port." -ForegroundColor Green
+    $shell = New-Object -ComObject WScript.Shell
+    $shortcut = $shell.CreateShortcut($shortcutPath)
+    if ([string]::IsNullOrWhiteSpace($shortcut.TargetPath)) {
+        throw "Codex Plus shortcut target could not be resolved: $shortcutPath"
     }
+    $launcherArguments = [string]$shortcut.Arguments
+    if (-not [string]::IsNullOrWhiteSpace($launcherArguments)) { $launcherArguments += ' ' }
+    $launcherArguments += [string]$Port
+    $previousRequestedPort = [Environment]::GetEnvironmentVariable('CODEX_PLUS_REQUESTED_PORT', 'Process')
+    try {
+        $env:CODEX_PLUS_REQUESTED_PORT = [string]$Port
+        Start-Process -FilePath $shortcut.TargetPath -ArgumentList $launcherArguments -WorkingDirectory $shortcut.WorkingDirectory | Out-Null
+        # Keep the fallback environment alive while wscript.exe starts the
+        # launcher and its PowerShell children.
+        Start-Sleep -Seconds 10
+    } finally {
+        if ($null -eq $previousRequestedPort) {
+            Remove-Item Env:CODEX_PLUS_REQUESTED_PORT -ErrorAction SilentlyContinue
+        } else {
+            $env:CODEX_PLUS_REQUESTED_PORT = $previousRequestedPort
+        }
+    }
+
+    # Keep this machine-readable so callers such as the local .bat launcher can
+    # capture the exact port without a state file or a post-launch port scan.
+    Write-Output "CODEX_PLUS_LAUNCH_PORT=$Port"
 }
 
 if ($env:OS -ne 'Windows_NT') {
@@ -84,6 +114,11 @@ if ($requestedPort -le 0 -and -not [string]::IsNullOrWhiteSpace($env:CODEX_PLUS_
         throw "CODEX_PLUS_REQUESTED_PORT '$parsedPort' is outside the valid TCP port range."
     }
     $requestedPort = $parsedPort
+}
+
+if ($requestedPort -le 0) {
+    $requestedPort = Get-RandomInstallerPort
+    Write-Host "Selected random Codex Plus port $requestedPort." -ForegroundColor Green
 }
 
 if ($requestedPort -gt 0 -and -not (Test-InstallerPortAvailable -Port $requestedPort)) {

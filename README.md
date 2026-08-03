@@ -45,13 +45,16 @@ cd codex-plus
 powershell.exe -ExecutionPolicy Bypass -File .\patch.ps1
 ```
 
-The local installer can reserve an exact DevTools port before opening the new Codex Plus window:
+The local installer selects a free random DevTools port before opening the new Codex Plus window. It prints the selected port as a machine-readable line, so callers can capture it without scanning existing processes:
 
 ```powershell
-powershell.exe -ExecutionPolicy Bypass -File .\install.ps1 -LocalDev -Port 30113
+$launchOutput = & .\Codex Plus Install Local.bat 2>&1
+$portLine = $launchOutput | Where-Object { $_ -match '^CODEX_PLUS_LAUNCH_PORT=\d+$' } | Select-Object -Last 1
+$requestedPort = [int](($portLine -split '=', 2)[1])
+$requestedPort
 ```
 
-The installer stops if that loopback port is already in use; it does not switch to another port.
+The installer prints `CODEX_PLUS_LAUNCH_PORT=<port>` after launching the fresh window. An explicit `-Port <port>` remains supported when a caller needs a predetermined port; the installer stops if that loopback port is already in use.
 
 ## How It Works
 

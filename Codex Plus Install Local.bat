@@ -6,3 +6,4 @@ rem Double-click this file from the repo root or place a shortcut to it on the d
 
 set "REPO_ROOT=%~dp0"
 powershell.exe -NoProfile -ExecutionPolicy Bypass -File "%REPO_ROOT%install.ps1" -LocalDev %*
+exit /b %ERRORLEVEL%

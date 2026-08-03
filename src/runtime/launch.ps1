@@ -1435,7 +1435,7 @@ function Watch-CodexCloseToQuit {
             } catch {
             }
             try {
-                Invoke-CodexPlusInjection -Port $Port | Out-Null
+                Invoke-CodexPlusInjection -Port $Port -LauncherKey $LauncherKey | Out-Null
             } catch {
             }
             if ($script:CodexPlusUsageRefreshRequested) {
@@ -1565,7 +1565,10 @@ function Invoke-CodexRtlInjectionForTarget {
 }
 
 function Invoke-CodexPlusInjection {
-    param([Parameter(Mandatory)][int]$Port)
+    param(
+        [Parameter(Mandatory)][int]$Port,
+        [AllowEmptyString()][string]$LauncherKey
+    )
 
     if (-not $script:CodexPlusInjectedTargetIds) {
         $script:CodexPlusInjectedTargetIds = @{}
@@ -1596,20 +1599,24 @@ function Invoke-CodexPlusInjection {
             # A newly opened project target exposes its project context as soon as
             # this injection completes. Sync native titles before moving on to
             # other targets so the taskbar does not wait for the whole batch.
-            Update-CodexWindowTitles -Port $Port | Out-Null
+            Update-CodexWindowTitles -Port $Port -LauncherKey $LauncherKey | Out-Null
             # A newly-created project target can finish adopting its pending
             # context just after Runtime.evaluate returns. Retry briefly so
             # the native taskbar title observes the project name as soon as it
             # becomes available, instead of leaving the window on its launch
             # title until the next polling cycle.
             Start-Sleep -Milliseconds 100
-            Update-CodexWindowTitles -Port $Port | Out-Null
+            Update-CodexWindowTitles -Port $Port -LauncherKey $LauncherKey | Out-Null
             Start-Sleep -Milliseconds 250
-            Update-CodexWindowTitles -Port $Port | Out-Null
+            Update-CodexWindowTitles -Port $Port -LauncherKey $LauncherKey | Out-Null
+            Start-Sleep -Milliseconds 500
+            Update-CodexWindowTitles -Port $Port -LauncherKey $LauncherKey | Out-Null
+            Start-Sleep -Milliseconds 1000
+            Update-CodexWindowTitles -Port $Port -LauncherKey $LauncherKey | Out-Null
         } catch {
             Write-Warn "Codex Plus injection failed for target '$($target.title)': $($_.Exception.Message)"
         }
     }
-    Update-CodexWindowTitles -Port $Port | Out-Null
+    Update-CodexWindowTitles -Port $Port -LauncherKey $LauncherKey | Out-Null
     return $true
 }
