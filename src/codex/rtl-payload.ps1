@@ -20,6 +20,11 @@ function Get-CodexRtlPayload {
   const BLOCKQUOTE_SELECTOR = 'blockquote';
   const INLINE_TECHNICAL_SELECTOR = 'code, kbd, samp';
   const TASK_CHECKBOX_SELECTOR = 'input[type="checkbox"]';
+  const REQUEST_CARD_SELECTOR = '[class*="request-card"]';
+  const REQUEST_CARD_QUESTION_SELECTOR = '[class*="text-size-chat"]';
+  const REQUEST_CARD_OPTION_SELECTOR = '[role="radio"]';
+  const REQUEST_CARD_DESCRIPTION_SELECTOR = '[data-tooltip-visibility-target="true"]';
+  const TOOLTIP_SELECTOR = '[role="tooltip"]';
   const TEXT_BLOCK_SELECTOR = [
     'p',
     'h1',
@@ -246,6 +251,28 @@ function Get-CodexRtlPayload {
     }
   }
 
+  function processRequestCards() {
+    for (const card of document.querySelectorAll(REQUEST_CARD_SELECTOR)) {
+      const question = card.querySelector(REQUEST_CARD_QUESTION_SELECTOR);
+      if (question && getMeaningfulText(question).trim()) {
+        applyBlockDirection(question, classifyDirection(question));
+      }
+
+      for (const option of card.querySelectorAll(REQUEST_CARD_OPTION_SELECTOR)) {
+        const description = option.querySelector(REQUEST_CARD_DESCRIPTION_SELECTOR);
+        if (!description || !getMeaningfulText(description).trim()) continue;
+        applyBlockDirection(description, classifyDirection(description));
+      }
+    }
+  }
+
+  function processTooltips() {
+    for (const tooltip of document.querySelectorAll(TOOLTIP_SELECTOR)) {
+      if (!getMeaningfulText(tooltip).trim()) continue;
+      applyBlockDirection(tooltip, classifyDirection(tooltip));
+    }
+  }
+
   function getListItemOwnText(item) {
     const clone = item.cloneNode(true);
     for (const nested of clone.querySelectorAll(LIST_CONTAINER_SELECTOR)) {
@@ -373,6 +400,8 @@ function Get-CodexRtlPayload {
       ensureInlineIslandsStyle();
       processTitles();
       processComposers();
+      processRequestCards();
+      processTooltips();
       processUserMessageBubbles();
       processConversationRoots();
     } finally {
