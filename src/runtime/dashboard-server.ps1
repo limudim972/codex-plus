@@ -1,8 +1,7 @@
 param(
     [Parameter(Mandatory)][string]$DashboardRoot,
     [int]$Port = 3000,
-    [AllowEmptyString()][string]$LauncherKey,
-    [int]$PollMilliseconds = 1000
+    [AllowEmptyString()][string]$LauncherKey
 )
 
 $ErrorActionPreference = 'SilentlyContinue'
@@ -201,11 +200,8 @@ function Write-Response {
 
 try {
     $listener.Start()
-    $contextTask = $listener.GetContextAsync()
     while ($true) {
-        if (-not $contextTask.Wait($PollMilliseconds)) { continue }
-        $context = $contextTask.Result
-        $contextTask = $listener.GetContextAsync()
+        $context = $listener.GetContext()
         try {
             $path = $context.Request.Url.AbsolutePath
             if ($path -eq '/api/summary') { $body = (Get-Summary | ConvertTo-Json -Depth 20 -Compress); Write-Response $context 200 'application/json; charset=utf-8' ([Text.Encoding]::UTF8.GetBytes($body)); continue }

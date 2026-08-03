@@ -14,6 +14,7 @@ function Install-CodexRtlRuntimeFiles {
         'patch.ps1',
         'src/runtime/assets/codex-plus.ico',
         'src/runtime/dashboard-server.ps1',
+        'src/runtime/global-manager.ps1',
         'src/shared/logging.ps1',
         'src/shared/prompting.ps1',
         'src/shared/asar.ps1',
@@ -115,20 +116,8 @@ If instanceKey <> "" Then
     command = command & " -LauncherKey " & Chr(34) & instanceKey & Chr(34)
     launchSplashCommand = launchSplashCommand & " -LauncherKey " & Chr(34) & instanceKey & Chr(34)
 End If
-dashboardServerPath = Replace("$escapedPatchScriptPath", "patch.ps1", "src\runtime\dashboard-server.ps1")
-dashboardRoot = shell.ExpandEnvironmentStrings("%USERPROFILE%") & "\Documents\code\Codex Usage Dashboard"
-dashboardCommand = "powershell.exe -NoProfile -ExecutionPolicy Bypass -WindowStyle Hidden -File " & Chr(34) & dashboardServerPath & Chr(34) & " -DashboardRoot " & Chr(34) & dashboardRoot & Chr(34) & " -Port 3000"
-If instanceKey <> "" Then
-    dashboardCommand = dashboardCommand & " -LauncherKey " & Chr(34) & instanceKey & Chr(34)
-End If
 shell.Run launchSplashCommand, 0, False
 shell.Run command, 0, False
-shell.Run dashboardCommand, 0, False
-watchdogCommand = "powershell.exe -NoProfile -ExecutionPolicy Bypass -WindowStyle Hidden -File " & Chr(34) & "$escapedPatchScriptPath" & Chr(34) & " -SkipMain -StartCloseWatchdog"
-If instanceKey <> "" Then
-    watchdogCommand = watchdogCommand & " -LauncherKey " & Chr(34) & instanceKey & Chr(34)
-End If
-shell.Run watchdogCommand, 0, False
 "@
 }
 

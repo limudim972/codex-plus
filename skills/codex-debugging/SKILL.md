@@ -14,7 +14,7 @@ This repo-local copy includes a Codex Plus method for attaching to an already-ru
 ## Workflow
 
 1. Inspect the running Codex target before restarting anything.
-2. Launch Codex Plus through the Desktop installer when you need a fresh Plus window or need to verify checked-in runtime changes.
+2. Launch Codex Plus through the Desktop installer only when live verification actually requires a new renderer/runtime instance—most importantly after changes to the Codex payload, injected UI, or other behavior that is loaded only during startup. Do not launch a new instance merely because installer files, the session monitor, or another background/runtime script changed; those changes can be verified with source/runtime checks and tests, and already-open Plus windows will not load them until they are closed and a new one is started.
    - Prefer the Desktop shortcut at Desktop\Codex Plus Install Local.lnk.
    - The installer runs the local checkout with `-LocalDev`, synchronizes the installed runtime, and launches a fresh Codex Plus window. Do not separately copy runtime files or inject the changed script into an existing window.
    - Run the local installer synchronously so it chooses a free random port and returns it on stdout. Capture the machine-readable `CODEX_PLUS_LAUNCH_PORT=<port>` line; do not scan the post-launch process list to discover the port:
@@ -31,7 +31,8 @@ This repo-local copy includes a Codex Plus method for attaching to an already-ru
    - The installer and launcher set up the scoped profile, requested debug port, splash helper, and watchdog flow used by Codex Plus.
    - Before launching, record the existing Codex Plus --remote-debugging-port and --user-data-dir pairs.
    - After launch, use the returned port and attach only to the matching newly appeared port/profile pair, not to any pre-existing Codex window.
-   - If you updated the local Plus runtime or checked-in payload files, do not inject the script into an already-open page; launch a fresh Plus window and verify the change there.
+   - If you updated a Codex payload or injected renderer behavior, do not inject the script into an already-open page; launch a fresh Plus window and verify the change there.
+   - For installer, launcher, session-monitor, or other non-renderer runtime changes, do not launch or restart a Plus window unless the user explicitly requests live verification. Record that existing windows retain the old loaded code and that the change will apply to the next fresh launch.
 3. Resolve the active debug port for the running Codex instance.
    - Check the running `ChatGPT.exe` command line for `--remote-debugging-port=...`.
    - If working in Codex Plus, prefer the launcher-scoped port for the instance you are inspecting.

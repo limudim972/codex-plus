@@ -409,9 +409,6 @@ function Format-CodexUsageWindowTitle {
 
 $script:CodexPlusRateLimitTitleCache = $null
 $script:CodexPlusUsageChangedPaths = @()
-$script:CodexPlusUsageRefreshRequested = $false
-$script:CodexPlusUsageWatcher = $null
-$script:CodexPlusUsageWatcherEvents = @()
 $script:CodexPlusPrematureAlerted = @{}
 $script:CodexPlusPrematurePending = [hashtable]::Synchronized(@{})
 $script:CodexPlusChangedSessionPaths = [hashtable]::Synchronized(@{})
@@ -420,11 +417,57 @@ function Get-CodexSessionDisplayName {
     param([Parameter(Mandatory)][string]$SessionId)
     $indexPath = Join-Path $env:USERPROFILE '.codex\session_index.jsonl'
     if (-not (Test-Path -LiteralPath $indexPath)) { return $SessionId }
-    foreach ($line in @(Get-Content -LiteralPath $indexPath -ErrorAction SilentlyContinue)) {
+    foreach ($line in @(Get-Content -LiteralPath $indexPath -Encoding UTF8 -ErrorAction SilentlyContinue)) {
         try { $entry = $line | ConvertFrom-Json } catch { continue }
         if ([string]$entry.id -eq $SessionId -and $entry.thread_name) { return [string]$entry.thread_name }
     }
     return $SessionId
+}
+
+function Get-CodexSessionDiagnostic {
+    param([Parameter(Mandatory)][string]$Path)
+    if (-not (Test-Path -LiteralPath $Path -PathType Leaf)) { return $null }
+    $file = Get-Item -LiteralPath $Path -ErrorAction SilentlyContinue
+    if (-not $file) { return $null }
+    $sessionId = if ($file.BaseName -match '(?<id>[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12})$') { $Matches.id } else { $file.BaseName }
+    $cwd = ''
+    $turnId = ''
+    $last = $null
+    $lineNumber = 0
+    try {
+        foreach ($line in Get-Content -LiteralPath $Path -Encoding UTF8 -ErrorAction Stop) {
+            $lineNumber++
+            try { $record = $line | ConvertFrom-Json -ErrorAction Stop } catch { continue }
+            $payload = if ($record.payload -is [pscustomobject]) { $record.payload } elseif ($record.event_msg -is [pscustomobject]) { $record.event_msg } else { $null }
+            if ($record.session_id) { $sessionId = [string]$record.session_id }
+            if ($payload -and $payload.session_id) { $sessionId = [string]$payload.session_id }
+            if ($record.cwd) { $cwd = [string]$record.cwd }
+            if ($payload -and $payload.cwd) { $cwd = [string]$payload.cwd }
+            if ($record.turn_id) { $turnId = [string]$record.turn_id }
+            if ($payload -and $payload.turn_id) { $turnId = [string]$payload.turn_id }
+            $payloadType = if ($payload -and $payload.type) { [string]$payload.type } else { '' }
+            $recordType = if ($record.type) { [string]$record.type } else { '' }
+            $last = [pscustomobject]@{
+                line = $lineNumber
+                timestamp = if ($record.timestamp) { [string]$record.timestamp } else { '' }
+                record_type = $recordType
+                payload_type = $payloadType
+                record_id = if ($payload -and $payload.id) { [string]$payload.id } elseif ($record.id) { [string]$record.id } else { '' }
+            }
+        }
+    } catch { return $null }
+    if (-not $last) { return $null }
+    [pscustomobject]@{
+        session = $sessionId
+        cwd = $cwd
+        project = if ($cwd) { Split-Path -Leaf $cwd } else { 'unknown' }
+        turn = $turnId
+        last_type = if ($last.payload_type) { $last.payload_type } else { $last.record_type }
+        record_line = $last.line
+        record_timestamp = $last.timestamp
+        record_id = $last.record_id
+        record_type = if ($last.record_type) { $last.record_type } else { $last.payload_type }
+    }
 }
 
 function Update-CodexPrematureSessionState {
@@ -446,7 +489,12 @@ function Update-CodexPrematureSessionState {
         }
         $project = if ($payload.cwd) { Split-Path -Leaf ([string]$payload.cwd) } else { 'unknown' }
         $sessionId = if ($file.BaseName -match '(?<id>[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12})$') { $Matches.id } else { $file.BaseName }
-        $script:CodexPlusPrematurePending[$path] = [pscustomobject]@{ name = Get-CodexSessionDisplayName -SessionId $sessionId; session = $sessionId; turn = if ($payload.turn_id) { [string]$payload.turn_id } else { '' }; project = $project; path = $file.FullName; last_type = [string]$payload.type; last_activity = $file.LastWriteTimeUtc }
+        $recordActivity = $null
+        if ($last[0].timestamp) {
+            try { $recordActivity = [DateTime]::Parse([string]$last[0].timestamp).ToUniversalTime() } catch { $recordActivity = $null }
+        }
+        $lastActivity = if ($recordActivity) { $recordActivity } else { $file.LastWriteTimeUtc }
+        $script:CodexPlusPrematurePending[$path] = [pscustomobject]@{ name = Get-CodexSessionDisplayName -SessionId $sessionId; session = $sessionId; turn = if ($payload.turn_id) { [string]$payload.turn_id } else { '' }; project = $project; cwd = if ($payload.cwd) { [string]$payload.cwd } else { '' }; path = $file.FullName; last_type = [string]$payload.type; record_line = 0; record_timestamp = ''; record_id = ''; record_type = ''; last_activity = $lastActivity }
     }
 }
 
@@ -456,8 +504,25 @@ function Get-CodexPrematureSessionAlerts {
     foreach ($path in @($script:CodexPlusPrematurePending.Keys)) {
         $pending = $script:CodexPlusPrematurePending[$path]
         if (-not $pending) { continue }
+        $diagnostic = Get-CodexSessionDiagnostic -Path $path
+        if (-not $diagnostic) { continue }
+        $recordActivity = $null
+        if ($diagnostic.record_timestamp) {
+            try { $recordActivity = [DateTime]::Parse($diagnostic.record_timestamp).ToUniversalTime() } catch { $recordActivity = $null }
+        }
+        if ($recordActivity -and $recordActivity -gt $pending.last_activity) {
+            Update-CodexPrematureSessionState -Paths @($path)
+            continue
+        }
         $ageSeconds = [int]($now - $pending.last_activity).TotalSeconds
         if ($ageSeconds -lt 120) { continue }
+        if ($diagnostic.last_type -in @('task_complete', 'turn_aborted')) {
+            $script:CodexPlusPrematurePending.Remove($path)
+            continue
+        }
+        foreach ($property in @('session','cwd','project','turn','last_type','record_line','record_timestamp','record_id','record_type')) {
+            $pending.$property = $diagnostic.$property
+        }
         $key = "$path|$($pending.last_activity.Ticks)"
         if ($script:CodexPlusPrematureAlerted.ContainsKey($key)) { continue }
         $script:CodexPlusPrematureAlerted[$key] = $true
@@ -473,10 +538,14 @@ function Show-CodexPrematureSessionAlert {
 Codex session may have stopped early.
 
 Project: $($Alert.project)
+CWD: $($Alert.cwd)
 Name: $($Alert.name)
 Session: $($Alert.session)
+Turn: $($Alert.turn)
 Path: $($Alert.path)
 Last event: $($Alert.last_type)
+Record: line $($Alert.record_line), $($Alert.record_type), id $($Alert.record_id)
+Record timestamp: $($Alert.record_timestamp)
 Age: $($Alert.age_seconds) seconds
 Triggered by: No new session row was written for at least 120 seconds, and the last row was not task_complete or turn_aborted.
 "@
@@ -516,40 +585,7 @@ $form.AcceptButton = $button
     try { Start-Process powershell.exe -WindowStyle Hidden -ArgumentList @('-NoProfile','-ExecutionPolicy','Bypass','-EncodedCommand',$encoded) | Out-Null } catch { }
     $literal = (@{ name=$Alert.name; session=$Alert.session; turn=$Alert.turn; project=$Alert.project; path=$Alert.path; last_type=$Alert.last_type; age_seconds=$Alert.age_seconds; trigger='A new turn started after monitor startup and remained without task_complete or turn_aborted for at least 120 seconds.' } | ConvertTo-Json -Compress).Replace('\\', '\\\\').Replace('`"', '\\`"')
     $script:CodexPlusPrematureAlertPayload = $literal
-}
-
-function Start-CodexUsageSessionWatcher {
-    if ($script:CodexPlusUsageWatcher) { return }
-    $sessionsRoot = Join-Path $env:USERPROFILE '.codex\sessions'
-    if (-not (Test-Path -LiteralPath $sessionsRoot -PathType Container)) { return }
-    $watcher = [System.IO.FileSystemWatcher]::new($sessionsRoot, '*.jsonl')
-    $watcher.IncludeSubdirectories = $true
-    $watcher.NotifyFilter = [System.IO.NotifyFilters]'FileName, LastWrite, Size'
-    $watcher.EnableRaisingEvents = $true
-    $action = {
-        $script:CodexPlusUsageRefreshRequested = $true
-        $changedPath = [string]$Event.SourceEventArgs.FullPath
-        if ($changedPath) { $script:CodexPlusChangedSessionPaths[$changedPath] = $true }
-    }
-    $script:CodexPlusUsageWatcherEvents = @(
-        Register-ObjectEvent -InputObject $watcher -EventName Changed -Action $action
-        Register-ObjectEvent -InputObject $watcher -EventName Created -Action $action
-        Register-ObjectEvent -InputObject $watcher -EventName Renamed -Action $action
-    )
-    $script:CodexPlusUsageWatcher = $watcher
-}
-
-function Stop-CodexUsageSessionWatcher {
-    foreach ($event in @($script:CodexPlusUsageWatcherEvents)) {
-        Unregister-Event -SourceIdentifier $event.Name -ErrorAction SilentlyContinue
-        Remove-Job -Id $event.Id -Force -ErrorAction SilentlyContinue
-    }
-    $script:CodexPlusUsageWatcherEvents = @()
-    if ($script:CodexPlusUsageWatcher) {
-        $script:CodexPlusUsageWatcher.EnableRaisingEvents = $false
-        $script:CodexPlusUsageWatcher.Dispose()
-        $script:CodexPlusUsageWatcher = $null
-    }
+    $script:CodexPlusPrematureAlertPayload = (@{ name=$Alert.name; session=$Alert.session; turn=$Alert.turn; project=$Alert.project; cwd=$Alert.cwd; path=$Alert.path; last_type=$Alert.last_type; record_line=$Alert.record_line; record_timestamp=$Alert.record_timestamp; record_id=$Alert.record_id; record_type=$Alert.record_type; age_seconds=$Alert.age_seconds; trigger='A new turn started after monitor startup and remained without task_complete or turn_aborted for at least 120 seconds.' } | ConvertTo-Json -Compress).Replace('\\', '\\\\').Replace('`"', '\\\`"')
 }
 
 function Get-CodexLatestRateLimitSummary {
@@ -581,6 +617,12 @@ function Get-CodexLatestRateLimitSummary {
 function Get-CodexUsageWindowTitle {
     $now = [DateTimeOffset]::UtcNow
     $cache = $script:CodexPlusRateLimitTitleCache
+    if ($script:CodexPlusGlobalUsageAuthority) {
+        if ($cache -and $null -ne $cache.used_percent -and $null -ne $cache.resets_at) {
+            return Format-CodexUsageWindowTitle -UsedPercent ([double]$cache.used_percent) -ResetsAt ([long]$cache.resets_at) -Now $now
+        }
+        return 'Plus Codex'
+    }
     if ($cache -and ($now - $cache.fetched_at).TotalSeconds -lt 30) {
         if ($null -ne $cache.used_percent -and $null -ne $cache.resets_at) {
             return Format-CodexUsageWindowTitle -UsedPercent ([double]$cache.used_percent) -ResetsAt ([long]$cache.resets_at) -Now $now
@@ -716,10 +758,166 @@ public static class CodexPlusNativeWindows {
         return ShowWindow(hWnd, 3);
     }
 }
+
 '@
     }
 
     return [CodexPlusNativeWindows]::GetWindowTitle($WindowHandle)
+}
+
+function Start-CodexNativeWindowEventWatcher {
+    param(
+        [Parameter(Mandatory)][Collections.Concurrent.ConcurrentQueue[object]]$Queue,
+        [Parameter(Mandatory)][Threading.EventWaitHandle]$Signal
+    )
+
+    if (-not ('CodexPlusWindowEventWatcher' -as [type])) {
+        Add-Type @'
+using System;
+using System.Collections.Concurrent;
+using System.Runtime.InteropServices;
+using System.Threading;
+
+public sealed class CodexPlusWindowEvent {
+    public string Kind;
+    public int EventType;
+    public long WindowHandle;
+    public int ProcessId;
+    public int ObjectId;
+    public int ChildId;
+
+    public CodexPlusWindowEvent(string kind, int eventType, long windowHandle, int processId, int objectId, int childId) {
+        Kind = kind;
+        EventType = eventType;
+        WindowHandle = windowHandle;
+        ProcessId = processId;
+        ObjectId = objectId;
+        ChildId = childId;
+    }
+}
+
+public sealed class CodexPlusWindowEventWatcher : IDisposable {
+    private const uint EventObjectDestroy = 0x8001;
+    private const uint EventObjectShow = 0x8002;
+    private const uint EventObjectHide = 0x8003;
+    private const int ObjectIdWindow = -4;
+    private const int ChildIdSelf = 0;
+    private const uint WineventOutOfContext = 0;
+    private const uint WmQuit = 0x0012;
+
+    private delegate void WinEventDelegate(
+        IntPtr hook,
+        uint eventType,
+        IntPtr hwnd,
+        int idObject,
+        int idChild,
+        uint eventThread,
+        uint eventTime);
+
+    [DllImport("user32.dll", SetLastError = true)]
+    private static extern IntPtr SetWinEventHook(
+        uint eventMin,
+        uint eventMax,
+        IntPtr hmodWinEventProc,
+        WinEventDelegate callback,
+        uint idProcess,
+        uint idThread,
+        uint flags);
+
+    [DllImport("user32.dll", SetLastError = true)]
+    private static extern bool UnhookWinEvent(IntPtr hook);
+
+    [DllImport("user32.dll")]
+    private static extern uint GetWindowThreadProcessId(IntPtr hwnd, out uint processId);
+
+    [DllImport("user32.dll", SetLastError = true)]
+    private static extern sbyte GetMessage(out NativeMessage message, IntPtr hwnd, uint minFilter, uint maxFilter);
+
+    [DllImport("user32.dll")]
+    private static extern bool TranslateMessage(ref NativeMessage message);
+
+    [DllImport("user32.dll")]
+    private static extern IntPtr DispatchMessage(ref NativeMessage message);
+
+    [DllImport("user32.dll")]
+    private static extern bool PostThreadMessage(uint threadId, uint message, UIntPtr wParam, IntPtr lParam);
+
+    [StructLayout(LayoutKind.Sequential)]
+    private struct NativeMessage {
+        public IntPtr Hwnd;
+        public uint Message;
+        public UIntPtr WParam;
+        public IntPtr LParam;
+        public uint Time;
+        public int X;
+        public int Y;
+    }
+
+    private readonly ConcurrentQueue<object> _queue;
+    private readonly EventWaitHandle _signal;
+    private readonly ManualResetEventSlim _ready = new ManualResetEventSlim(false);
+    private readonly WinEventDelegate _callback;
+    private Thread _thread;
+    private uint _threadId;
+    private IntPtr _hook;
+    private volatile bool _stopping;
+
+    public CodexPlusWindowEventWatcher(ConcurrentQueue<object> queue, EventWaitHandle signal) {
+        _queue = queue;
+        _signal = signal;
+        _callback = OnWindowEvent;
+    }
+
+    public void Start() {
+        _thread = new Thread(ThreadMain);
+        _thread.IsBackground = true;
+        _thread.Name = "Codex Plus native window events";
+        _thread.Start();
+        _ready.Wait(5000);
+        if (_hook == IntPtr.Zero) {
+            throw new InvalidOperationException("SetWinEventHook failed.");
+        }
+    }
+
+    private void ThreadMain() {
+        _threadId = GetCurrentThreadId();
+        _hook = SetWinEventHook(EventObjectDestroy, EventObjectHide, IntPtr.Zero, _callback, 0, 0, WineventOutOfContext);
+        _ready.Set();
+        if (_hook == IntPtr.Zero) return;
+
+        NativeMessage message;
+        while (!_stopping && GetMessage(out message, IntPtr.Zero, 0, 0) > 0) {
+            TranslateMessage(ref message);
+            DispatchMessage(ref message);
+        }
+        UnhookWinEvent(_hook);
+        _hook = IntPtr.Zero;
+    }
+
+    private void OnWindowEvent(IntPtr hook, uint eventType, IntPtr hwnd, int idObject, int idChild, uint eventThread, uint eventTime) {
+        if (hwnd == IntPtr.Zero || idChild != ChildIdSelf) return;
+        uint processId;
+        GetWindowThreadProcessId(hwnd, out processId);
+        _queue.Enqueue(new CodexPlusWindowEvent("native-window-event", (int)eventType, hwnd.ToInt64(), (int)processId, idObject, idChild));
+        _signal.Set();
+    }
+
+    public void Dispose() {
+        _stopping = true;
+        if (_threadId != 0) PostThreadMessage(_threadId, WmQuit, UIntPtr.Zero, IntPtr.Zero);
+        if (_thread != null && _thread.IsAlive) _thread.Join(2000);
+        _ready.Dispose();
+    }
+
+    [DllImport("kernel32.dll")]
+    private static extern uint GetCurrentThreadId();
+}
+'@
+    }
+
+    $watcher = [CodexPlusWindowEventWatcher]::new($Queue, $Signal)
+    $watcher.Start()
+    return $watcher
 }
 
 function Get-CodexVisibleWindowHandles {
@@ -1309,173 +1507,6 @@ function Wait-CodexInstanceDebugPort {
     return (Get-CodexRtlLaunchPort -PreferredPort $PreferredPort -LauncherKey $LauncherKey)
 }
 
-function Start-CodexCloseWatchdog {
-    param(
-        [Parameter(Mandatory)][int]$Port,
-        [AllowEmptyString()][string]$LauncherKey
-    )
-
-    $scriptPath = Get-CodexRtlPatchScriptPath
-    if (-not (Test-Path -LiteralPath $scriptPath)) {
-        throw "Codex Plus watchdog script not found: $scriptPath"
-    }
-
-    $args = @(
-        '-NoProfile',
-        '-ExecutionPolicy', 'Bypass',
-        '-WindowStyle', 'Hidden',
-        '-File', $scriptPath,
-        '-SkipMain',
-        '-StartCloseWatchdog',
-        '-WatchPort', $Port
-    )
-    if (-not [string]::IsNullOrWhiteSpace($LauncherKey)) {
-        $args += @('-LauncherKey', $LauncherKey)
-    }
-
-    Start-Process -FilePath 'powershell.exe' -WindowStyle Hidden -ArgumentList $args | Out-Null
-}
-
-function Watch-CodexCloseToQuit {
-    param(
-        [Parameter(Mandatory)][int]$Port,
-        [AllowEmptyString()][string]$LauncherKey,
-        [int]$DashboardProcessId = 0,
-        [int]$PollMilliseconds = 250,
-        [int]$GracePolls = 3,
-        [int]$MissingProcessGracePolls = 40,
-        [int]$StartupWaitSeconds = 30
-    )
-
-    $startupDeadline = [DateTime]::UtcNow.AddSeconds($StartupWaitSeconds)
-    $seenMatchingProcess = $false
-    # Process cleanup is deliberately disarmed during startup. Electron may
-    # create the instance processes well before it publishes a native window.
-    $closeCleanupArmed = $false
-    $missingVisibleWindowCount = 0
-    $missingProcessCount = 0
-    Start-CodexUsageSessionWatcher
-    $seenProcessIds = [System.Collections.Generic.HashSet[int]]::new()
-    $stopSeenProcesses = {
-        foreach ($processId in @($seenProcessIds)) {
-            Stop-Process -Id $processId -Force -ErrorAction SilentlyContinue
-        }
-    }
-    $stopDashboard = {
-        if ($DashboardProcessId -gt 0) {
-            Stop-Process -Id $DashboardProcessId -Force -ErrorAction SilentlyContinue
-        }
-        $dashboardProcesses = Get-CimInstance Win32_Process -Filter "Name = 'powershell.exe'" -ErrorAction SilentlyContinue | Where-Object {
-            $_.CommandLine -like '*dashboard-server.ps1*' -and $_.CommandLine -like '*-Port 3000*' -and ($LauncherKey -eq '' -or $_.CommandLine -like ('*' + $LauncherKey + '*'))
-        }
-        foreach ($dashboardProcess in @($dashboardProcesses)) {
-            Stop-Process -Id ([int]$dashboardProcess.ProcessId) -Force -ErrorAction SilentlyContinue
-        }
-    }
-    while ($true) {
-        $matchingProcesses = @(
-            Get-CodexDesktopProcesses | Where-Object {
-                Test-CodexProcessMatchesCodexPlusInstance -Process $_ -Port $Port -LauncherKey $LauncherKey
-            }
-        )
-        if ($matchingProcesses.Count -eq 0) {
-            if ((-not $seenMatchingProcess) -and ([DateTime]::UtcNow -lt $startupDeadline)) {
-                Start-Sleep -Milliseconds $PollMilliseconds
-                continue
-            }
-            if (-not $seenMatchingProcess) {
-                & $stopDashboard
-                Stop-CodexUsageSessionWatcher
-                return
-            }
-
-            if (-not $closeCleanupArmed) {
-                # A browser process can be replaced while the first window is
-                # still launching. Never terminate an observed process before
-                # this instance has exposed its initial visible window.
-                if ([DateTime]::UtcNow -ge $startupDeadline) {
-                    & $stopDashboard
-                    Stop-CodexUsageSessionWatcher
-                    return
-                }
-                Start-Sleep -Milliseconds $PollMilliseconds
-                continue
-            }
-
-            # Process discovery can briefly return no rows while Electron replaces
-            # its browser process or WMI/CIM is under load. Exiting on the first
-            # empty sample permanently orphaned otherwise healthy Plus instances,
-            # leaving no watchdog to terminate them after their last window closed.
-            $missingProcessCount++
-            if ($missingProcessCount -ge $MissingProcessGracePolls) {
-                # The process can disappear from CIM before it has actually
-                # exited.  Always clean up the processes observed for this
-                # launcher instance before abandoning the watchdog.
-                & $stopSeenProcesses
-                & $stopDashboard
-                return
-            }
-            Start-Sleep -Milliseconds $PollMilliseconds
-            continue
-        }
-        $missingProcessCount = 0
-        foreach ($process in $matchingProcesses) {
-            [void]$seenProcessIds.Add([int]$process.ProcessId)
-        }
-        if (-not $seenMatchingProcess) {
-            $seenMatchingProcess = $true
-        }
-
-        $visibleProcessCount = Get-CodexVisibleProcessCount -Port $Port -LauncherKey $LauncherKey
-        if ($visibleProcessCount -gt 0) {
-            $closeCleanupArmed = $true
-            $missingVisibleWindowCount = 0
-            try {
-                Maximize-CodexPlusWindows -Port $Port -LauncherKey $LauncherKey | Out-Null
-            } catch {
-            }
-            try {
-                Invoke-CodexPlusInjection -Port $Port -LauncherKey $LauncherKey | Out-Null
-            } catch {
-            }
-            if ($script:CodexPlusUsageRefreshRequested) {
-                $script:CodexPlusUsageRefreshRequested = $false
-                $changedPaths = @($script:CodexPlusChangedSessionPaths.Keys)
-                foreach ($changedPath in $changedPaths) { $script:CodexPlusChangedSessionPaths.Remove($changedPath) }
-                $script:CodexPlusUsageChangedPaths = $changedPaths
-                $script:CodexPlusRateLimitTitleCache = $null
-                Update-CodexWindowTitles -Port $Port -LauncherKey $LauncherKey | Out-Null
-                if ($changedPaths.Count -gt 0) {
-                    Update-CodexPrematureSessionState -Paths $changedPaths
-                }
-            }
-            foreach ($alert in @(Get-CodexPrematureSessionAlerts)) {
-                Show-CodexPrematureSessionAlert -Alert $alert
-                try {
-                    $alertJson = $script:CodexPlusPrematureAlertPayload
-                    $command = New-CodexCdpCommand -Id 91 -Method 'Runtime.evaluate' -Params @{ expression = "window.dispatchEvent(new CustomEvent('codex-plus-session-alert',{detail:$alertJson}));" }
-                    foreach ($target in @(Get-CodexDevToolsTargets -Port $Port | Where-Object { $_.type -eq 'page' -and $_.webSocketDebuggerUrl })) { Invoke-CodexCdpCommand -WebSocketDebuggerUrl $target.webSocketDebuggerUrl -Command $command | Out-Null }
-                } catch { }
-            }
-        } else {
-            if ($closeCleanupArmed) {
-                $missingVisibleWindowCount++
-            } else {
-                $missingVisibleWindowCount = 0
-            }
-        }
-
-        if ($missingVisibleWindowCount -ge $GracePolls) {
-            Stop-CodexDesktopProcesses -Port $Port -LauncherKey $LauncherKey -CurrentInstanceOnly
-            & $stopSeenProcesses
-            & $stopDashboard
-            return
-        }
-
-        Start-Sleep -Milliseconds $PollMilliseconds
-    }
-}
-
 function New-CodexCdpCommand {
     param(
         [Parameter(Mandatory)][int]$Id,
@@ -1493,20 +1524,23 @@ function New-CodexCdpCommand {
 function Invoke-CodexCdpCommand {
     param(
         [Parameter(Mandatory)][string]$WebSocketDebuggerUrl,
-        [Parameter(Mandatory)]$Command
+        [Parameter(Mandatory)]$Command,
+        [int]$TimeoutMilliseconds = 5000
     )
 
     $client = [System.Net.WebSockets.ClientWebSocket]::new()
+    $cancellation = [Threading.CancellationTokenSource]::new()
+    $cancellation.CancelAfter([Math]::Max(250, $TimeoutMilliseconds))
     $buffer = New-Object byte[] 65536
     try {
-        $client.ConnectAsync([Uri]$WebSocketDebuggerUrl, [Threading.CancellationToken]::None).GetAwaiter().GetResult()
+        $client.ConnectAsync([Uri]$WebSocketDebuggerUrl, $cancellation.Token).GetAwaiter().GetResult()
         $json = $Command | ConvertTo-Json -Depth 10 -Compress
         $bytes = [System.Text.Encoding]::UTF8.GetBytes($json)
         $segment = [ArraySegment[byte]]::new($bytes)
-        $client.SendAsync($segment, [System.Net.WebSockets.WebSocketMessageType]::Text, $true, [Threading.CancellationToken]::None).GetAwaiter().GetResult()
+        $client.SendAsync($segment, [System.Net.WebSockets.WebSocketMessageType]::Text, $true, $cancellation.Token).GetAwaiter().GetResult()
         $receive = [ArraySegment[byte]]::new($buffer)
         $message = [System.Collections.Generic.List[byte]]::new()
-        $result = $client.ReceiveAsync($receive, [Threading.CancellationToken]::None).GetAwaiter().GetResult()
+        $result = $client.ReceiveAsync($receive, $cancellation.Token).GetAwaiter().GetResult()
         if ($result.MessageType -eq [System.Net.WebSockets.WebSocketMessageType]::Close) {
             throw 'Codex DevTools closed the WebSocket before returning a response.'
         }
@@ -1514,7 +1548,7 @@ function Invoke-CodexCdpCommand {
             $message.AddRange([byte[]]$buffer[0..($result.Count - 1)])
         }
         while (-not $result.EndOfMessage) {
-            $result = $client.ReceiveAsync($receive, [Threading.CancellationToken]::None).GetAwaiter().GetResult()
+            $result = $client.ReceiveAsync($receive, $cancellation.Token).GetAwaiter().GetResult()
             if ($result.MessageType -eq [System.Net.WebSockets.WebSocketMessageType]::Close) {
                 throw 'Codex DevTools closed the WebSocket before returning a complete response.'
             }
@@ -1524,10 +1558,9 @@ function Invoke-CodexCdpCommand {
         }
         return [System.Text.Encoding]::UTF8.GetString($message.ToArray())
     } finally {
-        if ($client.State -eq [System.Net.WebSockets.WebSocketState]::Open) {
-            $client.CloseAsync([System.Net.WebSockets.WebSocketCloseStatus]::NormalClosure, 'done', [Threading.CancellationToken]::None).GetAwaiter().GetResult()
-        }
+        try { $client.Abort() } catch { }
         $client.Dispose()
+        $cancellation.Dispose()
     }
 }
 

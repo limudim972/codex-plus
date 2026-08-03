@@ -7,9 +7,7 @@
 param(
     [switch]$LaunchCodexRtl,
     [switch]$ShowLaunchSplash,
-    [switch]$StartCloseWatchdog,
-    [int]$WatchPort,
-    [int]$DashboardProcessId,
+    [switch]$StartGlobalManager,
     [int]$PreferredPort,
     [AllowEmptyString()][string]$LauncherKey,
     [switch]$InstallCodexPlus,
@@ -44,6 +42,7 @@ foreach ($module in @(
     'src/runtime/files.ps1',
     'src/runtime/shortcuts.ps1',
     'src/runtime/launch.ps1',
+    'src/runtime/global-manager.ps1',
     'src/runtime/patching.ps1',
     'src/ui/menu.ps1'
 )) {
@@ -54,20 +53,12 @@ foreach ($module in @(
     . $modulePath
 }
 
-if ($StartCloseWatchdog) {
-    if (-not $WatchPort) {
-        $state = Read-CodexRtlState
-        $preferredPort = if ($state -and $state.Port) { [int]$state.Port } else { 0 }
-        $WatchPort = Wait-CodexInstanceDebugPort -PreferredPort $preferredPort -LauncherKey $LauncherKey
-    }
-    if (-not $WatchPort) {
-        throw 'WatchPort could not be resolved for the Codex close watchdog.'
-    }
-    Watch-CodexCloseToQuit -Port $WatchPort -LauncherKey $LauncherKey -DashboardProcessId $DashboardProcessId
+$script:CodexRtlPatchScriptPath = $PSCommandPath
+
+if ($StartGlobalManager) {
+    Start-CodexPlusGlobalManager
     return
 }
-
-$script:CodexRtlPatchScriptPath = $PSCommandPath
 
 if ($ShowLaunchSplash) {
     Show-CodexLaunchSplash -LauncherKey $LauncherKey -PreferredPort $PreferredPort
@@ -84,7 +75,7 @@ if ($InstallCodexPlus) {
 }
 
 if ($LaunchCodexRtl) {
-    Launch-CodexRtl -PreferredPort $PreferredPort
+    Launch-CodexRtl -PreferredPort $PreferredPort -LauncherKey $LauncherKey
     return
 }
 

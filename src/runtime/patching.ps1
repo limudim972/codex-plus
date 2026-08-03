@@ -170,8 +170,12 @@ function Launch-CodexRtl {
     if ($env:CODEX_PLUS_DESKTOP_LAUNCH -eq '1') {
         Invoke-CodexGraphicsDriverCheck | Out-Null
     }
-    Start-CodexForRtl -Inspection $installInfo -Port $port -LauncherKey $LauncherKey | Out-Null
-    Start-Sleep -Seconds 5
-    Invoke-CodexPlusInjection -Port $port -LauncherKey $LauncherKey | Out-Null
-    Wait-CodexWindowTitleSync -Port $port -LauncherKey $LauncherKey | Out-Null
+    $userDataDirectory = Get-CodexPlusUserDataDirectory -LauncherKey $LauncherKey
+    Register-CodexPlusManagerInstance -LauncherKey $LauncherKey -Port $port -UserDataDirectory $userDataDirectory | Out-Null
+    try {
+        Start-CodexForRtl -Inspection $installInfo -Port $port -LauncherKey $LauncherKey | Out-Null
+    } catch {
+        Unregister-CodexPlusManagerInstance -LauncherKey $LauncherKey | Out-Null
+        throw
+    }
 }

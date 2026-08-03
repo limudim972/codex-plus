@@ -18,6 +18,8 @@ function Get-CodexRtlPayload {
   const LIST_CONTAINER_SELECTOR = 'ol, ul';
   const LIST_ITEM_SELECTOR = 'li';
   const BLOCKQUOTE_SELECTOR = 'blockquote';
+  const TABLE_SELECTOR = 'table';
+  const TABLE_CELL_SELECTOR = 'th, td';
   const INLINE_TECHNICAL_SELECTOR = 'code, kbd, samp';
   const TASK_CHECKBOX_SELECTOR = 'input[type="checkbox"]';
   const REQUEST_CARD_SELECTOR = '[class*="request-card"]';
@@ -320,6 +322,20 @@ function Get-CodexRtlPayload {
     }
   }
 
+  function processTables(root) {
+    for (const table of root.querySelectorAll(TABLE_SELECTOR)) {
+      const tableDirection = classifyDirection(table);
+      applyBlockDirection(table, tableDirection);
+
+      for (const cell of table.querySelectorAll(TABLE_CELL_SELECTOR)) {
+        const cellDirection = classifyDirection(cell);
+        const direction = cellDirection === 'neutral' ? tableDirection : cellDirection;
+        applyBlockDirection(cell, direction, { forceLtr: tableDirection === 'rtl' });
+        processInlineTechnicalIslands(cell);
+      }
+    }
+  }
+
   function processUserMessageBubbles() {
     for (const bubble of document.querySelectorAll(USER_BUBBLE_SELECTOR)) {
       const bubbleDirection = classifyDirection(bubble);
@@ -328,6 +344,7 @@ function Get-CodexRtlPayload {
       processInlineTechnicalIslands(bubble);
       processLists(bubble);
       processBlockquotes(bubble);
+      processTables(bubble);
 
       for (const block of bubble.querySelectorAll(TEXT_BLOCK_SELECTOR)) {
         processTextBlock(block);
@@ -341,6 +358,7 @@ function Get-CodexRtlPayload {
       processInlineTechnicalIslands(root);
       processLists(root);
       processBlockquotes(root);
+      processTables(root);
       for (const block of root.querySelectorAll(TEXT_BLOCK_SELECTOR)) {
         if (block.closest(USER_BUBBLE_SELECTOR)) continue;
         processTextBlock(block);

@@ -214,11 +214,14 @@ function Get-CodexContextBadgePayload {
     const details = document.createElement('div');
     details.textContent = [
       'Project: ' + String(detail.project || 'unknown'),
+      'CWD: ' + String(detail.cwd || 'unknown'),
       'Name: ' + String(detail.name || detail.session || 'unknown'),
       'Session: ' + String(detail.session || 'unknown'),
       'Turn: ' + String(detail.turn || 'unknown'),
       'Path: ' + String(detail.path || 'unknown'),
       'Last event: ' + String(detail.last_type || 'unknown'),
+      'Record: line ' + String(detail.record_line || '?') + ', ' + String(detail.record_type || 'unknown') + ', id ' + String(detail.record_id || 'unknown'),
+      'Record timestamp: ' + String(detail.record_timestamp || 'unknown'),
       'Age: ' + String(detail.age_seconds || '?') + ' seconds',
       'Triggered by: ' + String(detail.trigger || 'missing terminal event')
     ].join('\n');

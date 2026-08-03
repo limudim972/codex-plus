@@ -55,6 +55,7 @@ try {
         'src/runtime/files.ps1',
         'src/runtime/shortcuts.ps1',
         'src/runtime/launch.ps1',
+        'src/runtime/global-manager.ps1',
         'src/runtime/patching.ps1',
         'src/ui/menu.ps1'
     )
@@ -115,12 +116,11 @@ Assert-True ($launcherScript.Contains('WScript.Arguments(0)')) 'VBS launcher sho
 Assert-True ($launcherScript.Contains('CODEX_PLUS_LAUNCHER_KEY')) 'VBS launcher should pass the launcher identity through the process environment.'
 Assert-True ($launcherScript.Contains('Scriptlet.TypeLib')) 'VBS launcher should create a fresh instance identity for each shortcut launch.'
 Assert-True ($launcherScript.Contains('instanceKey = launcherKey & "-"')) 'VBS launcher should derive each instance identity from the shortcut identity.'
-Assert-True ($launcherScript.Contains('dashboard-server.ps1')) 'VBS launcher should start the local JSONL dashboard service.'
-Assert-True ($launcherScript.Contains('shell.Run dashboardCommand, 0, False')) 'VBS launcher should start the dashboard hidden.'
+Assert-True (-not $launcherScript.Contains('dashboard-server.ps1')) 'VBS launcher should leave the dashboard under the global manager.'
 Assert-True ($launcherScript.Contains('Chr(34)')) 'VBS launcher should build the quoted patch path using Chr(34).'
 Assert-True ($launcherScript -match 'command = "powershell\.exe .* -File " & Chr\(34\) & ".*" & Chr\(34\) & " -LaunchCodexRtl"') 'VBS launcher should concatenate the quoted patch path safely.'
 Assert-True ($launcherScript.Contains(', 0, False')) 'VBS launcher should hide the window and not wait.'
-Assert-Equal 1 ([regex]::Matches($launcherScript, '-StartCloseWatchdog').Count) 'VBS launcher should start exactly one close watchdog.'
+Assert-Equal 0 ([regex]::Matches($launcherScript, '-StartCloseWatchdog').Count) 'VBS launcher should not create a per-window close watchdog.'
 
 $tmpIconRoot = Join-Path ([System.IO.Path]::GetTempPath()) ("codex-icon-test-{0}" -f ([guid]::NewGuid()))
 New-Item -ItemType Directory -Force -Path (Join-Path $tmpIconRoot 'app\resources') | Out-Null
@@ -153,14 +153,8 @@ Assert-True (-not $installBody.Contains('Start-CodexForRtl')) 'Patch flow should
 Assert-True (-not $installBody.Contains('Invoke-CodexRtlInjection')) 'Patch flow should not inject Codex during install.'
 $launchBody = (Get-Command -Name Launch-CodexRtl -CommandType Function).ScriptBlock.ToString()
 Assert-True ($launchBody.Contains('Start-CodexForRtl')) 'Codex launch should delegate to the approved-verb launch helper.'
-$watchBody = (Get-Command -Name Watch-CodexCloseToQuit -CommandType Function).ScriptBlock.ToString()
-Assert-True ($watchBody.Contains('Invoke-CodexPlusInjection')) 'Codex watchdog should inject the Plus payload into newly created windows.'
-Assert-True ($watchBody.Contains('MissingProcessGracePolls')) 'Codex watchdog should tolerate transient process-discovery gaps instead of abandoning the instance.'
-Assert-True ($watchBody.Contains('$missingProcessCount = 0')) 'Codex watchdog should reset its transient process-discovery counter after the instance reappears.'
-Assert-True ($watchBody.Contains('$closeCleanupArmed = $false')) 'Codex watchdog cleanup should start disarmed while the initial window is launching.'
-Assert-True ($watchBody.Contains('$closeCleanupArmed = $true')) 'Codex watchdog cleanup should arm only after a visible initial window exists.'
-Assert-True (-not $watchBody.Contains('NoWindowKillAfterSeconds')) 'Codex watchdog should never kill an instance merely because initial window creation is slow.'
-Assert-True (-not $watchBody.Contains('$matchingProcessSeenAt')) 'Codex watchdog should not use process-start time as a substitute for an observed visible window.'
+Assert-True ($launchBody.Contains('Register-CodexPlusManagerInstance')) 'Codex launch should register with the independent manager before starting the app.'
+Assert-True (-not [bool](Get-Command -Name Watch-CodexCloseToQuit -CommandType Function -ErrorAction SilentlyContinue)) 'The retired per-window polling watchdog should not be loaded.'
 $devToolsBody = (Get-Command -Name Get-CodexDevToolsTargets -CommandType Function).ScriptBlock.ToString()
 Assert-True ($devToolsBody.Contains('ForEach-Object { $_ }')) 'Codex DevTools target enumeration should flatten multiple page targets.'
 $splashIconBody = (Get-Command -Name Get-CodexLaunchSplashIcon -CommandType Function).ScriptBlock.ToString()
@@ -670,7 +664,7 @@ try {
     $env:LOCALAPPDATA = Join-Path $tmpScopedLaunchRoot 'LocalAppData'
     $script:StartedProcesses = @()
     $script:StoppedProcesses = @()
-    $script:InjectedPorts = @()
+    $script:ManagerRegistrations = @()
 
     $mockAppExe = Join-Path $tmpScopedLaunchRoot 'Codex.exe'
     Set-Content -LiteralPath $mockAppExe -Value 'exe' -Encoding ASCII
@@ -731,10 +725,10 @@ try {
         }
     }
 
-    function Invoke-CodexPlusInjection {
-        param([int]$Port)
-        $script:InjectedPorts += $Port
-        $true
+    function Register-CodexPlusManagerInstance {
+        param([string]$LauncherKey, [int]$Port, [string]$UserDataDirectory)
+        $script:ManagerRegistrations += [pscustomobject]@{ LauncherKey=$LauncherKey; Port=$Port; UserDataDirectory=$UserDataDirectory }
+        [pscustomobject]@{ ok=$true }
     }
 
     function Read-CodexRtlState {
@@ -743,16 +737,12 @@ try {
         }
     }
 
-    function Wait-CodexWindowTitleSync {
-        param([int]$Port, [string]$LauncherKey, [int]$TimeoutSeconds = 15)
-        $true
-    }
-
     Assert-Equal 18420 (Get-CodexRtlLaunchPort -PreferredPort 18317 -LauncherKey $launcherKeyA) 'Launcher-specific launch should detect the matching current session port.'
     Launch-CodexRtl -LauncherKey $launcherKeyA
     Assert-Equal 0 @($script:StartedProcesses).Count 'Launcher-specific launch should not restart an already-running matching session.'
     Assert-Equal 0 @($script:StoppedProcesses).Count 'Launcher-specific launch should leave the already-running matching session open.'
-    Assert-Equal 18420 @($script:InjectedPorts)[0] 'Launcher-specific launch should inject into the matching session port.'
+    Assert-Equal 18420 @($script:ManagerRegistrations)[0].Port 'Launcher-specific launch should register the matching session port with the global manager.'
+    Assert-Equal $profileA @($script:ManagerRegistrations)[0].UserDataDirectory 'Manager registration should include the exact scoped profile.'
 } finally {
     $env:LOCALAPPDATA = $oldLocalAppDataForScopedLaunch
     if (Test-Path -LiteralPath $tmpScopedLaunchRoot) {
@@ -1200,7 +1190,7 @@ Assert-True ($newWindowPayload.Contains('[role="menubar"][aria-label="Applicatio
 Assert-True ($newWindowPayload.Contains("document.querySelector(MENU_GROUP_SELECTOR)")) 'Top-menu controls should work when the menubar is outside the header tint wrapper.'
 Assert-True ($newWindowPayload.Contains('Codex validates this native route')) 'New-window requests should use a route accepted by the native validator.'
 Assert-True ($newWindowPayload.Contains("return threadId ? '/local/'")) 'New-window requests should use a valid local conversation route.'
-Assert-True ($newWindowPayload.Contains("return '/';")) 'Project new-window payload should use the native bridge home route.'
+Assert-True ($newWindowPayload.Contains("const path = context?.id && context?.name ? getProjectStartupPath(context) : '/';")) 'Project new-window payload should use the native bridge home route only when no project context exists.'
 Assert-True ($newWindowPayload.Contains('createdAt: Date.now()')) 'Project new-window payload should timestamp the handoff for the newly created page.'
 Assert-True ($newWindowPayload.Contains('codexPlusPendingProjectWindows')) 'Project context should be queued through the shared Plus session.'
 Assert-True ($newWindowPayload.Contains('currentProjectContext')) 'Menu new-window action should resolve the current project.'
@@ -1208,33 +1198,84 @@ Assert-True ($newWindowPayload.Contains('__CODEX_PLUS_PROJECT_WINDOW_CLICK_GUARD
 Assert-True ($newWindowPayload.Contains("setStatus('- Launching '")) 'New-window launch should publish its status to the badge.'
 Assert-True (-not ($newWindowPayload.Contains('New Plus'))) 'New window payload should not expose the removed independent Plus button.'
 $launchSource = Get-Content -Raw (Join-Path $repoRoot 'src\runtime\launch.ps1')
-Assert-True ($launchSource.Contains('[int]$PollMilliseconds = 250')) 'The close watchdog should poll frequently so taskbar titles update quickly.'
-Assert-True ($launchSource.Contains('$seenProcessIds = [System.Collections.Generic.HashSet[int]]::new()')) 'The close watchdog should retain observed instance process ids for reliable cleanup.'
-Assert-True ($launchSource.Contains('& $stopSeenProcesses')) 'The close watchdog should terminate observed instance processes after the last window closes.'
-Assert-True ($launchSource.Contains('[int]$DashboardProcessId = 0')) 'The close watchdog should accept the dashboard process id passed by the launcher.'
+$managerSource = Get-Content -Raw (Join-Path $repoRoot 'src\runtime\global-manager.ps1')
+$dashboardSource = Get-Content -Raw (Join-Path $repoRoot 'src\runtime\dashboard-server.ps1')
+Assert-True ($launchSource.Contains('Get-Content -LiteralPath $indexPath -Encoding UTF8')) 'Session display names should be read as UTF-8 so Hebrew names remain intact.'
+Assert-True ($launchSource.Contains('name = Get-CodexSessionDisplayName -SessionId $sessionId')) 'Premature-session alerts should resolve the session display name from the session index.'
+Assert-True ($launchSource.Contains('function Get-CodexSessionDiagnostic')) 'Premature-session alerts should reconstruct diagnostic context from the full JSONL session.'
+Assert-True ($launchSource.Contains('record_line')) 'Premature-session alerts should include the physical JSONL line number.'
+Assert-True ($launchSource.Contains('record_timestamp')) 'Premature-session alerts should include the last record timestamp.'
+Assert-True ($launchSource.Contains('record_id')) 'Premature-session alerts should include the last record id when available.'
+$tmpSessionIndexRoot = Join-Path ([System.IO.Path]::GetTempPath()) ("codex-session-index-utf8-{0}" -f ([guid]::NewGuid()))
+$oldUserProfileForSessionIndex = $env:USERPROFILE
+try {
+    New-Item -ItemType Directory -Force -Path (Join-Path $tmpSessionIndexRoot '.codex') | Out-Null
+    $sessionIdForNameTest = '019fc830-9d8b-7cf2-a813-9960cb9b1b95'
+    $sessionNameForEncodingTest = ([char]0x05D4) + ([char]0x05EA) + ([char]0x05D0) + ([char]0x05DD) + ' ' +
+        ([char]0x05EA) + ([char]0x05D5) + ([char]0x05DB) + ([char]0x05DF) + ' ' +
+        ([char]0x05DC) + ([char]0x05DE) + ([char]0x05E1) + ([char]0x05DA) + ' ' +
+        ([char]0x05E8) + ([char]0x05D7) + ([char]0x05D1)
+    $sessionIndexPathForNameTest = Join-Path $tmpSessionIndexRoot '.codex\session_index.jsonl'
+    @{ id=$sessionIdForNameTest; thread_name=$sessionNameForEncodingTest } | ConvertTo-Json -Compress |
+        Set-Content -LiteralPath $sessionIndexPathForNameTest -Encoding UTF8
+    $env:USERPROFILE = $tmpSessionIndexRoot
+    Assert-Equal $sessionNameForEncodingTest (Get-CodexSessionDisplayName -SessionId $sessionIdForNameTest) 'Session display name lookup should preserve Hebrew UTF-8 text.'
+} finally {
+    $env:USERPROFILE = $oldUserProfileForSessionIndex
+    if (Test-Path -LiteralPath $tmpSessionIndexRoot) { Remove-Item -LiteralPath $tmpSessionIndexRoot -Recurse -Force }
+}
+$tmpDiagnosticPath = Join-Path ([System.IO.Path]::GetTempPath()) ("codex-session-diagnostic-{0}.jsonl" -f ([guid]::NewGuid()))
+try {
+    @(
+        (@{ type='session_meta'; payload=@{ id='session-diagnostic-id'; cwd='C:\Users\Noam\Documents\code\rest worktree\rest' } } | ConvertTo-Json -Compress)
+        (@{ type='event_msg'; timestamp='2026-08-03T15:17:32.000Z'; payload=@{ type='task_started'; turn_id='turn-diagnostic-id' } } | ConvertTo-Json -Compress)
+        (@{ type='response_item'; timestamp='2026-08-03T15:17:33.000Z'; payload=@{ type='reasoning'; id='record-diagnostic-id' } } | ConvertTo-Json -Compress)
+    ) | Set-Content -LiteralPath $tmpDiagnosticPath -Encoding UTF8
+    $diagnostic = Get-CodexSessionDiagnostic -Path $tmpDiagnosticPath
+    Assert-Equal 'rest' $diagnostic.project 'Session diagnostics should derive the project from cwd.'
+    Assert-Equal 'C:\Users\Noam\Documents\code\rest worktree\rest' $diagnostic.cwd 'Session diagnostics should retain cwd.'
+    Assert-Equal 'turn-diagnostic-id' $diagnostic.turn 'Session diagnostics should retain the most recent turn id.'
+    Assert-Equal 3 $diagnostic.record_line 'Session diagnostics should report the physical JSONL line number.'
+    Assert-Equal 'record-diagnostic-id' $diagnostic.record_id 'Session diagnostics should report the last record id.'
+    Assert-Equal 'reasoning' $diagnostic.last_type 'Session diagnostics should report the last payload type.'
+} finally {
+    if (Test-Path -LiteralPath $tmpDiagnosticPath) { Remove-Item -LiteralPath $tmpDiagnosticPath -Force }
+}
+Assert-True (-not $launchSource.Contains('[int]$PollMilliseconds = 250')) 'The retired 250ms close-watchdog poll should be removed.'
+Assert-True ($managerSource.Contains('[Threading.WaitHandle]::WaitAny')) 'The manager event loop should block on event handles and scheduled one-shot work.'
+Assert-True ($managerSource.Contains('-MessageData $shared')) 'File and process event handlers should receive the shared synchronized state explicitly.'
+Assert-True ($managerSource.Contains('[Collections.Concurrent.ConcurrentQueue[object]]')) 'Event callbacks should publish into one thread-safe queue.'
+Assert-True ($managerSource.Contains('Target.setDiscoverTargets')) 'Each managed instance should maintain browser-level CDP target discovery.'
+Assert-True ($managerSource.Contains("DelayMilliseconds 250 -Kind 'close-check'")) 'Native window destruction should use one event-triggered grace check.'
+Assert-True ($managerSource.Contains("'native-window-event'")) 'Native window events should drive close handling.'
+Assert-True (-not $managerSource.Contains('PollMilliseconds')) 'The global manager should not expose a recurring polling interval.'
+Assert-True ($dashboardSource.Contains('$listener.GetContext()')) 'The dashboard should block until an HTTP request arrives.'
+Assert-True (-not $dashboardSource.Contains('.Wait($PollMilliseconds)')) 'The dashboard should not wake on a polling timer.'
 Assert-True ($launchSource.Contains('ShowWindow(IntPtr hWnd, int command)')) 'Native window handling should expose the Windows maximize operation.'
 Assert-True ($launchSource.Contains('MaximizeWindow(IntPtr hWnd)')) 'Native window handling should maximize only the managed window handle.'
 Assert-True ($launchSource.Contains('function Maximize-CodexPlusWindows')) 'The Plus runtime should have a managed-window maximize helper.'
-Assert-True ($watchBody.Contains('Maximize-CodexPlusWindows -Port $Port -LauncherKey $LauncherKey')) 'The close watchdog should maximize newly opened Plus windows.'
+Assert-True ($managerSource.Contains('Maximize-CodexPlusWindows -Port $Instance.Port -LauncherKey $Instance.Key')) 'The global manager should maximize newly event-discovered Plus windows.'
 Assert-True ($launchSource.Contains('$script:CodexPlusKnownWindowHandles')) 'Window maximization should retain per-handle state.'
 Assert-True ($launchSource.Contains('$currentWindowHandleKeys')) 'Window maximization should distinguish closed windows from minimized windows.'
 $maximizeBody = (Get-Command -Name Maximize-CodexPlusWindows -CommandType Function).ScriptBlock.ToString()
 Assert-True ($maximizeBody.Contains('Test-CodexProcessHasRtlDebugPort -Process $_ -Port $Port')) 'Window maximization should target only the process that owns the watched launch port.'
 Assert-True ($launchSource.Contains('A newly opened project target exposes its project context')) 'Native titles should be synchronized after each newly injected target.'
-Assert-True ($launchSource.Contains('Retry briefly so the native taskbar title observes the project name')) 'Native titles should be retried after a new project target adopts its context.'
-Assert-True ($launchSource.Contains('Start-Sleep -Milliseconds 1000')) 'Native titles should keep retrying while the new native project window finishes appearing.'
+Assert-True ($launchSource.Contains('Retry briefly so') -and $launchSource.Contains('native taskbar title observes the project name')) 'Native titles should be retried after a new project target adopts its context.'
+Assert-True ($managerSource.Contains('@(100,250,500,1000)')) 'Native title settling should use bounded event-triggered retries.'
 Assert-True ($launchSource.Contains('Update-CodexWindowTitles -Port $Port -LauncherKey $LauncherKey')) 'Native title retries should stay scoped to the launched Codex Plus instance.'
 Assert-True ($launchSource.Contains('__CODEX_PLUS_USAGE_WINDOW_TITLE')) 'Native title synchronization should publish the same usage title to the app header.'
 Assert-True ($launchSource.Contains('Get-CodexPrematureSessionAlerts')) 'Runtime should monitor stale sessions for missing terminal events.'
 Assert-True ($launchSource.Contains('Update-CodexPrematureSessionState')) 'Task monitor should update pending state only for changed session paths.'
 Assert-True ($launchSource.Contains('CodexPlusPrematurePending')) 'Task monitor should retain changed files until they finish or become inactive.'
+Assert-True ($launchSource.Contains('[DateTime]::Parse([string]$last[0].timestamp).ToUniversalTime()')) 'Premature-session activity should prefer the latest JSONL record timestamp over file mtime.'
+Assert-True ($launchSource.Contains('$diagnostic.record_timestamp')) 'Premature-session alerts should re-read the latest JSONL timestamp before alerting.'
 Assert-True ($launchSource.Contains('$script:CodexPlusChangedSessionPaths')) 'Session monitor should track changed session paths from the file watcher.'
 Assert-True ($launchSource.Contains('-Tail 4')) 'Task monitor should read only the last few records of a changed session.'
-Assert-True ($launchSource.Contains('FullPath')) 'Session watcher should pass the changed file path to the monitor.'
+Assert-True ($managerSource.Contains('SourceEventArgs.FullPath')) 'The global session watcher should pass the changed file path through the shared queue.'
 Assert-True ($launchSource.Contains('$script:CodexPlusUsageChangedPaths')) 'Usage refresh should reuse changed session paths.'
 Assert-True ($launchSource.Contains('Get-CodexLatestRateLimitSummary -Paths')) 'Usage monitor should read rate-limit data from changed sessions.'
 Assert-True ($launchSource.Contains('Get-Content -LiteralPath $latest.FullName -Tail 10')) 'Usage monitor should inspect only the last ten records of the newest changed session.'
-Assert-True ($launchSource.Contains('codex-plus-session-alert')) 'Runtime should publish premature-session alerts to Codex pages.'
+Assert-True ($managerSource.Contains('codex-plus-session-alert')) 'Runtime manager should publish premature-session alerts to Codex pages.'
 Assert-True ($launchSource.Contains('System.Windows.Forms')) 'Premature-session alerts should use a native Windows form.'
 Assert-True ($launchSource.Contains("$button.Text = 'Dismiss'")) 'Windows session alert should provide a dismiss button.'
 Assert-True ($launchSource.Contains('ShowDialog')) 'Windows session alert should remain open until dismissed.'
@@ -1249,6 +1290,9 @@ Assert-True ($contextBadgePayload.Contains('data-codex-plus-session-alert')) 'Co
 Assert-True ($contextBadgePayload.Contains('Dismiss')) 'Premature-session alert should provide a dismiss button.'
 Assert-True ($contextBadgePayload.Contains("copy.textContent = 'Copy'")) 'Premature-session alert should provide a copy button.'
 Assert-True ($contextBadgePayload.Contains('Project:')) 'Premature-session alert should show the project.'
+Assert-True ($contextBadgePayload.Contains('CWD:')) 'Premature-session alert should show the working directory.'
+Assert-True ($contextBadgePayload.Contains('Record: line')) 'Premature-session alert should show the JSONL line and record identity.'
+Assert-True ($contextBadgePayload.Contains('Record timestamp:')) 'Premature-session alert should show the record timestamp.'
 Assert-True ($contextBadgePayload.Contains('Triggered by:')) 'Premature-session alert should explain its trigger.'
 Assert-True ($contextBadgePayload.Contains('setStatus(nextStatus)')) 'Context badge should expose a live status setter.'
 Assert-True ($contextBadgePayload.Contains('records.some(mutationTouchesBadgeSource)')) 'Context badge should ignore unrelated composer and conversation mutations.'

@@ -137,6 +137,7 @@ $ModuleFiles = @(
     'src/codex/rtl-shared.ps1',
     'src/runtime/assets/codex-plus.ico',
     'src/runtime/dashboard-server.ps1',
+    'src/runtime/global-manager.ps1',
     'src/codex/detection.ps1',
     'src/codex/new-window-button.ps1',
     'src/codex/rtl-payload.ps1',
