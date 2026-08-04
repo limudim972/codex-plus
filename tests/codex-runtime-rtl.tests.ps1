@@ -615,9 +615,12 @@ $fixedNow = [DateTimeOffset]::Parse('2026-07-31T00:00:00Z')
 $sixDayReset = $fixedNow.AddDays(6).ToUnixTimeSeconds()
 $hourReset = $fixedNow.AddHours(3).AddMinutes(20).ToUnixTimeSeconds()
 $minuteReset = $fixedNow.AddMinutes(12).AddSeconds(10).ToUnixTimeSeconds()
-Assert-Equal 'Plus Codex - 67% used, resets in 6 days' (Format-CodexUsageWindowTitle -UsedPercent 67 -ResetsAt $sixDayReset -Now $fixedNow) 'Primary title should show usage and a day countdown.'
-Assert-Equal 'Plus Codex - 67% used, resets in 4 hours' (Format-CodexUsageWindowTitle -UsedPercent 67 -ResetsAt $hourReset -Now $fixedNow) 'Primary title should show hours when the reset is less than a day away.'
-Assert-Equal 'Plus Codex - 67% used, resets in 13 minutes' (Format-CodexUsageWindowTitle -UsedPercent 67 -ResetsAt $minuteReset -Now $fixedNow) 'Primary title should show minutes when the reset is less than an hour away.'
+$sevenDayReset = $fixedNow.AddDays(7).ToUnixTimeSeconds()
+Assert-Equal 'Plus Codex - 67% used · resets in 7 days, 0% passed' (Format-CodexUsageWindowTitle -UsedPercent 67 -ResetsAt $sevenDayReset -Now $fixedNow) 'Primary title should show usage, reset countdown, and elapsed time after the reset countdown.'
+Assert-Equal 'Plus Codex - 67% used · resets in 4 days, 50% passed' (Format-CodexUsageWindowTitle -UsedPercent 67 -ResetsAt $sevenDayReset -Now $fixedNow.AddDays(3.5)) 'Primary title should show elapsed time at the midpoint of the seven-day window.'
+Assert-Equal 'Plus Codex - 67% used · resets in 6 days, 14% passed' (Format-CodexUsageWindowTitle -UsedPercent 67 -ResetsAt $sixDayReset -Now $fixedNow) 'Primary title should calculate elapsed time from a seven-day window start.'
+Assert-Equal 'Plus Codex - 67% used · resets in 4 hours, 98% passed' (Format-CodexUsageWindowTitle -UsedPercent 67 -ResetsAt $hourReset -Now $fixedNow) 'Primary title should show hours when the reset is less than a day away.'
+Assert-Equal 'Plus Codex - 67% used · resets now, 100% passed' (Format-CodexUsageWindowTitle -UsedPercent 67 -ResetsAt $minuteReset -Now $fixedNow.AddMinutes(13.5)) 'Primary title should clamp elapsed time at the reset boundary.'
 
 $script:MockCodexProcesses = @(
     [pscustomobject]@{
@@ -1199,6 +1202,7 @@ Assert-True ($newWindowPayload.Contains("setStatus('- Launching '")) 'New-window
 Assert-True (-not ($newWindowPayload.Contains('New Plus'))) 'New window payload should not expose the removed independent Plus button.'
 $launchSource = Get-Content -Raw (Join-Path $repoRoot 'src\runtime\launch.ps1')
 $managerSource = Get-Content -Raw (Join-Path $repoRoot 'src\runtime\global-manager.ps1')
+Assert-True ($managerSource.Contains('$hourly = $now.AddHours(1)')) 'Usage title should refresh hourly so elapsed-time percentage stays current.'
 $dashboardSource = Get-Content -Raw (Join-Path $repoRoot 'src\runtime\dashboard-server.ps1')
 Assert-True ($launchSource.Contains('Get-Content -LiteralPath $indexPath -Encoding UTF8')) 'Session display names should be read as UTF-8 so Hebrew names remain intact.'
 Assert-True ($launchSource.Contains('name = Get-CodexSessionDisplayName -SessionId $sessionId')) 'Premature-session alerts should resolve the session display name from the session index.'

@@ -385,9 +385,13 @@ function Format-CodexUsageWindowTitle {
     )
 
     $resetAt = [DateTimeOffset]::FromUnixTimeSeconds($ResetsAt)
+    $windowStart = $resetAt.AddDays(-7)
+    $windowDuration = ($resetAt - $windowStart).TotalSeconds
+    $elapsedSeconds = [Math]::Max(0, [Math]::Min($windowDuration, ($Now - $windowStart).TotalSeconds))
+    $elapsedPercent = [Math]::Round(($elapsedSeconds / $windowDuration) * 100, 0)
     $remaining = $resetAt - $Now
     if ($remaining.TotalSeconds -le 0) {
-        return ('Plus Codex - {0}% used, resets now' -f $UsedPercent.ToString('0.##', [Globalization.CultureInfo]::InvariantCulture))
+        return ('Plus Codex - {0}% used · resets now, {1}% passed' -f $UsedPercent.ToString('0.##', [Globalization.CultureInfo]::InvariantCulture), $elapsedPercent)
     }
 
     if ($remaining.TotalDays -ge 1) {
@@ -401,10 +405,11 @@ function Format-CodexUsageWindowTitle {
         $unit = if ($value -eq 1) { 'minute' } else { 'minutes' }
     }
 
-    return ('Plus Codex - {0}% used, resets in {1} {2}' -f
+    return ('Plus Codex - {0}% used · resets in {1} {2}, {3}% passed' -f
         $UsedPercent.ToString('0.##', [Globalization.CultureInfo]::InvariantCulture),
         $value,
-        $unit)
+        $unit,
+        $elapsedPercent)
 }
 
 $script:CodexPlusRateLimitTitleCache = $null
@@ -447,6 +452,7 @@ function Get-CodexSessionDiagnostic {
             if ($payload -and $payload.turn_id) { $turnId = [string]$payload.turn_id }
             $payloadType = if ($payload -and $payload.type) { [string]$payload.type } else { '' }
             $recordType = if ($record.type) { [string]$record.type } else { '' }
+            if ($payloadType -eq 'thread_settings_applied') { continue }
             $last = [pscustomobject]@{
                 line = $lineNumber
                 timestamp = if ($record.timestamp) { [string]$record.timestamp } else { '' }
@@ -479,7 +485,7 @@ function Update-CodexPrematureSessionState {
         if (-not (Test-Path -LiteralPath $path -PathType Leaf)) { $script:CodexPlusPrematurePending.Remove($path); continue }
         $file = Get-Item -LiteralPath $path -ErrorAction SilentlyContinue
         if (-not $file -or $file.Extension -ne '.jsonl') { continue }
-        $last = @(Get-Content -LiteralPath $file.FullName -Tail 4 -ErrorAction SilentlyContinue | ForEach-Object { try { $_ | ConvertFrom-Json } catch { $null } } | Where-Object { $_ } | Select-Object -Last 1)
+        $last = @(Get-Content -LiteralPath $file.FullName -Tail 4 -ErrorAction SilentlyContinue | ForEach-Object { try { $_ | ConvertFrom-Json } catch { $null } } | Where-Object { $_ -and $_.payload -and $_.payload.type -ne 'thread_settings_applied' } | Select-Object -Last 1)
         if ($last.Count -eq 0) { continue }
         $payload = $last[0].payload
         if (-not $payload) { continue }

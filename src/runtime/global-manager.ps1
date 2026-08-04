@@ -538,6 +538,10 @@ try {
                 $units = [Math]::Ceiling($remaining.TotalMinutes)
                 $next = $reset.AddMinutes(-($units - 1)).AddMilliseconds(50)
             }
+            # Refresh the published title hourly so the elapsed-time percentage
+            # stays current even when the usage data itself has not changed.
+            $hourly = $now.AddHours(1)
+            if ($hourly -lt $next) { $next = $hourly }
             $delay = [Math]::Max(1, [int][Math]::Min([int]::MaxValue, ($next - $now).TotalMilliseconds))
             Set-ManagerTask -Key 'usage-boundary' -DelayMilliseconds $delay -Kind 'usage-boundary' -Data $null
         }
