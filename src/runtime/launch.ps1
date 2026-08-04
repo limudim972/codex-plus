@@ -395,7 +395,7 @@ function Format-CodexUsageWindowTitle {
     }
 
     if ($remaining.TotalDays -ge 1) {
-        $value = [Math]::Max(1, [int][Math]::Ceiling($remaining.TotalDays))
+        $value = [Math]::Max(1, [int][Math]::Round($remaining.TotalDays, 0, [MidpointRounding]::AwayFromZero))
         $unit = if ($value -eq 1) { 'day' } else { 'days' }
     } elseif ($remaining.TotalHours -ge 1) {
         $value = [Math]::Max(1, [int][Math]::Ceiling($remaining.TotalHours))
@@ -458,6 +458,7 @@ function Get-CodexSessionDiagnostic {
                 timestamp = if ($record.timestamp) { [string]$record.timestamp } else { '' }
                 record_type = $recordType
                 payload_type = $payloadType
+                payload_name = if ($payload -and $payload.name) { [string]$payload.name } else { '' }
                 record_id = if ($payload -and $payload.id) { [string]$payload.id } elseif ($record.id) { [string]$record.id } else { '' }
             }
         }
@@ -473,7 +474,13 @@ function Get-CodexSessionDiagnostic {
         record_timestamp = $last.timestamp
         record_id = $last.record_id
         record_type = if ($last.record_type) { $last.record_type } else { $last.payload_type }
+        payload_name = $last.payload_name
     }
+}
+
+function Test-CodexUserInputRequest {
+    param([Parameter(Mandatory)]$Payload)
+    return (($Payload.type -eq 'function_call' -and $Payload.name -eq 'request_user_input') -or $Payload.type -eq 'request_user_input')
 }
 
 function Update-CodexPrematureSessionState {
@@ -489,7 +496,7 @@ function Update-CodexPrematureSessionState {
         if ($last.Count -eq 0) { continue }
         $payload = $last[0].payload
         if (-not $payload) { continue }
-        if ($payload.type -in @('task_complete', 'turn_aborted')) {
+        if ($payload.type -in @('task_complete', 'turn_aborted') -or (Test-CodexUserInputRequest -Payload $payload)) {
             $script:CodexPlusPrematurePending.Remove($path)
             continue
         }
@@ -522,11 +529,11 @@ function Get-CodexPrematureSessionAlerts {
         }
         $ageSeconds = [int]($now - $pending.last_activity).TotalSeconds
         if ($ageSeconds -lt 120) { continue }
-        if ($diagnostic.last_type -in @('task_complete', 'turn_aborted')) {
+        if ($diagnostic.last_type -in @('task_complete', 'turn_aborted') -or (Test-CodexUserInputRequest -Payload ([pscustomobject]@{ type = $diagnostic.last_type; name = $diagnostic.payload_name }))) {
             $script:CodexPlusPrematurePending.Remove($path)
             continue
         }
-        foreach ($property in @('session','cwd','project','turn','last_type','record_line','record_timestamp','record_id','record_type')) {
+        foreach ($property in @('session','cwd','project','turn','last_type','record_line','record_timestamp','record_id','record_type','payload_name')) {
             $pending.$property = $diagnostic.$property
         }
         $key = "$path|$($pending.last_activity.Ticks)"

@@ -107,7 +107,7 @@ function Ensure-CodexPlusGlobalManager {
 
 function Register-CodexPlusManagerInstance {
     param(
-        [Parameter(Mandatory)][string]$LauncherKey,
+        [AllowEmptyString()][string]$LauncherKey,
         [Parameter(Mandatory)][int]$Port,
         [Parameter(Mandatory)][string]$UserDataDirectory
     )
@@ -126,7 +126,7 @@ function Register-CodexPlusManagerInstance {
 }
 
 function Unregister-CodexPlusManagerInstance {
-    param([Parameter(Mandatory)][string]$LauncherKey)
+    param([AllowEmptyString()][string]$LauncherKey)
     try {
         Send-CodexPlusManagerCommand -Command @{ action = 'unregister'; launcher_key = $LauncherKey } -ConnectTimeoutMilliseconds 250
     } catch {
@@ -529,8 +529,8 @@ try {
             $remaining = $reset - $now
             if ($remaining.TotalSeconds -le 0) { return }
             if ($remaining.TotalDays -ge 1) {
-                $units = [Math]::Ceiling($remaining.TotalDays)
-                $next = $reset.AddDays(-($units - 1)).AddMilliseconds(50)
+                $units = [Math]::Round($remaining.TotalDays, 0, [MidpointRounding]::AwayFromZero)
+                $next = $reset.AddDays(-($units - 0.5)).AddMilliseconds(50)
             } elseif ($remaining.TotalHours -ge 1) {
                 $units = [Math]::Ceiling($remaining.TotalHours)
                 $next = $reset.AddHours(-($units - 1)).AddMilliseconds(50)
