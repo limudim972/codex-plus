@@ -566,7 +566,7 @@ try {
                 foreach ($path in @($script:CodexPlusPrematurePending.Keys)) {
                     $pending = $script:CodexPlusPrematurePending[$path]
                     if (-not $pending) { continue }
-                    $due = $pending.last_activity.AddSeconds(120)
+                    $due = if ($pending.shell_error) { [DateTime]::UtcNow } else { $pending.last_activity.AddSeconds(120) }
                     $delay = [Math]::Max(1, [int][Math]::Min([int]::MaxValue, ($due - [DateTime]::UtcNow).TotalMilliseconds))
                     Set-ManagerTask -Key ("session-alert:$path") -DelayMilliseconds $delay -Kind 'session-alert' -Data $path
                 }

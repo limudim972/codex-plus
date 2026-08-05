@@ -209,10 +209,12 @@ function Get-CodexContextBadgePayload {
     alert.setAttribute('role', 'alertdialog');
     alert.setAttribute('aria-label', 'Codex session monitor alert');
     const title = document.createElement('div');
-    title.textContent = 'Session may have stopped early';
+    title.textContent = detail.shell_error ? 'Shell error' : 'Session may have stopped early';
     title.style.fontWeight = '700';
     const details = document.createElement('div');
     details.textContent = [
+      detail.error_message ? 'Error: ' + String(detail.error_message) : '',
+      detail.error_code ? 'Code: ' + String(detail.error_code) : '',
       'Project: ' + String(detail.project || 'unknown'),
       'CWD: ' + String(detail.cwd || 'unknown'),
       'Name: ' + String(detail.name || detail.session || 'unknown'),

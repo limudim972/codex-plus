@@ -460,6 +460,8 @@ function Get-CodexSessionDiagnostic {
                 payload_type = $payloadType
                 payload_name = if ($payload -and $payload.name) { [string]$payload.name } else { '' }
                 record_id = if ($payload -and $payload.id) { [string]$payload.id } elseif ($record.id) { [string]$record.id } else { '' }
+                error_message = if ($payload -and $payload.error -and $payload.error.message) { [string]$payload.error.message } else { '' }
+                error_code = if ($payload -and $payload.error -and $payload.error.codex_error_info) { [string]$payload.error.codex_error_info } else { '' }
             }
         }
     } catch { return $null }
@@ -475,12 +477,20 @@ function Get-CodexSessionDiagnostic {
         record_id = $last.record_id
         record_type = if ($last.record_type) { $last.record_type } else { $last.payload_type }
         payload_name = $last.payload_name
+        error_message = $last.error_message
+        error_code = $last.error_code
+        shell_error = [bool]($last.error_message -or $last.error_code)
     }
 }
 
 function Test-CodexUserInputRequest {
     param([Parameter(Mandatory)]$Payload)
     return (($Payload.type -eq 'function_call' -and $Payload.name -eq 'request_user_input') -or $Payload.type -eq 'request_user_input')
+}
+
+function Test-CodexShellError {
+    param([Parameter(Mandatory)]$Payload)
+    return ($Payload.type -eq 'task_complete' -and $null -ne $Payload.error)
 }
 
 function Update-CodexPrematureSessionState {
@@ -496,6 +506,10 @@ function Update-CodexPrematureSessionState {
         if ($last.Count -eq 0) { continue }
         $payload = $last[0].payload
         if (-not $payload) { continue }
+        if (Test-CodexShellError -Payload $payload) {
+            $script:CodexPlusPrematurePending[$path] = [pscustomobject]@{ name = Get-CodexSessionDisplayName -SessionId $sessionId; session = $sessionId; turn = if ($payload.turn_id) { [string]$payload.turn_id } else { '' }; project = $project; cwd = if ($payload.cwd) { [string]$payload.cwd } else { '' }; path = $file.FullName; last_type = [string]$payload.type; record_line = 0; record_timestamp = ''; record_id = ''; record_type = ''; error_message = [string]$payload.error.message; error_code = [string]$payload.error.codex_error_info; shell_error = $true; last_activity = $lastActivity }
+            continue
+        }
         if ($payload.type -in @('task_complete', 'turn_aborted') -or (Test-CodexUserInputRequest -Payload $payload)) {
             $script:CodexPlusPrematurePending.Remove($path)
             continue
@@ -528,7 +542,14 @@ function Get-CodexPrematureSessionAlerts {
             continue
         }
         $ageSeconds = [int]($now - $pending.last_activity).TotalSeconds
-        if ($ageSeconds -lt 120) { continue }
+        if (-not $diagnostic.shell_error -and $ageSeconds -lt 120) { continue }
+        if ($diagnostic.shell_error) {
+            foreach ($property in @('session','cwd','project','turn','last_type','record_line','record_timestamp','record_id','record_type','payload_name','error_message','error_code','shell_error')) { $pending.$property = $diagnostic.$property }
+            $pending | Add-Member -NotePropertyName age_seconds -NotePropertyValue 0 -Force
+            $key = "$path|$($pending.last_activity.Ticks)|shell-error"
+            if (-not $script:CodexPlusPrematureAlerted.ContainsKey($key)) { $script:CodexPlusPrematureAlerted[$key] = $true; $alerts += $pending }
+            continue
+        }
         if ($diagnostic.last_type -in @('task_complete', 'turn_aborted') -or (Test-CodexUserInputRequest -Payload ([pscustomobject]@{ type = $diagnostic.last_type; name = $diagnostic.payload_name }))) {
             $script:CodexPlusPrematurePending.Remove($path)
             continue
@@ -548,7 +569,9 @@ function Get-CodexPrematureSessionAlerts {
 function Show-CodexPrematureSessionAlert {
     param([Parameter(Mandatory)]$Alert)
     $message = @"
-Codex session may have stopped early.
+$(if ($Alert.shell_error) { 'Shell error' } else { 'Codex session may have stopped early.' })
+$(if ($Alert.error_message) { "Error: $($Alert.error_message)" } else { '' })
+$(if ($Alert.error_code) { "Code: $($Alert.error_code)" } else { '' })
 
 Project: $($Alert.project)
 CWD: $($Alert.cwd)
@@ -598,7 +621,8 @@ $form.AcceptButton = $button
     try { Start-Process powershell.exe -WindowStyle Hidden -ArgumentList @('-NoProfile','-ExecutionPolicy','Bypass','-EncodedCommand',$encoded) | Out-Null } catch { }
     $literal = (@{ name=$Alert.name; session=$Alert.session; turn=$Alert.turn; project=$Alert.project; path=$Alert.path; last_type=$Alert.last_type; age_seconds=$Alert.age_seconds; trigger='A new turn started after monitor startup and remained without task_complete or turn_aborted for at least 120 seconds.' } | ConvertTo-Json -Compress).Replace('\\', '\\\\').Replace('`"', '\\`"')
     $script:CodexPlusPrematureAlertPayload = $literal
-    $script:CodexPlusPrematureAlertPayload = (@{ name=$Alert.name; session=$Alert.session; turn=$Alert.turn; project=$Alert.project; cwd=$Alert.cwd; path=$Alert.path; last_type=$Alert.last_type; record_line=$Alert.record_line; record_timestamp=$Alert.record_timestamp; record_id=$Alert.record_id; record_type=$Alert.record_type; age_seconds=$Alert.age_seconds; trigger='A new turn started after monitor startup and remained without task_complete or turn_aborted for at least 120 seconds.' } | ConvertTo-Json -Compress).Replace('\\', '\\\\').Replace('`"', '\\\`"')
+    $trigger = if ($Alert.shell_error) { 'The terminal task_complete event contained an error.' } else { 'A new turn started after monitor startup and remained without task_complete or turn_aborted for at least 120 seconds.' }
+    $script:CodexPlusPrematureAlertPayload = (@{ name=$Alert.name; session=$Alert.session; turn=$Alert.turn; project=$Alert.project; cwd=$Alert.cwd; path=$Alert.path; last_type=$Alert.last_type; record_line=$Alert.record_line; record_timestamp=$Alert.record_timestamp; record_id=$Alert.record_id; record_type=$Alert.record_type; age_seconds=$Alert.age_seconds; shell_error=$Alert.shell_error; error_message=$Alert.error_message; error_code=$Alert.error_code; trigger=$trigger } | ConvertTo-Json -Compress).Replace('\\', '\\\\').Replace('`"', '\\\`"')
 }
 
 function Get-CodexLatestRateLimitSummary {
