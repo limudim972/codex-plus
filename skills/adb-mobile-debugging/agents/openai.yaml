@@ -1,0 +1,4 @@
+interface:
+  display_name: "ADB Mobile Debugging"
+  short_description: "Debug Android devices with ADB and Chrome DevTools"
+  default_prompt: "Use $adb-mobile-debugging to inspect and debug a local web app on a connected Android device."
