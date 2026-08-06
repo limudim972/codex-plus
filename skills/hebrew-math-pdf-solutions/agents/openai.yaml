@@ -1,0 +1,4 @@
+interface:
+  display_name: "Hebrew Math PDF Solutions"
+  short_description: "Create RTL Hebrew MathML solutions from PDFs"
+  default_prompt: "Use $hebrew-math-pdf-solutions to create a polished RTL A4 HTML solution set from this math PDF."

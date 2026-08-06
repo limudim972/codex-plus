@@ -1,0 +1,4 @@
+interface:
+  display_name: "Convex Production Deploy"
+  short_description: "Deploy Convex production functions safely"
+  default_prompt: "Use the Convex production deploy workflow for this project."

@@ -1,0 +1,4 @@
+interface:
+  display_name: "Page Visual OCR"
+  short_description: "Create page-by-page visual OCR HTML"
+  default_prompt: "Transcribe every page with built-in visual recognition and save a clean RTL HTML file."

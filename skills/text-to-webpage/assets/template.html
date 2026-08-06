@@ -1,0 +1,367 @@
+<!doctype html>
+<html lang="he" dir="rtl">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>סיכום מפגש</title>
+  <style>
+    :root {
+      color-scheme: light;
+      --ink: #1f2933;
+      --muted: #52616b;
+      --accent: #285f5b;
+      --accent-soft: #e9f3f1;
+      --line: #d8e1e0;
+      --paper: #fffdf8;
+      --page: #f2f5f4;
+      --question: #f7f2e8;
+    }
+
+    * { box-sizing: border-box; }
+
+    body {
+      margin: 0;
+      height: 100vh;
+      overflow: hidden;
+      background: var(--page);
+      color: var(--ink);
+      font-family: Arial, "Noto Sans Hebrew", sans-serif;
+      font-size: 18px;
+      line-height: 1.75;
+    }
+
+    body.nav-open main {
+      width: min(800px, calc(100% - 340px));
+      margin-right: 308px;
+    }
+
+    .menu-toggle {
+      position: fixed;
+      top: 18px;
+      right: 18px;
+      z-index: 1001;
+      width: 46px;
+      height: 46px;
+      padding: 0;
+      border: 1px solid var(--line);
+      border-radius: 12px;
+      background: var(--paper);
+      color: var(--accent);
+      box-shadow: 0 6px 18px rgba(31, 41, 51, 0.12);
+      font-size: 1.55rem;
+      line-height: 1;
+      cursor: pointer;
+    }
+
+    .sidebar {
+      position: fixed;
+      inset: 0 0 0 auto;
+      z-index: 1000;
+      width: 280px;
+      padding: 78px 22px 28px;
+      overflow-y: auto;
+      background:
+        radial-gradient(circle at 100% 0, rgba(40, 95, 91, 0.13), transparent 180px),
+        var(--paper);
+      border-left: 1px solid var(--line);
+      box-shadow: -8px 0 24px rgba(31, 41, 51, 0.08);
+      transform: translateX(100%);
+      transition: transform 180ms ease;
+    }
+
+    body.nav-open .sidebar { transform: translateX(0); }
+    .sidebar-title {
+      margin: 0 0 1rem;
+      padding: 0 0 0.85rem;
+      border: 0;
+      border-bottom: 2px solid var(--line);
+      font-size: 1.25rem;
+      letter-spacing: -0.02em;
+    }
+    .sidebar-title::before {
+      content: "";
+      display: inline-block;
+      width: 0.55rem;
+      height: 0.55rem;
+      margin-left: 0.55rem;
+      border-radius: 50%;
+      background: var(--accent);
+      box-shadow: 0 0 0 5px var(--accent-soft);
+    }
+    .sidebar nav { display: grid; gap: 0.16rem; }
+    .sidebar a {
+      position: relative;
+      padding: 0.5rem 0.7rem;
+      border-radius: 9px;
+      color: var(--ink);
+      text-decoration: none;
+      font-size: 0.92rem;
+      line-height: 1.4;
+      transition: background 140ms ease, color 140ms ease, transform 140ms ease;
+    }
+    .sidebar a.nav-primary {
+      margin-top: 0.35rem;
+      font-weight: 700;
+    }
+    .sidebar a.nav-primary::before {
+      content: "";
+      position: absolute;
+      top: 50%;
+      right: -0.35rem;
+      width: 0.42rem;
+      height: 0.42rem;
+      border-radius: 50%;
+      background: var(--line);
+      transform: translateY(-50%);
+    }
+    .sidebar a.nav-secondary {
+      margin-right: 0.8rem;
+      padding: 0.38rem 1rem 0.38rem 0.65rem;
+      border-right: 1px solid var(--line);
+      color: var(--muted);
+      font-size: 0.84rem;
+    }
+    .sidebar a:hover, .sidebar a:focus-visible {
+      background: var(--accent-soft);
+      color: var(--accent);
+      transform: translateX(-2px);
+      outline: none;
+    }
+    .sidebar a.active {
+      background: var(--accent);
+      color: #fff;
+      box-shadow: 0 5px 14px rgba(40, 95, 91, 0.2);
+    }
+    .sidebar a.nav-primary.active::before { background: #fff; }
+
+    main {
+      width: min(800px, calc(100% - 32px));
+      justify-self: center;
+      max-height: 100vh;
+      padding: clamp(28px, 5vw, 64px);
+      direction: ltr;
+      overflow-y: auto;
+      overscroll-behavior: contain;
+      scroll-behavior: smooth;
+      scroll-padding-top: 24px;
+      scrollbar-gutter: stable;
+      background: var(--paper);
+      border: 1px solid var(--line);
+      border-radius: 18px;
+      box-shadow: 0 12px 34px rgba(31, 41, 51, 0.08);
+    }
+
+    h1, h2, h3, h4 {
+      color: var(--accent);
+      line-height: 1.35;
+    }
+
+    main > * {
+      direction: rtl;
+    }
+
+    main > table {
+      direction: rtl;
+    }
+
+    h1 {
+      margin: 0 0 1.5rem;
+      font-size: clamp(2rem, 5vw, 3rem);
+    }
+
+    h2 {
+      margin: 3rem 0 1rem;
+      padding-bottom: 0.45rem;
+      border-bottom: 2px solid var(--line);
+      font-size: 1.65rem;
+    }
+
+    h3 { margin: 2rem 0 0.7rem; font-size: 1.3rem; }
+    h4 { margin: 1.4rem 0 0.5rem; font-size: 1.08rem; }
+
+    p { margin: 0.75rem 0; }
+
+    a {
+      color: var(--accent);
+      text-decoration-thickness: 1px;
+      text-underline-offset: 0.18em;
+    }
+
+    a:hover, a:focus-visible {
+      color: #18403d;
+    }
+
+    ul, ol {
+      margin: 0.75rem 0;
+      padding-right: 1.4rem;
+    }
+
+    li { margin: 0.35rem 0; }
+
+    .lead {
+      color: var(--muted);
+      font-size: 1.08rem;
+    }
+
+    .note, .qa, .comment, .callout, .example, .warning, .tip, blockquote {
+      margin: 1.2rem 0;
+      padding: 1rem 1.2rem;
+      border-right: 5px solid var(--accent);
+      border-radius: 10px;
+    }
+
+    .note { background: var(--accent-soft); }
+    .qa { background: var(--question); }
+    .comment { background: #f1f6fb; border-right-color: #4e7393; }
+    .callout { background: #eef8ef; border-right-color: #5b8a5f; }
+    .example { background: #faf4ff; border-right-color: #8a6fb5; }
+    .warning { background: #fff4e8; border-right-color: #c57d35; }
+    .tip { background: #f3fbfb; border-right-color: #2e7f85; }
+    blockquote {
+      margin-inline-start: 0;
+      background: #f8fafc;
+      color: var(--muted);
+      font-style: italic;
+    }
+    .qa p:first-child { margin-top: 0; }
+    .qa p:last-child { margin-bottom: 0; }
+
+    .label { font-weight: 700; color: var(--accent); }
+
+    .meta, .source, .caption {
+      color: var(--muted);
+      font-size: 0.92rem;
+    }
+
+    code, kbd, samp {
+      padding: 0.12rem 0.35rem;
+      border-radius: 6px;
+      background: #edf2f1;
+      color: #123431;
+      font-family: Consolas, "Courier New", monospace;
+      font-size: 0.93em;
+    }
+
+    hr {
+      border: 0;
+      border-top: 1px solid var(--line);
+      margin: 1.8rem 0;
+    }
+
+    table {
+      width: 100%;
+      margin: 1.2rem 0;
+      border-collapse: collapse;
+      background: #fff;
+    }
+
+    .table-wrap {
+      margin: 1.2rem 0;
+      overflow-x: auto;
+      border: 1px solid var(--line);
+      border-radius: 12px;
+      background: #fff;
+    }
+
+    .table-wrap table {
+      margin: 0;
+      border: 0;
+      min-width: 100%;
+    }
+
+    th, td {
+      padding: 0.75rem;
+      border: 1px solid var(--line);
+      text-align: right;
+      vertical-align: top;
+    }
+
+    th { background: var(--accent-soft); color: var(--accent); }
+
+    tr:nth-child(even) td {
+      background: #fcfdfd;
+    }
+
+    .figure, figure {
+      margin: 1.25rem 0;
+    }
+
+    figcaption {
+      margin-top: 0.45rem;
+      color: var(--muted);
+      font-size: 0.9rem;
+    }
+
+    .footnote {
+      margin-top: 1rem;
+      color: var(--muted);
+      font-size: 0.9rem;
+    }
+
+    @media print {
+      body { height: auto; overflow: visible; background: #fff; font-size: 12pt; }
+      main { width: 100%; height: auto; overflow: visible; margin: 0; padding: 0; border: 0; box-shadow: none; }
+      h2 { break-after: avoid; }
+      .note, .qa, table { break-inside: avoid; }
+      .menu-toggle, .sidebar { display: none; }
+      body.nav-open main { width: 100%; margin: 0; }
+    }
+
+    @media (max-width: 1150px) {
+      .sidebar { width: min(320px, 86vw); }
+    }
+  </style>
+</head>
+<body class="nav-open">
+<button class="menu-toggle" type="button" aria-label="פתיחת תפריט הניווט" aria-controls="sidebar" aria-expanded="true">☰</button>
+<aside class="sidebar" id="sidebar" aria-label="ניווט בין חלקי הסיכום">
+  <h2 class="sidebar-title">תוכן עניינים</h2>
+  <nav id="section-nav"></nav>
+</aside>
+<main>
+  <!-- INSERT_MAIN_CONTENT_HERE -->
+</main>
+<script>
+  const body = document.body;
+  const toggle = document.querySelector('.menu-toggle');
+  const nav = document.getElementById('section-nav');
+  const content = document.querySelector('main');
+  const sections = [...document.querySelectorAll('main > h2, main > h3')];
+
+  sections.forEach((heading, index) => {
+    heading.id = `section-${index + 1}`;
+    const link = document.createElement('a');
+    link.href = `#${heading.id}`;
+    link.textContent = heading.textContent;
+    link.className = heading.tagName === 'H2' ? 'nav-primary' : 'nav-secondary';
+    link.dataset.target = heading.id;
+    link.addEventListener('click', () => {
+      if (window.innerWidth <= 1150) setNavigation(false);
+    });
+    nav.appendChild(link);
+  });
+
+  const observer = new IntersectionObserver((entries) => {
+    const visible = entries
+      .filter(entry => entry.isIntersecting)
+      .sort((a, b) => a.boundingClientRect.top - b.boundingClientRect.top)[0];
+    if (!visible) return;
+    nav.querySelectorAll('a').forEach(link => {
+      link.classList.toggle('active', link.dataset.target === visible.target.id);
+    });
+  }, { root: content, rootMargin: '-12% 0px -72% 0px' });
+
+  sections.forEach(section => observer.observe(section));
+
+  function setNavigation(open) {
+    body.classList.toggle('nav-open', open);
+    toggle.setAttribute('aria-expanded', String(open));
+    toggle.setAttribute('aria-label', open ? 'סגירת תפריט הניווט' : 'פתיחת תפריט הניווט');
+  }
+
+  toggle.addEventListener('click', () => setNavigation(!body.classList.contains('nav-open')));
+
+  if (window.innerWidth <= 1150) setNavigation(false);
+</script>
+</body>
+</html>

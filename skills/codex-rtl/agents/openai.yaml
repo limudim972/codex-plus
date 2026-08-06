@@ -1,0 +1,4 @@
+interface:
+  display_name: "Codex Workflows"
+  short_description: "Work with live Codex surfaces"
+  default_prompt: "Use $codex-rtl to inspect or fix live Codex behavior, including RTL, debugger targets, and runtime surfaces."

@@ -1,0 +1,4 @@
+interface:
+  display_name: "Hebrew Video Editor"
+  short_description: "Create Hebrew RTL videos with FFmpeg and motion graphics"
+  default_prompt: "Use $video-editor to create or edit a Hebrew RTL video from my brief."

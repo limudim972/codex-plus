@@ -1,0 +1,4 @@
+interface:
+  display_name: "Text to Webpage"
+  short_description: "Turn attached text into a styled RTL webpage"
+  default_prompt: "Use $text-to-webpage to turn the text attached to this request into a structured Hebrew RTL HTML webpage."
