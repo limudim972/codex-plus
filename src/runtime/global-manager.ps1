@@ -66,6 +66,33 @@ function Send-CodexPlusManagerCommand {
     }
 }
 
+function Get-CodexPlusGlobalManagerProcesses {
+    $scriptPath = Get-CodexRtlPatchScriptPath
+    $normalizedScriptPath = ([string]$scriptPath).Replace('/', '\')
+    try {
+        return @(
+            Get-CimInstance Win32_Process -Filter "Name = 'powershell.exe'" -ErrorAction Stop |
+                Where-Object {
+                    $_.ProcessId -ne $PID -and
+                    $_.CommandLine -and
+                    $_.CommandLine -like '*-StartGlobalManager*' -and
+                    $_.CommandLine.IndexOf($normalizedScriptPath, [StringComparison]::OrdinalIgnoreCase) -ge 0
+                }
+        )
+    } catch {
+        return @()
+    }
+}
+
+function Stop-CodexPlusGlobalManagerProcesses {
+    foreach ($process in @(Get-CodexPlusGlobalManagerProcesses)) {
+        try {
+            Stop-Process -Id ([int]$process.ProcessId) -Force -ErrorAction Stop
+        } catch {
+        }
+    }
+}
+
 function Ensure-CodexPlusGlobalManager {
     param([int]$StartupTimeoutMilliseconds = 7000)
 
@@ -76,6 +103,17 @@ function Ensure-CodexPlusGlobalManager {
             return $status
         }
     } catch {
+    }
+
+    # A manager can remain alive after its named pipe has stopped accepting
+    # connections. Its mutex then prevents the replacement manager from
+    # starting, so recover the exact stale manager before bootstrapping a new
+    # one. The process filter is restricted to this runtime's script path and
+    # excludes the current launcher process.
+    $staleManagers = @(Get-CodexPlusGlobalManagerProcesses)
+    if ($staleManagers.Count -gt 0) {
+        Stop-CodexPlusGlobalManagerProcesses
+        Start-Sleep -Milliseconds 200
     }
 
     $scriptPath = Get-CodexRtlPatchScriptPath
