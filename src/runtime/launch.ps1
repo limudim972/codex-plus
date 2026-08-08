@@ -388,7 +388,8 @@ function Format-CodexUsageWindowTitle {
     $windowStart = $resetAt.AddDays(-7)
     $windowDuration = ($resetAt - $windowStart).TotalSeconds
     $elapsedSeconds = [Math]::Max(0, [Math]::Min($windowDuration, ($Now - $windowStart).TotalSeconds))
-    $elapsedPercent = [Math]::Round(($elapsedSeconds / $windowDuration) * 100, 0)
+    # Round down so the percentage reaches 100 only once the reset time has arrived.
+    $elapsedPercent = [Math]::Floor(($elapsedSeconds / $windowDuration) * 100)
     $remaining = $resetAt - $Now
     if ($remaining.TotalSeconds -le 0) {
         return ('Plus Codex - {0}% used · resets now, {1}% passed' -f $UsedPercent.ToString('0.##', [Globalization.CultureInfo]::InvariantCulture), $elapsedPercent)

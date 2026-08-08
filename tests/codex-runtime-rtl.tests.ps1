@@ -620,6 +620,7 @@ Assert-Equal 'Plus Codex - 67% used · resets in 7 days, 0% passed' (Format-Code
 Assert-Equal 'Plus Codex - 67% used · resets in 4 days, 50% passed' (Format-CodexUsageWindowTitle -UsedPercent 67 -ResetsAt $sevenDayReset -Now $fixedNow.AddDays(3.5)) 'Primary title should show elapsed time at the midpoint of the seven-day window.'
 Assert-Equal 'Plus Codex - 67% used · resets in 6 days, 14% passed' (Format-CodexUsageWindowTitle -UsedPercent 67 -ResetsAt $sixDayReset -Now $fixedNow) 'Primary title should calculate elapsed time from a seven-day window start.'
 Assert-Equal 'Plus Codex - 67% used · resets in 4 hours, 98% passed' (Format-CodexUsageWindowTitle -UsedPercent 67 -ResetsAt $hourReset -Now $fixedNow) 'Primary title should show hours when the reset is less than a day away.'
+Assert-Equal 'Plus Codex - 67% used · resets in 13 minutes, 99% passed' (Format-CodexUsageWindowTitle -UsedPercent 67 -ResetsAt $minuteReset -Now $fixedNow) 'Primary title should round elapsed time down before the reset boundary.'
 Assert-Equal 'Plus Codex - 67% used · resets now, 100% passed' (Format-CodexUsageWindowTitle -UsedPercent 67 -ResetsAt $minuteReset -Now $fixedNow.AddMinutes(13.5)) 'Primary title should clamp elapsed time at the reset boundary.'
 
 $script:MockCodexProcesses = @(
