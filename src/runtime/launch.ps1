@@ -507,14 +507,6 @@ function Update-CodexPrematureSessionState {
         if ($last.Count -eq 0) { continue }
         $payload = $last[0].payload
         if (-not $payload) { continue }
-        if (Test-CodexShellError -Payload $payload) {
-            $script:CodexPlusPrematurePending[$path] = [pscustomobject]@{ name = Get-CodexSessionDisplayName -SessionId $sessionId; session = $sessionId; turn = if ($payload.turn_id) { [string]$payload.turn_id } else { '' }; project = $project; cwd = if ($payload.cwd) { [string]$payload.cwd } else { '' }; path = $file.FullName; last_type = [string]$payload.type; record_line = 0; record_timestamp = ''; record_id = ''; record_type = ''; error_message = [string]$payload.error.message; error_code = [string]$payload.error.codex_error_info; shell_error = $true; last_activity = $lastActivity }
-            continue
-        }
-        if ($payload.type -in @('task_complete', 'turn_aborted') -or (Test-CodexUserInputRequest -Payload $payload)) {
-            $script:CodexPlusPrematurePending.Remove($path)
-            continue
-        }
         $project = if ($payload.cwd) { Split-Path -Leaf ([string]$payload.cwd) } else { 'unknown' }
         $sessionId = if ($file.BaseName -match '(?<id>[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12})$') { $Matches.id } else { $file.BaseName }
         $recordActivity = $null
@@ -522,7 +514,49 @@ function Update-CodexPrematureSessionState {
             try { $recordActivity = [DateTime]::Parse([string]$last[0].timestamp).ToUniversalTime() } catch { $recordActivity = $null }
         }
         $lastActivity = if ($recordActivity) { $recordActivity } else { $file.LastWriteTimeUtc }
-        $script:CodexPlusPrematurePending[$path] = [pscustomobject]@{ name = Get-CodexSessionDisplayName -SessionId $sessionId; session = $sessionId; turn = if ($payload.turn_id) { [string]$payload.turn_id } else { '' }; project = $project; cwd = if ($payload.cwd) { [string]$payload.cwd } else { '' }; path = $file.FullName; last_type = [string]$payload.type; record_line = 0; record_timestamp = ''; record_id = ''; record_type = ''; last_activity = $lastActivity }
+        if (Test-CodexShellError -Payload $payload) {
+            $script:CodexPlusPrematurePending[$path] = [pscustomobject]@{
+                name = Get-CodexSessionDisplayName -SessionId $sessionId
+                session = $sessionId
+                turn = if ($payload.turn_id) { [string]$payload.turn_id } else { '' }
+                project = $project
+                cwd = if ($payload.cwd) { [string]$payload.cwd } else { '' }
+                path = $file.FullName
+                last_type = [string]$payload.type
+                record_line = 0
+                record_timestamp = if ($last[0].timestamp) { [string]$last[0].timestamp } else { '' }
+                record_id = if ($payload.id) { [string]$payload.id } else { '' }
+                record_type = 'event_msg'
+                payload_name = if ($payload.name) { [string]$payload.name } else { '' }
+                error_message = [string]$payload.error.message
+                error_code = [string]$payload.error.codex_error_info
+                shell_error = $true
+                last_activity = $lastActivity
+            }
+            continue
+        }
+        if ($payload.type -in @('task_complete', 'turn_aborted') -or (Test-CodexUserInputRequest -Payload $payload)) {
+            $script:CodexPlusPrematurePending.Remove($path)
+            continue
+        }
+        $script:CodexPlusPrematurePending[$path] = [pscustomobject]@{
+            name = Get-CodexSessionDisplayName -SessionId $sessionId
+            session = $sessionId
+            turn = if ($payload.turn_id) { [string]$payload.turn_id } else { '' }
+            project = $project
+            cwd = if ($payload.cwd) { [string]$payload.cwd } else { '' }
+            path = $file.FullName
+            last_type = [string]$payload.type
+            record_line = 0
+            record_timestamp = if ($last[0].timestamp) { [string]$last[0].timestamp } else { '' }
+            record_id = if ($payload.id) { [string]$payload.id } else { '' }
+            record_type = 'event_msg'
+            payload_name = if ($payload.name) { [string]$payload.name } else { '' }
+            error_message = ''
+            error_code = ''
+            shell_error = $false
+            last_activity = $lastActivity
+        }
     }
 }
 
@@ -545,7 +579,9 @@ function Get-CodexPrematureSessionAlerts {
         $ageSeconds = [int]($now - $pending.last_activity).TotalSeconds
         if (-not $diagnostic.shell_error -and $ageSeconds -lt 120) { continue }
         if ($diagnostic.shell_error) {
-            foreach ($property in @('session','cwd','project','turn','last_type','record_line','record_timestamp','record_id','record_type','payload_name','error_message','error_code','shell_error')) { $pending.$property = $diagnostic.$property }
+            foreach ($property in @('session','cwd','project','turn','last_type','record_line','record_timestamp','record_id','record_type','payload_name','error_message','error_code','shell_error')) {
+                $pending | Add-Member -NotePropertyName $property -NotePropertyValue $diagnostic.$property -Force
+            }
             $pending | Add-Member -NotePropertyName age_seconds -NotePropertyValue 0 -Force
             $key = "$path|$($pending.last_activity.Ticks)|shell-error"
             if (-not $script:CodexPlusPrematureAlerted.ContainsKey($key)) { $script:CodexPlusPrematureAlerted[$key] = $true; $alerts += $pending }
@@ -556,7 +592,7 @@ function Get-CodexPrematureSessionAlerts {
             continue
         }
         foreach ($property in @('session','cwd','project','turn','last_type','record_line','record_timestamp','record_id','record_type','payload_name')) {
-            $pending.$property = $diagnostic.$property
+            $pending | Add-Member -NotePropertyName $property -NotePropertyValue $diagnostic.$property -Force
         }
         $key = "$path|$($pending.last_activity.Ticks)"
         if ($script:CodexPlusPrematureAlerted.ContainsKey($key)) { continue }

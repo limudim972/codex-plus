@@ -204,6 +204,7 @@ Assert-True ($sidebarPayload.Contains('conversation.updatedAt')) 'Sidebar payloa
 Assert-True ($sidebarPayload.Contains('NATIVE_TIMESTAMP_ELEMENT_ATTR')) 'Sidebar payload should render timestamps as dedicated row elements.'
 Assert-True ($sidebarPayload.Contains('inline-flex shrink-0 items-center whitespace-nowrap text-xs text-token-text-tertiary')) 'Sidebar payload should match the task timestamp flex styling.'
 Assert-True ($sidebarPayload.Contains("titleHost.classList.toggle('pr-6'")) 'Sidebar payload should keep thread and task timestamps inset from the row edge.'
+Assert-True ($sidebarPayload.Contains("titleHost.style.paddingRight = isThreadSidebarRow(row) ? '24px' : ''")) 'Project-thread timestamps should reserve the same right-side status inset as Recents.'
 Assert-True ($sidebarPayload.Contains('ancestor.classList.remove(''pl-2'', ''pl-6'')')) 'Synthetic Recents rows should clear inherited project-thread indentation from their ancestors.'
 Assert-True ($sidebarPayload.Contains('!ancestor.hasAttribute(SYNTHETIC_LIST_ATTR)')) 'Synthetic Recents indentation normalization should stop at the Recents list boundary.'
 Assert-True ($sidebarPayload.Contains('THREAD_UNREAD_INDICATOR_ATTR')) 'Sidebar payload should identify owned unread indicators on synthetic rows.'
@@ -1049,8 +1050,9 @@ Assert-True ($sidebarPagingPayload.Contains("status?.type === 'loading' || statu
 Assert-True ($sidebarPagingPayload.Contains('hasUnreadTurn')) 'Synthetic Threads should read live unread state when a project source row is collapsed.'
 Assert-True ($sidebarPagingPayload.Contains('recentConversations')) 'Synthetic Threads should collect unread state from Codex''s nested conversation manager.'
 Assert-True ($sidebarPagingPayload.Contains('conversations instanceof Map')) 'Synthetic Threads should collect live conversations from Codex''s conversation map.'
-Assert-True ($sidebarPagingPayload.Contains('nativeThreadUnreadIndicatorCache')) 'Synthetic Threads should retain native unread indicators across collapsed project rows.'
+Assert-True (-not ($sidebarPagingPayload.Contains('nativeThreadUnreadIndicatorCache'))) 'Synthetic Threads should not copy native unread indicator markup into Recents.'
 Assert-True ($sidebarPagingPayload.Contains('nativeThreadUnreadStateCache')) 'Synthetic Threads should retain native unread state across collapsed project rows.'
+Assert-True ($sidebarPagingPayload.Contains('Do not copy the native status slot')) 'Synthetic Threads should render only the synthetic unread dot.'
 Assert-True ($sidebarPagingPayload.Contains("candidate.closest('[data-app-action-sidebar-thread-row]') || candidate")) 'Nested project threads should preserve their own native row instead of collapsing to the project list item.'
 Assert-True ($sidebarPagingPayload.Contains('unreadStatePriority')) 'Synthetic unread state should retain the source priority used to resolve duplicate thread records.'
 Assert-True ($sidebarPagingPayload.Contains('currentUnreadPriority')) 'Synthetic unread state should compare collection-backed and manager-backed duplicate records.'
@@ -1250,6 +1252,31 @@ try {
     Assert-Equal 'reasoning' $diagnostic.last_type 'Session diagnostics should report the last payload type.'
 } finally {
     if (Test-Path -LiteralPath $tmpDiagnosticPath) { Remove-Item -LiteralPath $tmpDiagnosticPath -Force }
+}
+$tmpPrematureSessionRoot = Join-Path ([System.IO.Path]::GetTempPath()) ("codex-premature-session-{0}" -f ([guid]::NewGuid()))
+$oldUserProfileForPrematureSession = $env:USERPROFILE
+try {
+    New-Item -ItemType Directory -Force -Path (Join-Path $tmpPrematureSessionRoot '.codex\sessions\2026\08\08') | Out-Null
+    $prematureSessionId = '019fe0b7-f7ad-78e3-81aa-f6e581da20bc'
+    $prematureSessionPath = Join-Path $tmpPrematureSessionRoot ".codex\sessions\2026\08\08\rollout-2026-08-08T12-33-00-$prematureSessionId.jsonl"
+    $staleTimestamp = [DateTime]::UtcNow.AddMinutes(-3).ToString('o')
+    @(
+        (@{ type='session_meta'; payload=@{ id=$prematureSessionId; cwd='C:\Users\Noam\Documents\code\codex-plus' } } | ConvertTo-Json -Compress)
+        (@{ type='event_msg'; timestamp=$staleTimestamp; payload=@{ type='token_count'; turn_id='turn-premature-id' } } | ConvertTo-Json -Compress)
+    ) | Set-Content -LiteralPath $prematureSessionPath -Encoding UTF8
+    $env:USERPROFILE = $tmpPrematureSessionRoot
+    $script:CodexPlusPrematurePending = [hashtable]::Synchronized(@{})
+    $script:CodexPlusPrematureAlerted = @{}
+    Update-CodexPrematureSessionState -Paths @($prematureSessionPath)
+    $prematurePending = $script:CodexPlusPrematurePending[$prematureSessionPath]
+    Assert-True ($null -ne $prematurePending) 'Stale sessions should be retained as pending watchdog candidates.'
+    Assert-True ($prematurePending.PSObject.Properties.Name -contains 'payload_name') 'Pending watchdog state should define payload_name before diagnostic enrichment.'
+    $prematureAlerts = @(Get-CodexPrematureSessionAlerts)
+    Assert-Equal 1 $prematureAlerts.Count 'A stale non-terminal session should produce one watchdog alert.'
+    Assert-Equal 'token_count' $prematureAlerts[0].last_type 'Watchdog alerts should retain the latest session event type.'
+} finally {
+    $env:USERPROFILE = $oldUserProfileForPrematureSession
+    if (Test-Path -LiteralPath $tmpPrematureSessionRoot) { Remove-Item -LiteralPath $tmpPrematureSessionRoot -Recurse -Force }
 }
 Assert-True (-not $launchSource.Contains('[int]$PollMilliseconds = 250')) 'The retired 250ms close-watchdog poll should be removed.'
 Assert-True ($managerSource.Contains('[Threading.WaitHandle]::WaitAny')) 'The manager event loop should block on event handles and scheduled one-shot work.'

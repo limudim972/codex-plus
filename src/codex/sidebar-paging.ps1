@@ -81,7 +81,6 @@ function Get-CodexSidebarPagingPayload {
   const LIVE_CATALOG_FULL_REFRESH_MS = 30000;
   const LIVE_CATALOG_FORCE_REFRESH_MS = 5000;
   const PAGE_START_TIME = Number(window.performance?.timeOrigin || Date.now());
-  const nativeThreadUnreadIndicatorCache = new Map();
   const nativeThreadUnreadStateCache = new Set();
   const nativeThreadWorkingCache = new Set();
   let reconciliationCache = null;
@@ -1351,10 +1350,6 @@ function Get-CodexSidebarPagingPayload {
       return Boolean(candidate.querySelector('.icon-xs.relative.scale-50 .absolute.inset-0.rounded-full'));
     }) || null;
 
-    const threadId = normalizeThreadId(getThreadIdForRow(row));
-    if (indicator && threadId) {
-      nativeThreadUnreadIndicatorCache.set(threadId, indicator.cloneNode(true));
-    }
     return indicator;
   }
 
@@ -1454,7 +1449,6 @@ function Get-CodexSidebarPagingPayload {
     if (!row) return;
 
     const existing = row.querySelector('[' + THREAD_UNREAD_INDICATOR_ATTR + ']');
-    const source = getThreadUnreadIndicator(nativeRow);
     const threadId = normalizeThreadId(row.getAttribute('data-codex-plus-thread-id') || getThreadIdForRow(row));
     const nativeUnread = nativeRow ? getNativeThreadUnreadState(nativeRow) : null;
     const liveUnreadKnown = liveRecord?.unreadStateKnown === true;
@@ -1479,21 +1473,16 @@ function Get-CodexSidebarPagingPayload {
         nativeThreadUnreadStateCache.delete(threadId);
       }
     }
-    if (nativeRow && !source && threadId) {
-      nativeThreadUnreadIndicatorCache.delete(threadId);
-    }
     if (authoritativeUnread === false) {
       if (existing) existing.remove();
       if (threadId) {
-        nativeThreadUnreadIndicatorCache.delete(threadId);
         nativeThreadUnreadStateCache.delete(threadId);
       }
       return;
     }
-    const cached = !nativeRow && threadId ? nativeThreadUnreadIndicatorCache.get(threadId) : null;
     const cachedUnread = Boolean(threadId && nativeThreadUnreadStateCache.has(threadId));
     const hasUnread = Boolean(authoritativeUnread === true || cachedUnread);
-    if (!source && !cached && !hasUnread) {
+    if (!hasUnread) {
       if (existing) existing.remove();
       return;
     }
@@ -1506,8 +1495,10 @@ function Get-CodexSidebarPagingPayload {
     const button = getSyntheticThreadButton(row);
     if (!button) return;
 
+    // Recreate only the unread dot. Do not copy the native status slot or its
+    // decorative SVG into the synthetic Recents row.
     const next = positionSyntheticStatusIndicator(keepSyntheticUnreadIndicatorVisible(
-      (source || cached || createThreadUnreadIndicator()).cloneNode(true)
+      createThreadUnreadIndicator()
     ));
     next.setAttribute(THREAD_UNREAD_INDICATOR_ATTR, 'true');
     if (existing) {
@@ -2446,10 +2437,12 @@ function Get-CodexSidebarPagingPayload {
       const timestampText = nextTimestampLabel ? '[' + nextTimestampLabel + ']' : '';
 
       if (timestampText && titleHost) {
-        // Recents own their right-side inset. Do not derive it from the
-        // native project-thread row geometry, which can change independently.
+        // Keep every thread timestamp clear of the native right-side status
+        // rail. Recents already need this inset, and project-thread rows use
+        // the same 52px rail even though their native template does not
+        // reserve the space in the title host.
         titleHost.classList.toggle('pr-6', isThreadSidebarRow(row) && !isSyntheticRecentRow(row));
-        titleHost.style.paddingRight = isSyntheticRecentRow(row) ? '24px' : '';
+        titleHost.style.paddingRight = isThreadSidebarRow(row) ? '24px' : '';
         positionNativeThreadStatusSlot(row);
         if (!timestampElement) {
           timestampElement = row.ownerDocument.createElement('span');
