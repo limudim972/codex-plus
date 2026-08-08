@@ -44,6 +44,8 @@ function Get-CodexSidebarPagingPayload {
   const THREAD_UPDATED_ATTR = 'data-codex-plus-thread-updated-ms';
   const THREADS_HEADER_ATTR = 'data-codex-plus-sidebar-threads-header';
   const THREADS_CONTAINER_ATTR = 'data-codex-plus-sidebar-threads-container';
+  const THREADS_HEADER_ACTIONS_ATTR = 'data-codex-plus-sidebar-threads-actions';
+  const MARK_ALL_READ_ACTION = 'mark-all-read';
   const BUTTON_CLASS = 'border-token-border no-drag cursor-interaction flex items-center gap-1 border whitespace-nowrap select-none focus:outline-none disabled:cursor-not-allowed disabled:opacity-40 rounded-full text-token-muted-foreground enabled:hover:bg-transparent data-[state=open]:bg-transparent hover:text-token-foreground border-transparent px-2 py-0.5 text-sm leading-[18px] text-token-description-foreground hover:text-token-foreground -ml-[9px]';
   const LEGACY_TIMESTAMP_SUFFIX_SELECTOR = 'span[aria-hidden="true"].pointer-events-none.select-none.whitespace-nowrap.text-token-description-foreground';
   let startupThreadPreloadStarted = false;
@@ -1001,6 +1003,118 @@ function Get-CodexSidebarPagingPayload {
     };
   }
 
+  function getLiveThreadRecordKeyById(catalog, threadId) {
+    const normalizedThreadId = normalizeThreadId(threadId);
+    if (!normalizedThreadId) return '';
+    const matches = Array.from(catalog?.records?.entries?.() || [])
+      .filter(([, record]) => normalizeThreadId(record?.id) === normalizedThreadId);
+    return matches[0]?.[0] || '';
+  }
+
+  function collectLiveReadManagers(value, managers, seen, depth = 0) {
+    if (!value || (typeof value !== 'object' && typeof value !== 'function') || seen.has(value) || depth > 2) {
+      return;
+    }
+    seen.add(value);
+
+    if (typeof value.markConversationAsRead === 'function'
+      || typeof value.setConversationUnreadState === 'function') {
+      managers.push(value);
+    }
+
+    for (const key of [
+      'manager',
+      'conversationManager',
+      'threadManager',
+      'appServerManager',
+      'localManager',
+      'remoteManager',
+      'durableManager',
+      'client'
+    ]) {
+      try {
+        collectLiveReadManagers(value[key], managers, seen, depth + 1);
+      } catch {
+      }
+    }
+  }
+
+  function getLiveReadManagers(catalog) {
+    const managers = [];
+    const seen = new Set();
+    for (const [binding] of catalog?.cachedBindings?.entries?.() || []) {
+      try {
+        collectLiveReadManagers(readLiveBinding(catalog.scope, binding), managers, seen);
+      } catch {
+      }
+    }
+    return managers;
+  }
+
+  function getManagerHostId(manager) {
+    try {
+      const value = typeof manager.getHostId === 'function'
+        ? manager.getHostId()
+        : manager.hostId;
+      return normalizeLiveThreadKey(value);
+    } catch {
+      return '';
+    }
+  }
+
+  async function markThreadReadInCodex(catalog, threadId, threadKey, managers) {
+    const normalizedThreadId = normalizeThreadId(threadId);
+    if (!normalizedThreadId) return false;
+    const expectedHostId = normalizeLiveThreadKey(String(threadKey || '').split(':', 1)[0]);
+    const orderedManagers = [
+      ...managers.filter((manager) => {
+        const hostId = getManagerHostId(manager);
+        return !expectedHostId || !hostId || hostId === expectedHostId;
+      }),
+      ...managers.filter((manager) => !managers.some((candidate) => candidate === manager && (
+        !expectedHostId || !getManagerHostId(candidate) || getManagerHostId(candidate) === expectedHostId
+      )))
+    ];
+    const attempted = new Set();
+
+    for (const manager of orderedManagers) {
+      if (attempted.has(manager)) continue;
+      attempted.add(manager);
+      try {
+        if (typeof manager.markConversationAsRead === 'function') {
+          await Promise.resolve(manager.markConversationAsRead(normalizedThreadId));
+          return true;
+        }
+        if (typeof manager.setConversationUnreadState === 'function') {
+          await Promise.resolve(manager.setConversationUnreadState(normalizedThreadId, false));
+          return true;
+        }
+      } catch {
+      }
+    }
+    return false;
+  }
+
+  async function markAllRecentThreadsRead() {
+    const catalog = getLiveSidebarCatalog(true);
+    const entries = getRecentThreadEntries();
+    if (!catalog || entries.length === 0) return 0;
+
+    const managers = getLiveReadManagers(catalog);
+    let markedCount = 0;
+    for (const entry of entries) {
+      const threadKey = getLiveThreadRecordKeyById(catalog, entry.id);
+      if (await markThreadReadInCodex(catalog, entry.id, threadKey, managers)) {
+        markedCount += 1;
+      }
+    }
+    if (markedCount > 0) {
+      requestSidebarRefresh();
+      window.setTimeout(requestSidebarRefresh, 250);
+    }
+    return markedCount;
+  }
+
   function getProjectGroupForThreadKey(catalog, threadKey) {
     const normalizedThreadKey = normalizeLiveThreadKey(threadKey);
     if (!normalizedThreadKey) return null;
@@ -1935,6 +2049,40 @@ function Get-CodexSidebarPagingPayload {
       if (!icon.classList.contains('opacity-100')) {
         icon.classList.add('opacity-100');
       }
+    }
+  }
+
+  function syncMarkAllReadButton(button) {
+    if (!button) return;
+    button.type = 'button';
+    button.className = BUTTON_CLASS;
+    button.setAttribute(ACTION_ATTR, MARK_ALL_READ_ACTION);
+    button.setAttribute('aria-label', 'Mark all Recents threads as read');
+    button.title = 'Mark all Recents threads as read';
+    if (!button.__codexPlusMarkAllReadWired) {
+      bindSingleActivation(button, async (event) => {
+        event.preventDefault();
+        event.stopPropagation();
+        event.stopImmediatePropagation();
+        if (button.disabled) return;
+
+        const originalLabel = 'Mark all as read';
+        button.disabled = true;
+        button.setAttribute('aria-busy', 'true');
+        button.textContent = 'Marking read…';
+        try {
+          await markAllRecentThreadsRead();
+        } finally {
+          button.disabled = false;
+          button.removeAttribute('aria-busy');
+          button.textContent = originalLabel;
+          requestSidebarRefresh();
+        }
+      });
+      button.__codexPlusMarkAllReadWired = true;
+    }
+    if (!button.disabled && button.textContent !== 'Mark all as read') {
+      button.textContent = 'Mark all as read';
     }
   }
 
@@ -3178,6 +3326,26 @@ function Get-CodexSidebarPagingPayload {
       sectionContainer.appendChild(scroller);
       shell.appendChild(sectionContainer);
     }
+
+    header.style.display = 'flex';
+    header.style.alignItems = 'center';
+    header.style.gap = '4px';
+    let headerActions = header.querySelector('[' + THREADS_HEADER_ACTIONS_ATTR + ']');
+    if (!headerActions) {
+      headerActions = document.createElement('div');
+      headerActions.setAttribute(THREADS_HEADER_ACTIONS_ATTR, 'threads');
+      headerActions.style.display = 'flex';
+      headerActions.style.alignItems = 'center';
+      headerActions.style.gap = '2px';
+      headerActions.style.marginInlineStart = 'auto';
+      header.appendChild(headerActions);
+    }
+    let markAllReadButton = headerActions.querySelector('[' + ACTION_ATTR + '="' + MARK_ALL_READ_ACTION + '"]');
+    if (!markAllReadButton) {
+      markAllReadButton = document.createElement('button');
+      headerActions.appendChild(markAllReadButton);
+    }
+    syncMarkAllReadButton(markAllReadButton);
 
     sectionContainer.hidden = shell.getAttribute(COLLAPSED_ATTR) === 'true';
     // Late project-context adoption should update an already-rendered header.
