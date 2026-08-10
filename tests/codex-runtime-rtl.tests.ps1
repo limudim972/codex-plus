@@ -1274,6 +1274,18 @@ try {
     $prematureAlerts = @(Get-CodexPrematureSessionAlerts)
     Assert-Equal 1 $prematureAlerts.Count 'A stale non-terminal session should produce one watchdog alert.'
     Assert-Equal 'token_count' $prematureAlerts[0].last_type 'Watchdog alerts should retain the latest session event type.'
+
+    $completedSessionId = '019fe0b7-f7ad-78e3-81aa-f6e581da20bd'
+    $completedSessionPath = Join-Path $tmpPrematureSessionRoot ".codex\sessions\2026\08\08\rollout-2026-08-08T12-34-00-$completedSessionId.jsonl"
+    @(
+        (@{ type='session_meta'; payload=@{ id=$completedSessionId; cwd='C:\Users\Noam\Documents\code\codex-plus' } } | ConvertTo-Json -Compress)
+        (@{ type='event_msg'; timestamp=$staleTimestamp; payload=@{ type='task_complete'; turn_id='turn-completed-id' } } | ConvertTo-Json -Compress)
+        (@{ type='session_meta'; payload=@{ id=$completedSessionId; cwd='C:\Users\Noam\Documents\code\codex-plus' } } | ConvertTo-Json -Compress)
+        (@{ type='session_meta'; payload=@{ id=$completedSessionId; cwd='C:\Users\Noam\Documents\code\codex-plus' } } | ConvertTo-Json -Compress)
+    ) | Set-Content -LiteralPath $completedSessionPath -Encoding UTF8
+    Update-CodexPrematureSessionState -Paths @($completedSessionPath)
+    Assert-True ($null -eq $script:CodexPlusPrematurePending[$completedSessionPath]) 'Trailing session metadata must not revive a completed session as a watchdog candidate.'
+    Assert-Equal 0 @($script:CodexPlusPrematurePending.Keys | Where-Object { $_ -eq $completedSessionPath }).Count 'Completed sessions with trailing metadata should remain absent from pending watchdog state.'
 } finally {
     $env:USERPROFILE = $oldUserProfileForPrematureSession
     if (Test-Path -LiteralPath $tmpPrematureSessionRoot) { Remove-Item -LiteralPath $tmpPrematureSessionRoot -Recurse -Force }
