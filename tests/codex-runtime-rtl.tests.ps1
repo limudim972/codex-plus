@@ -1218,6 +1218,7 @@ Assert-True ($launchSource.Contains('function Get-CodexSessionDiagnostic')) 'Pre
 Assert-True ($launchSource.Contains('record_line')) 'Premature-session alerts should include the physical JSONL line number.'
 Assert-True ($launchSource.Contains('record_timestamp')) 'Premature-session alerts should include the last record timestamp.'
 Assert-True ($launchSource.Contains('record_id')) 'Premature-session alerts should include the last record id when available.'
+Assert-True ($launchSource.Contains('function Test-CodexReasoningRecord')) 'Premature-session monitoring should recognize active reasoning records.'
 $tmpSessionIndexRoot = Join-Path ([System.IO.Path]::GetTempPath()) ("codex-session-index-utf8-{0}" -f ([guid]::NewGuid()))
 $oldUserProfileForSessionIndex = $env:USERPROFILE
 try {
@@ -1274,6 +1275,16 @@ try {
     $prematureAlerts = @(Get-CodexPrematureSessionAlerts)
     Assert-Equal 1 $prematureAlerts.Count 'A stale non-terminal session should produce one watchdog alert.'
     Assert-Equal 'token_count' $prematureAlerts[0].last_type 'Watchdog alerts should retain the latest session event type.'
+
+    $reasoningSessionId = '019fe0b7-f7ad-78e3-81aa-f6e581da20be'
+    $reasoningSessionPath = Join-Path $tmpPrematureSessionRoot ".codex\sessions\2026\08\08\rollout-2026-08-08T12-35-00-$reasoningSessionId.jsonl"
+    @(
+        (@{ type='session_meta'; payload=@{ id=$reasoningSessionId; cwd='C:\Users\Noam\Documents\code\codex-plus' } } | ConvertTo-Json -Compress)
+        (@{ type='response_item'; timestamp=$staleTimestamp; payload=@{ type='reasoning'; id='reasoning-record-id'; turn_id='turn-reasoning-id' } } | ConvertTo-Json -Compress)
+    ) | Set-Content -LiteralPath $reasoningSessionPath -Encoding UTF8
+    Update-CodexPrematureSessionState -Paths @($reasoningSessionPath)
+    Assert-True ($null -eq $script:CodexPlusPrematurePending[$reasoningSessionPath]) 'A trailing response_item reasoning record should not become a watchdog candidate.'
+    Assert-Equal 0 @(Get-CodexPrematureSessionAlerts | Where-Object { $_.path -eq $reasoningSessionPath }).Count 'A trailing response_item reasoning record should not trigger a watchdog alert.'
 
     $completedSessionId = '019fe0b7-f7ad-78e3-81aa-f6e581da20bd'
     $completedSessionPath = Join-Path $tmpPrematureSessionRoot ".codex\sessions\2026\08\08\rollout-2026-08-08T12-34-00-$completedSessionId.jsonl"

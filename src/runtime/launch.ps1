@@ -494,6 +494,14 @@ function Test-CodexShellError {
     return ($Payload.type -eq 'task_complete' -and $null -ne $Payload.error)
 }
 
+function Test-CodexReasoningRecord {
+    param(
+        [Parameter(Mandatory)]$Record,
+        [Parameter(Mandatory)]$Payload
+    )
+    return ($Record.type -eq 'response_item' -and $Payload.type -eq 'reasoning')
+}
+
 function Update-CodexPrematureSessionState {
     param([Parameter(Mandatory)][string[]]$Paths)
     $sessionsRoot = Join-Path $env:USERPROFILE '.codex\sessions'
@@ -514,6 +522,10 @@ function Update-CodexPrematureSessionState {
             try { $recordActivity = [DateTime]::Parse([string]$last[0].timestamp).ToUniversalTime() } catch { $recordActivity = $null }
         }
         $lastActivity = if ($recordActivity) { $recordActivity } else { $file.LastWriteTimeUtc }
+        if (Test-CodexReasoningRecord -Record $last[0] -Payload $payload) {
+            $script:CodexPlusPrematurePending.Remove($path)
+            continue
+        }
         if (Test-CodexShellError -Payload $payload) {
             $script:CodexPlusPrematurePending[$path] = [pscustomobject]@{
                 name = Get-CodexSessionDisplayName -SessionId $sessionId
@@ -568,6 +580,10 @@ function Get-CodexPrematureSessionAlerts {
         if (-not $pending) { continue }
         $diagnostic = Get-CodexSessionDiagnostic -Path $path
         if (-not $diagnostic) { continue }
+        if ($diagnostic.record_type -eq 'response_item' -and $diagnostic.last_type -eq 'reasoning') {
+            $script:CodexPlusPrematurePending.Remove($path)
+            continue
+        }
         $recordActivity = $null
         if ($diagnostic.record_timestamp) {
             try { $recordActivity = [DateTime]::Parse($diagnostic.record_timestamp).ToUniversalTime() } catch { $recordActivity = $null }
