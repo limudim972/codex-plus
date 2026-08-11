@@ -615,6 +615,48 @@ try {
             param([string]$Path)
             Update-CodexPrematureSessionState -Paths @($Path)
             foreach ($alert in @(Get-CodexPrematureSessionAlerts)) {
+                if (Test-CodexAutomaticContinuationError -Alert $alert) {
+                    # The manager is process-global for all Plus windows. Key by
+                    # thread, rather than by target/window or retry record, so a
+                    # failed continuation cannot recursively create another one.
+                    $attemptKey = [string]$alert.session
+                    if (-not $script:CodexPlusAutoContinuationAttempted.ContainsKey($attemptKey)) {
+                        $script:CodexPlusAutoContinuationAttempted[$attemptKey] = $true
+                        $detail = (@{ session = [string]$alert.session } | ConvertTo-Json -Compress)
+                        $probe = New-CodexCdpCommand -Id 91 -Method 'Runtime.evaluate' -Params @{
+                            expression = "JSON.stringify((()=>{const detail=$detail;return {can:Boolean(window.__CODEX_PLUS_AUTO_CONTINUE_CAN_HANDLE_ERROR?.(detail)),preferred:Boolean(window.__CODEX_PLUS_AUTO_CONTINUE_PREFERS_ERROR?.(detail))}})())"
+                            returnByValue = $true
+                        }
+                        $command = New-CodexCdpCommand -Id 92 -Method 'Runtime.evaluate' -Params @{
+                            expression = "window.dispatchEvent(new CustomEvent('codex-plus-auto-continue',{detail:$detail}));"
+                            returnByValue = $true
+                        }
+                        $fallbackTarget = $null
+                        $dispatched = $false
+                        foreach ($instance in @($instances.Values)) {
+                            if ($dispatched) { break }
+                            foreach ($target in @(Get-CodexDevToolsTargets -Port $instance.Port | Where-Object { Test-CodexDevToolsTarget -Target $_ })) {
+                                try {
+                                    $probeResponse = Invoke-CodexCdpCommand -WebSocketDebuggerUrl $target.webSocketDebuggerUrl -Command $probe
+                                    $probePayload = $probeResponse | ConvertFrom-Json
+                                    $probeResult = $probePayload.result.result.value | ConvertFrom-Json
+                                    if (-not [bool]$probeResult.can) { continue }
+                                    if (-not $fallbackTarget) { $fallbackTarget = $target }
+                                    if ([bool]$probeResult.preferred) {
+                                        Invoke-CodexCdpCommand -WebSocketDebuggerUrl $target.webSocketDebuggerUrl -Command $command | Out-Null
+                                        $dispatched = $true
+                                        break
+                                    }
+                                } catch { }
+                            }
+                        }
+                        if (-not $dispatched -and $fallbackTarget) {
+                            try { Invoke-CodexCdpCommand -WebSocketDebuggerUrl $fallbackTarget.webSocketDebuggerUrl -Command $command | Out-Null } catch { }
+                        }
+                    }
+                    $script:CodexPlusPrematurePending.Remove($Path)
+                    continue
+                }
                 Show-CodexPrematureSessionAlert -Alert $alert
                 $alertJson = $script:CodexPlusPrematureAlertPayload
                 $command = New-CodexCdpCommand -Id 91 -Method 'Runtime.evaluate' -Params @{

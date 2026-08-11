@@ -1056,6 +1056,7 @@ Assert-True ($sidebarPagingPayload.Contains('recentConversations')) 'Synthetic T
 Assert-True ($sidebarPagingPayload.Contains('conversations instanceof Map')) 'Synthetic Threads should collect live conversations from Codex''s conversation map.'
 Assert-True (-not ($sidebarPagingPayload.Contains('nativeThreadUnreadIndicatorCache'))) 'Synthetic Threads should not copy native unread indicator markup into Recents.'
 Assert-True ($sidebarPagingPayload.Contains('nativeThreadUnreadStateCache')) 'Synthetic Threads should retain native unread state across collapsed project rows.'
+Assert-True ($sidebarPagingPayload.Contains("statusThreadId === threadId")) 'Native unread state should only come from the React status owner for the same thread.'
 Assert-True ($sidebarPagingPayload.Contains('Do not copy the native status slot')) 'Synthetic Threads should render only the synthetic unread dot.'
 Assert-True ($sidebarPagingPayload.Contains("candidate.closest('[data-app-action-sidebar-thread-row]') || candidate")) 'Nested project threads should preserve their own native row instead of collapsing to the project list item.'
 Assert-True ($sidebarPagingPayload.Contains('unreadStatePriority')) 'Synthetic unread state should retain the source priority used to resolve duplicate thread records.'
@@ -1213,6 +1214,7 @@ Assert-True ($newWindowPayload.Contains("setStatus('- Launching '")) 'New-window
 Assert-True (-not ($newWindowPayload.Contains('New Plus'))) 'New window payload should not expose the removed independent Plus button.'
 $launchSource = Get-Content -Raw (Join-Path $repoRoot 'src\runtime\launch.ps1')
 $managerSource = Get-Content -Raw (Join-Path $repoRoot 'src\runtime\global-manager.ps1')
+$autoContinuePayload = Get-CodexAutoContinuePayload
 Assert-True ($managerSource.Contains('$hourly = $now.AddHours(1)')) 'Usage title should refresh hourly so elapsed-time percentage stays current.'
 $dashboardSource = Get-Content -Raw (Join-Path $repoRoot 'src\runtime\dashboard-server.ps1')
 Assert-True ($launchSource.Contains('Get-Content -LiteralPath $indexPath -Encoding UTF8')) 'Session display names should be read as UTF-8 so Hebrew names remain intact.'
@@ -1222,6 +1224,25 @@ Assert-True ($launchSource.Contains('record_line')) 'Premature-session alerts sh
 Assert-True ($launchSource.Contains('record_timestamp')) 'Premature-session alerts should include the last record timestamp.'
 Assert-True ($launchSource.Contains('record_id')) 'Premature-session alerts should include the last record id when available.'
 Assert-True ($launchSource.Contains('function Test-CodexReasoningRecord')) 'Premature-session monitoring should recognize active reasoning records.'
+Assert-True ($launchSource.Contains('function Test-CodexAutomaticContinuationError')) 'Session monitoring should identify model-capacity errors for automatic continuation.'
+Assert-True ($autoContinuePayload.Contains("manager.sendRequest('thread/resume'")) 'Automatic continuation should resume the existing thread through the active Codex app-server.'
+Assert-True ($autoContinuePayload.Contains("manager.sendRequest('turn/start'")) 'Automatic continuation should submit a new turn through the active Codex app-server.'
+Assert-True ($autoContinuePayload.Contains('codex-plus-auto-continue')) 'Automatic continuation should be triggered by a hidden runtime event.'
+Assert-True ($autoContinuePayload.Contains('__CODEX_PLUS_AUTO_CONTINUE_CAN_HANDLE_ERROR')) 'Codex Plus should expose a manager-availability probe for automatic continuation.'
+Assert-True ($autoContinuePayload.Contains('__CODEX_PLUS_AUTO_CONTINUE_PREFERS_ERROR')) 'Codex Plus should prefer the window that already owns the errored thread.'
+Assert-True (-not $autoContinuePayload.Contains('MutationObserver')) 'Automatic continuation should not watch DOM mutations.'
+Assert-True (-not $autoContinuePayload.Contains('textarea,[contenteditable')) 'Automatic continuation should not write to the composer.'
+Assert-True (-not $autoContinuePayload.Contains('tryContinue')) 'The legacy DOM/composer auto-continue trigger should be removed.'
+Assert-True ($managerSource.Contains('__CODEX_PLUS_AUTO_CONTINUE_CAN_HANDLE_ERROR')) 'The global manager should target a loaded Codex Plus page for automatic continuation.'
+Assert-True ($managerSource.Contains('$fallbackTarget')) 'Automatic continuation should dispatch to one target only.'
+Assert-True ($managerSource.Contains('CodexPlusAutoContinuationAttempted')) 'Automatic continuation attempts should be deduplicated by the single global manager.'
+Assert-True ($managerSource.Contains('Test-CodexAutomaticContinuationError -Alert $alert')) 'Capacity errors should be handled before any premature-session alert is shown.'
+$capacityCodeAlert = [pscustomobject]@{ error_code = 'server_overloaded'; error_message = 'Please try a different model.' }
+$capacityMessageAlert = [pscustomobject]@{ error_code = ''; error_message = 'Selected model is at capacity. Please try a different model.' }
+$otherErrorAlert = [pscustomobject]@{ error_code = 'internal_server_error'; error_message = 'Something went wrong.' }
+Assert-True (Test-CodexAutomaticContinuationError -Alert $capacityCodeAlert) 'server_overloaded should trigger automatic continuation.'
+Assert-True (Test-CodexAutomaticContinuationError -Alert $capacityMessageAlert) 'Capacity error text should trigger automatic continuation.'
+Assert-True (-not (Test-CodexAutomaticContinuationError -Alert $otherErrorAlert)) 'Unrelated shell errors should keep the normal alert path.'
 $tmpSessionIndexRoot = Join-Path ([System.IO.Path]::GetTempPath()) ("codex-session-index-utf8-{0}" -f ([guid]::NewGuid()))
 $oldUserProfileForSessionIndex = $env:USERPROFILE
 try {

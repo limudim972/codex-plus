@@ -416,6 +416,7 @@ function Format-CodexUsageWindowTitle {
 $script:CodexPlusRateLimitTitleCache = $null
 $script:CodexPlusUsageChangedPaths = @()
 $script:CodexPlusPrematureAlerted = @{}
+$script:CodexPlusAutoContinuationAttempted = @{}
 $script:CodexPlusPrematurePending = [hashtable]::Synchronized(@{})
 $script:CodexPlusChangedSessionPaths = [hashtable]::Synchronized(@{})
 
@@ -492,6 +493,16 @@ function Test-CodexUserInputRequest {
 function Test-CodexShellError {
     param([Parameter(Mandatory)]$Payload)
     return ($Payload.type -eq 'task_complete' -and $null -ne $Payload.error)
+}
+
+function Test-CodexAutomaticContinuationError {
+    param([Parameter(Mandatory)]$Alert)
+    $code = [string]$Alert.error_code
+    $message = [string]$Alert.error_message
+    return (
+        $code -match '(?i)server[_-]?overloaded' -or
+        $message -match '(?i)selected model is at capacity'
+    )
 }
 
 function Test-CodexReasoningRecord {
