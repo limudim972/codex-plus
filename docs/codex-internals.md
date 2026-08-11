@@ -141,7 +141,7 @@ data-codex-plus-thread-wired
 
 They can contain cloned or wrapped native row markup. Nested native attributes may therefore describe a different original row than the outer synthetic target. The outer synthetic row's thread ID is the intended target.
 
-The handler stops the synthetic event from being treated as a click on the nested native row, tries direct Codex navigation, and falls back to locating the source row and expanding the project/list if internal objects cannot be found.
+The handler stops the synthetic event from being treated as a click on the nested native row, hydrates the conversation through Codex's mounted manager, and performs direct Codex navigation. It does not fall back to clicking the source row, because that changes the project UI and defeats the purpose of Recents.
 
 ## Current direct algorithm
 
@@ -149,13 +149,12 @@ The handler stops the synthetic event from being treated as a click on the neste
 1. Read the synthetic row conversation ID.
 2. Find a real sidebar React fiber.
 3. Find the app scope from React hooks.
-4. Resolve sidebar-navigation and app-server modules dynamically.
-5. Find the mounted React Router navigator in fiber props.
-6. Get the local app-server manager.
+4. Find the mounted React Router navigator in fiber props.
+5. Get the local app-server manager.
+6. Hydrate the full conversation through `hydrateBackgroundThreads(..., { includeTurns: true })` when it is not already in the conversation store.
 7. Activate the thread summary.
 8. Push /local/<conversation-id> through React Router.
 9. Update Codex sidebar route/location state.
-10. Use the source-row fallback if an internal step is unavailable.
 ```
 
 The implementation is in `src/codex/sidebar-paging.ps1`. The installed copy must stay synchronized at `C:\Users\Noam\AppData\Local\Codex Plus\runtime\src\codex\sidebar-paging.ps1`.
@@ -191,4 +190,4 @@ Both indicators are attached to the inner thread button, not the outer drag/list
 
 ## Fragility notes
 
-React fiber names, hook layouts, minified names, ASAR hashes, app-scope signal shapes, router nesting, local/remote route formats, and synthetic row markup can all change. Feature-detect methods and preserve the source-row fallback. Never treat a sidebar route update alone as proof that the main conversation opened.
+React fiber names, hook layouts, minified names, ASAR hashes, app-scope signal shapes, router nesting, local/remote route formats, and synthetic row markup can all change. Feature-detect methods and keep direct navigation bounded. Never treat a sidebar route update alone as proof that the main conversation opened.

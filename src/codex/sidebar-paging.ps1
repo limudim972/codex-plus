@@ -1654,6 +1654,35 @@ function Get-CodexSidebarPagingPayload {
     });
   }
 
+  async function hydrateThreadForNavigation(manager, threadId) {
+    const existingConversation = typeof manager?.getConversation === 'function'
+      ? manager.getConversation(threadId)
+      : null;
+    // activateThreadSummary only registers a summary.  On a collapsed project
+    // row the full conversation may still be absent, and the old immediate
+    // getConversation check treated that normal state as a navigation failure.
+    // Hydrate through Codex's mounted manager before changing the route so the
+    // synthetic row can open the conversation without clicking its source row.
+    if (existingConversation && Array.isArray(existingConversation.turns)) {
+      return existingConversation;
+    }
+    if (typeof manager?.hydrateBackgroundThreads !== 'function') {
+      return existingConversation || null;
+    }
+
+    await withThreadPreloadTimeout(
+      manager.hydrateBackgroundThreads([threadId], { includeTurns: true }),
+      'thread navigation hydration'
+    );
+    const hydratedConversation = typeof manager.getConversation === 'function'
+      ? manager.getConversation(threadId)
+      : null;
+    if (!hydratedConversation || !Array.isArray(hydratedConversation.turns)) {
+      throw new Error('Thread navigation hydration did not populate the conversation store');
+    }
+    return hydratedConversation;
+  }
+
   function updateStartupThreadPreloadState(patch) {
     Object.assign(startupThreadPreloadState, patch);
     startupThreadPreloadState.updatedAt = Date.now();
@@ -1826,10 +1855,8 @@ function Get-CodexSidebarPagingPayload {
     if (!manager || typeof manager.activateThreadSummary !== 'function') return false;
 
     try {
+      await hydrateThreadForNavigation(manager, threadId);
       manager.activateThreadSummary(threadId);
-      if (typeof manager.getConversation === 'function' && !manager.getConversation(threadId)) {
-        return false;
-      }
       routerNavigator.push('/local/' + threadId);
       syncSyntheticThreadActiveState();
       window.setTimeout(syncSyntheticThreadActiveState, 50);
@@ -2264,22 +2291,12 @@ function Get-CodexSidebarPagingPayload {
       navigateThreadThroughCodex(row)
         .then((handled) => {
           if (handled) return;
-
-          const sourceRow = findSourceRow(row.getAttribute(SOURCE_LIST_ATTR), row.getAttribute(SOURCE_TEXT_ATTR))
-            || findRowByThreadId(row.getAttribute('data-codex-plus-thread-id'));
-          if (sourceRow) {
-            dispatchRowClick(sourceRow);
-            return;
-          }
-
-          if (!expandSourceProject(row.getAttribute(SOURCE_LIST_ATTR))) return;
-          return waitForSourceRow(
-            row.getAttribute(SOURCE_LIST_ATTR),
-            row.getAttribute(SOURCE_TEXT_ATTR),
-            row.getAttribute('data-codex-plus-thread-id')
-          ).then((resolvedSourceRow) => {
-            if (resolvedSourceRow) dispatchRowClick(resolvedSourceRow);
-          });
+          // Never proxy a synthetic Recents click to the matching project row:
+          // doing so changes the source project UI and defeats the point of the
+          // synthetic view.  A direct navigation failure is safer as a no-op
+          // than opening a different visible control.
+          window.__CODEX_PLUS_CONTEXT_BADGE?.setStatus('- Thread navigation unavailable');
+          window.setTimeout(() => window.__CODEX_PLUS_CONTEXT_BADGE?.clearStatus(), 3000);
         })
         .finally(() => row.removeAttribute(NAVIGATION_PENDING_ATTR));
     };
