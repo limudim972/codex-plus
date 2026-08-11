@@ -3508,6 +3508,9 @@ function Get-CodexSidebarPagingPayload {
         pager.style.setProperty('display', nextPagerDisplay, 'important');
       }
 
+      // Keep the pager between the visible and hidden rows. Everything
+      // before it is visible; everything after it remains hidden until the
+      // user activates Show more.
       const beforeNode = sectionKey === 'projects' ? null : (hiddenRows[loaded] || null);
       if (pager.parentElement !== sectionList || pager.nextSibling !== beforeNode) {
         sectionList.insertBefore(pager, beforeNode);

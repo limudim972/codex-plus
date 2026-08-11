@@ -1026,6 +1026,7 @@ Assert-True ($sidebarPagingPayload.Contains('!startupThreadPreloadActiveIds.has(
 Assert-True ($sidebarPagingPayload.Contains('for (const threadId of threadIds)')) 'Startup thread reads should run sequentially because Codex serializes thread/read work.'
 Assert-True (-not $sidebarPagingPayload.Contains('Promise.all(threadIds.map')) 'Startup thread reads should not be launched as a competing parallel batch.'
 Assert-True ($sidebarPagingPayload.Contains("if (sectionKey === 'threads') window.setTimeout(preloadStartupThreads, 0);")) 'The Threads Show more action should immediately preload newly revealed rows.'
+Assert-True ($sidebarPagingPayload.Contains("const beforeNode = sectionKey === 'projects' ? null : (hiddenRows[loaded] || null);")) 'Sidebar Show more pagers should remain between visible and hidden rows.'
 Assert-True ($sidebarPagingPayload.Contains('createThreadNavigationOverlay')) 'Thread navigation should render the spinner in the main conversation area.'
 Assert-True ($sidebarPagingPayload.Contains('startThreadNavigationLoadingMonitor')) 'Thread navigation should monitor native and synthetic thread activation.'
 Assert-True ($sidebarPagingPayload.Contains('isThreadNavigationReady')) 'Thread navigation should remove the spinner after the target conversation renders.'
