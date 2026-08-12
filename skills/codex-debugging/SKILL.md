@@ -1,6 +1,6 @@
 ---
 name: codex-debugging
-description: Inspect and verify live Codex surfaces, debugger targets, and browser-like panels; use when checking the running app, finding the correct DOM target, or validating view behavior without changing the RTL runtime.
+description: Inspect and verify Codex Plus surfaces and debugger targets in a newly launched isolated Plus window; use when checking the app, finding the correct DOM target, or validating live behavior. Never attach to a pre-existing user window unless the user explicitly identifies that window and directs inspection there.
 ---
 
 # Codex Debugging
@@ -11,9 +11,18 @@ Use this skill when you need to inspect a running Codex process, confirm which s
 
 This repo-local copy includes a Codex Plus method for attaching to an already-running desktop instance through its loopback DevTools port.
 
+## Window isolation rule
+
+- Use the debugger only on a fresh Codex Plus window launched by the agent for the current verification.
+- Before launch, record all existing `--remote-debugging-port` and `--user-data-dir` pairs without attaching to their DevTools targets. Treat them as user windows and exclude them from inspection.
+- After launch, attach only to the newly created port/profile pair and its exact `app://-/index.html` target.
+- If the launcher fails to create a new renderer, reuses an existing window, or the fresh renderer exits, stop. Do not fall back to a pre-existing window.
+- A user may override this rule only by explicitly directing inspection of a specific existing window, port, profile, or ordinal. A general request to inspect or verify the app is not an override.
+- A window the agent launched earlier in the same verification remains an eligible test window. Close or replace only agent-created windows when a fresh runtime load is required.
+
 ## Workflow
 
-1. Inspect the running Codex target before restarting anything.
+1. Record existing Codex Plus process identities before launch, but do not attach to or inspect their debugger targets.
 2. Launch Codex Plus through the Desktop installer only when live verification actually requires a new renderer/runtime instance—most importantly after changes to the Codex payload, injected UI, or other behavior that is loaded only during startup. Do not launch a new instance merely because installer files, the session monitor, or another background/runtime script changed; those changes can be verified with source/runtime checks and tests, and already-open Plus windows will not load them until they are closed and a new one is started.
    - Prefer the Desktop shortcut at Desktop\Codex Plus Install Local.lnk.
    - The installer runs the local checkout with `-LocalDev`, synchronizes the installed runtime, and launches a fresh Codex Plus window. Do not separately copy runtime files or inject the changed script into an existing window.
@@ -33,12 +42,12 @@ This repo-local copy includes a Codex Plus method for attaching to an already-ru
    - After launch, use the returned port and attach only to the matching newly appeared port/profile pair, not to any pre-existing Codex window.
    - If you updated a Codex payload or injected renderer behavior, do not inject the script into an already-open page; launch a fresh Plus window and verify the change there.
    - For installer, launcher, session-monitor, or other non-renderer runtime changes, do not launch or restart a Plus window unless the user explicitly requests live verification. Record that existing windows retain the old loaded code and that the change will apply to the next fresh launch.
-3. Resolve the active debug port for the running Codex instance.
+3. Resolve the debug port only for the fresh agent-launched Codex instance.
    - Check the running `ChatGPT.exe` command line for `--remote-debugging-port=...`.
-   - If working in Codex Plus, prefer the launcher-scoped port for the instance you are inspecting.
+   - Use the launcher-scoped port for the new instance you are inspecting.
    - Pair the port with the matching `--user-data-dir` so you stay attached to the intended window.
    - If you just launched a fresh window, restrict attachment to the port/profile pair that did not exist before launch.
-   - Do not assume `18317` or the saved state port; use the actual live port when one is already running.
+   - Do not assume `18317` or use a saved state port belonging to an older window.
 4. Open the debugger list from `http://127.0.0.1:<port>/json/list` or the IPv6 loopback equivalent when needed.
 5. Identify the active surface:
    - main chat surface
@@ -59,7 +68,7 @@ This repo-local copy includes a Codex Plus method for attaching to an already-ru
 
 When working inside this repo, prefer the checked-in helper at `tools/invoke-codex-devtools.ps1`.
 
-Use it to attach to an already-running Codex Plus window that was launched with `--remote-debugging-port`.
+Use it only after selecting the exact fresh Codex Plus window launched for the current verification.
 
 Examples:
 
@@ -75,14 +84,15 @@ Use this method before adding new launcher logic when the goal is inspection onl
 
 ### Port resolution
 
-When the port is unknown:
+When resolving the fresh launch port:
 
-- inspect running `ChatGPT.exe` processes and read `--remote-debugging-port=...`
-- prefer the process with the matching `--user-data-dir` for the launcher-scoped instance you care about
+- diff the pre-launch and post-launch `ChatGPT.exe` process sets and read `--remote-debugging-port=...` only from the newly created process
+- require the matching new `--user-data-dir` for the launcher-scoped instance
 - infer the live port from the visible browser-process command line before trusting `Codex Plus\state.json`
 - if a saved state port and the live process port disagree, use the live process port
 - when launching a new window for debugging, diff the before/after process list and use only the newly introduced port/profile pair
-- if multiple Codex Plus windows are open, keep the port and `user-data-dir` paired so you inspect the correct window
+- if multiple Codex Plus windows are open, exclude every pair that existed before the current launch
+- if no unique new pair exists, stop instead of attaching to an older window
 
 ### Inspection order
 
@@ -91,6 +101,28 @@ When the port is unknown:
 3. Query the DOM for the surface you care about.
 4. If the DOM is insufficient, inspect client-side state or global stores next.
 5. Only after that should you decide whether launcher/runtime changes are needed.
+
+### Avatar overlay and duplicate page targets
+
+Fresh Codex Plus profiles can expose more than one `page` target on the same debug port. A common pair is:
+
+- `app://-/index.html?initialRoute=/avatar-overlay` — the transient avatar/splash overlay.
+- `app://-/index.html` — the real Codex renderer containing the sidebar and conversation surface.
+
+Both targets can have the title `Codex`, so never select the first page by title or list order. Query `/json/list`, then select the target whose URL is exactly `app://-/index.html` (without `initialRoute` or another query string). Preserve its exact target `id` and use that ID with the helpers:
+
+```powershell
+$targets = Invoke-RestMethod -Uri 'http://127.0.0.1:<port>/json/list' -UseBasicParsing
+$targets | Where-Object { $_.type -eq 'page' } | Select-Object id,title,url
+
+powershell.exe -NoProfile -File tools\invoke-codex-devtools.ps1 `
+  -Port <port> -Id <main-page-id> -Expression "location.href"
+
+powershell.exe -NoProfile -File tools\invoke-codex-devtools-mouse.ps1 `
+  -Port <port> -Id <main-page-id> -X 260 -Y 399
+```
+
+If only the avatar-overlay page exists, wait and re-query `/json/list` on the same port. If the exact main page appears, attach to that new target. If the overlay remains after the launcher settling window, record the fresh live verification as incomplete; do not silently attach to an older Codex Plus window. Do not use computer-use to click or dismiss the overlay: Codex desktop automation is outside that skill's allowed scope.
 
 ### Verification method
 
@@ -119,7 +151,7 @@ When writing down verification results, prefer concrete observations over impres
 
 - Do not treat `data-app-action-sidebar-thread-active` as the only proof that a synthetic thread opened. Confirm the URL, conversation id, composer content, project label, and other live composer markers as well.
 - Preserve the full identity of every inspected window as a tuple of `port`, matching `--user-data-dir`, and window ordinal. When comparing old and new windows, attach only to the port/profile pair introduced by the fresh launch.
-- A fresh Plus profile may initially show `avatar-overlay`. Wait for the launcher flow to settle, then verify that the page is `app://-/index.html` before inspecting the composer. If the launcher leaves the new profile on the overlay, record that as an incomplete live verification rather than silently using an older window.
+- A fresh Plus profile may initially show `avatar-overlay`; follow the duplicate-target procedure above and verify the exact main page target before inspecting the composer.
 - For visual comparisons, measure the actual UI as well as its text: use `getBoundingClientRect()`, computed height and width, classes, icon presence, `pointer-events`, and `tabindex`. Compare the same composer row in the old and new windows.
 - Persistent composer snapshots are session state. When their structure changes, bump the storage key version so stale serialized markup cannot make a new runtime appear unchanged.
 - Distinguish the live composer controls from the persistent informational copy. A persistent control with `pointer-events: none` is not an interactive source of truth and must not be clicked during verification.
@@ -128,7 +160,7 @@ When writing down verification results, prefer concrete observations over impres
 
 ## Practical Rules
 
-- Prefer live debugger verification over restarting Codex when possible.
+- Prefer debugger verification in a fresh agent-launched Codex Plus window; never reuse a user window for convenience.
 - Keep the scope limited to inspection and validation.
 - If a marker or title is used for debugging, treat it as a diagnostic aid rather than the actual fix.
 - Distinguish these three questions clearly:
