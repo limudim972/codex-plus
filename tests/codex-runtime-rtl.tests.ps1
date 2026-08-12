@@ -1225,6 +1225,7 @@ Assert-True ($launchSource.Contains('record_line')) 'Premature-session alerts sh
 Assert-True ($launchSource.Contains('record_timestamp')) 'Premature-session alerts should include the last record timestamp.'
 Assert-True ($launchSource.Contains('record_id')) 'Premature-session alerts should include the last record id when available.'
 Assert-True ($launchSource.Contains('function Test-CodexReasoningRecord')) 'Premature-session monitoring should recognize active reasoning records.'
+Assert-True ($launchSource.Contains('function Test-CodexGoalContinuationSequence')) 'Premature-session monitoring should recognize goal continuation sequences.'
 Assert-True ($launchSource.Contains('function Test-CodexAutomaticContinuationError')) 'Session monitoring should identify model-capacity errors for automatic continuation.'
 Assert-True ($autoContinuePayload.Contains("manager.sendRequest('thread/resume'")) 'Automatic continuation should resume the existing thread through the active Codex app-server.'
 Assert-True ($autoContinuePayload.Contains("manager.sendRequest('turn/start'")) 'Automatic continuation should submit a new turn through the active Codex app-server.'
@@ -1301,6 +1302,18 @@ try {
     Assert-Equal 1 $prematureAlerts.Count 'A stale non-terminal session should produce one watchdog alert.'
     Assert-Equal 'token_count' $prematureAlerts[0].last_type 'Watchdog alerts should retain the latest session event type.'
 
+    $goalContinuationSessionId = '019fe0b7-f7ad-78e3-81aa-f6e581da20bf'
+    $goalContinuationSessionPath = Join-Path $tmpPrematureSessionRoot ".codex\sessions\2026\08\08\rollout-2026-08-08T12-36-00-$goalContinuationSessionId.jsonl"
+    @(
+        (@{ type='session_meta'; payload=@{ id=$goalContinuationSessionId; cwd='C:\Users\Noam\Documents\code\codex-plus' } } | ConvertTo-Json -Compress)
+        (@{ type='event_msg'; timestamp=$staleTimestamp; payload=@{ type='thread_goal_updated'; threadId=$goalContinuationSessionId; goal=@{ status='active' } } } | ConvertTo-Json -Compress)
+        (@{ type='event_msg'; timestamp=$staleTimestamp; payload=@{ type='task_started'; turn_id='turn-goal-continuation-id' } } | ConvertTo-Json -Compress)
+        (@{ type='response_item'; timestamp=$staleTimestamp; payload=@{ type='message'; content=@(@{ type='input_text'; text='<codex_internal_context source="goal">Continue working toward the active thread goal.</codex_internal_context>' } ) }; internal_chat_message_metadata_passthrough=@{ turn_id='turn-goal-continuation-id' } } | ConvertTo-Json -Depth 8 -Compress)
+    ) | Set-Content -LiteralPath $goalContinuationSessionPath -Encoding UTF8
+    Update-CodexPrematureSessionState -Paths @($goalContinuationSessionPath)
+    Assert-True ($null -eq $script:CodexPlusPrematurePending[$goalContinuationSessionPath]) 'Goal continuation sequences should not become watchdog candidates.'
+    Assert-Equal 0 @(Get-CodexPrematureSessionAlerts | Where-Object { $_.path -eq $goalContinuationSessionPath }).Count 'Goal continuation sequences should not trigger a premature-session alert.'
+
     $reasoningSessionId = '019fe0b7-f7ad-78e3-81aa-f6e581da20be'
     $reasoningSessionPath = Join-Path $tmpPrematureSessionRoot ".codex\sessions\2026\08\08\rollout-2026-08-08T12-35-00-$reasoningSessionId.jsonl"
     @(
@@ -1355,7 +1368,7 @@ Assert-True ($launchSource.Contains('CodexPlusPrematurePending')) 'Task monitor 
 Assert-True ($launchSource.Contains('[DateTime]::Parse([string]$last[0].timestamp).ToUniversalTime()')) 'Premature-session activity should prefer the latest JSONL record timestamp over file mtime.'
 Assert-True ($launchSource.Contains('$diagnostic.record_timestamp')) 'Premature-session alerts should re-read the latest JSONL timestamp before alerting.'
 Assert-True ($launchSource.Contains('$script:CodexPlusChangedSessionPaths')) 'Session monitor should track changed session paths from the file watcher.'
-Assert-True ($launchSource.Contains('-Tail 4')) 'Task monitor should read only the last few records of a changed session.'
+Assert-True ($launchSource.Contains('-Tail 12')) 'Task monitor should read enough recent records to recognize goal continuation sequences.'
 Assert-True ($managerSource.Contains('SourceEventArgs.FullPath')) 'The global session watcher should pass the changed file path through the shared queue.'
 Assert-True ($launchSource.Contains('$script:CodexPlusUsageChangedPaths')) 'Usage refresh should reuse changed session paths.'
 Assert-True ($launchSource.Contains('Get-CodexLatestRateLimitSummary -Paths')) 'Usage monitor should read rate-limit data from changed sessions.'

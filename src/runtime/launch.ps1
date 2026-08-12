@@ -513,6 +513,59 @@ function Test-CodexReasoningRecord {
     return ($Record.type -eq 'response_item' -and $Payload.type -eq 'reasoning')
 }
 
+function Test-CodexGoalContinuationSequence {
+    param([Parameter(Mandatory)][object[]]$Records)
+    $usable = @($Records | Where-Object {
+        $_ -and $_.type -ne 'session_meta' -and $_.payload -and $_.payload.type -ne 'thread_settings_applied'
+    })
+    if ($usable.Count -eq 0) { return $false }
+
+    $taskStartedIndex = -1
+    for ($index = 0; $index -lt $usable.Count; $index++) {
+        if ($usable[$index].type -eq 'event_msg' -and $usable[$index].payload.type -eq 'task_started') {
+            $taskStartedIndex = $index
+        }
+    }
+    if ($taskStartedIndex -lt 0) { return $false }
+
+    # A terminal event after this task start means the continuation already
+    # ended, so it should not suppress a later diagnostic.
+    for ($index = $taskStartedIndex + 1; $index -lt $usable.Count; $index++) {
+        if ($usable[$index].type -eq 'event_msg' -and $usable[$index].payload.type -in @('task_complete', 'turn_aborted')) {
+            return $false
+        }
+    }
+
+    $lastTerminalBeforeTask = -1
+    for ($index = 0; $index -lt $taskStartedIndex; $index++) {
+        if ($usable[$index].type -eq 'event_msg' -and $usable[$index].payload.type -in @('task_complete', 'turn_aborted')) {
+            $lastTerminalBeforeTask = $index
+        }
+    }
+
+    $goalUpdatedIndex = -1
+    for ($index = $lastTerminalBeforeTask + 1; $index -lt $taskStartedIndex; $index++) {
+        if ($usable[$index].type -eq 'event_msg' -and $usable[$index].payload.type -eq 'thread_goal_updated') {
+            $goalUpdatedIndex = $index
+        }
+    }
+    if ($goalUpdatedIndex -lt 0) { return $false }
+
+    $taskTurnId = [string]$usable[$taskStartedIndex].payload.turn_id
+    for ($index = $taskStartedIndex + 1; $index -lt $usable.Count; $index++) {
+        $record = $usable[$index]
+        if ($record.type -ne 'response_item' -or $record.payload.type -ne 'message') { continue }
+        $content = @($record.payload.content | ForEach-Object {
+            if ($_.text) { [string]$_.text }
+        }) -join "`n"
+        if ($content -notmatch '<codex_internal_context\s+source="goal">') { continue }
+        $contextTurnId = [string]$record.internal_chat_message_metadata_passthrough.turn_id
+        if ($taskTurnId -and $contextTurnId -and $taskTurnId -ne $contextTurnId) { continue }
+        return $true
+    }
+    return $false
+}
+
 function Update-CodexPrematureSessionState {
     param([Parameter(Mandatory)][string[]]$Paths)
     $sessionsRoot = Join-Path $env:USERPROFILE '.codex\sessions'
@@ -522,10 +575,18 @@ function Update-CodexPrematureSessionState {
         if (-not (Test-Path -LiteralPath $path -PathType Leaf)) { $script:CodexPlusPrematurePending.Remove($path); continue }
         $file = Get-Item -LiteralPath $path -ErrorAction SilentlyContinue
         if (-not $file -or $file.Extension -ne '.jsonl') { continue }
-        $last = @(Get-Content -LiteralPath $file.FullName -Tail 4 -ErrorAction SilentlyContinue | ForEach-Object { try { $_ | ConvertFrom-Json } catch { $null } } | Where-Object { $_ -and $_.type -ne 'session_meta' -and $_.payload -and $_.payload.type -ne 'thread_settings_applied' } | Select-Object -Last 1)
+        $sessionRecords = @(Get-Content -LiteralPath $file.FullName -Tail 12 -ErrorAction SilentlyContinue | ForEach-Object { try { $_ | ConvertFrom-Json } catch { $null } })
+        $last = @($sessionRecords | Where-Object { $_ -and $_.type -ne 'session_meta' -and $_.payload -and $_.payload.type -ne 'thread_settings_applied' } | Select-Object -Last 1)
         if ($last.Count -eq 0) { continue }
         $payload = $last[0].payload
         if (-not $payload) { continue }
+        if (Test-CodexGoalContinuationSequence -Records $sessionRecords) {
+            # Goal continuations can spend several minutes reconnecting before
+            # the first assistant event is appended. That is expected waiting,
+            # not evidence that the session stopped early.
+            $script:CodexPlusPrematurePending.Remove($path)
+            continue
+        }
         $project = if ($payload.cwd) { Split-Path -Leaf ([string]$payload.cwd) } else { 'unknown' }
         $sessionId = if ($file.BaseName -match '(?<id>[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12})$') { $Matches.id } else { $file.BaseName }
         $recordActivity = $null
