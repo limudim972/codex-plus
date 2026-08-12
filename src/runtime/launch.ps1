@@ -750,6 +750,57 @@ $form.AcceptButton = $button
     $script:CodexPlusPrematureAlertPayload = (@{ name=$Alert.name; session=$Alert.session; turn=$Alert.turn; project=$Alert.project; cwd=$Alert.cwd; path=$Alert.path; last_type=$Alert.last_type; record_line=$Alert.record_line; record_timestamp=$Alert.record_timestamp; record_id=$Alert.record_id; record_type=$Alert.record_type; age_seconds=$Alert.age_seconds; shell_error=$Alert.shell_error; error_message=$Alert.error_message; error_code=$Alert.error_code; trigger=$trigger } | ConvertTo-Json -Compress).Replace('\\', '\\\\').Replace('`"', '\\\`"')
 }
 
+function Show-CodexAutoContinueAlert {
+    param(
+        [Parameter(Mandatory)][ValidateSet('started','failed')][string]$Status,
+        [Parameter(Mandatory)][string]$Message,
+        [string]$Session = ''
+    )
+    $title = if ($Status -eq 'started') { 'Auto-continue started' } else { 'Auto-continue failed' }
+    $background = if ($Status -eq 'started') { '#166534' } else { '#92400e' }
+    $fullMessage = @"
+$Message
+
+Session: $Session
+"@
+    $popupScript = @'
+Add-Type -AssemblyName System.Windows.Forms
+Add-Type -AssemblyName System.Drawing
+$form = New-Object Windows.Forms.Form
+$form.Text = 'Codex Plus auto-continue'
+$form.Size = New-Object Drawing.Size(560, 240)
+$form.StartPosition = 'CenterScreen'
+$form.TopMost = $true
+$form.MinimizeBox = $false
+$form.MaximizeBox = $false
+$form.FormBorderStyle = 'FixedDialog'
+$form.BackColor = [Drawing.ColorTranslator]::FromHtml('__CODEX_BACKGROUND__')
+$label = New-Object Windows.Forms.Label
+$label.Text = __CODEX_MESSAGE__
+$label.Dock = 'Fill'
+$label.Padding = New-Object Windows.Forms.Padding(18)
+$label.Font = New-Object Drawing.Font('Segoe UI', 10)
+$label.ForeColor = [Drawing.Color]::White
+$label.AutoSize = $false
+$label.Height = 145
+$form.Controls.Add($label)
+$button = New-Object Windows.Forms.Button
+$button.Text = 'Dismiss'
+$button.Width = 100
+$button.Height = 32
+$button.Left = 430
+$button.Top = 155
+$button.Add_Click({ $form.Close() })
+$form.Controls.Add($button)
+$form.AcceptButton = $button
+[void]$form.ShowDialog()
+'@
+    $popupScript = $popupScript.Replace('__CODEX_BACKGROUND__', $background)
+    $popupScript = $popupScript.Replace('__CODEX_MESSAGE__', ($fullMessage | ConvertTo-Json -Compress))
+    $encoded = [Convert]::ToBase64String([Text.Encoding]::Unicode.GetBytes($popupScript))
+    try { Start-Process powershell.exe -WindowStyle Hidden -ArgumentList @('-NoProfile','-ExecutionPolicy','Bypass','-EncodedCommand',$encoded) | Out-Null } catch { }
+}
+
 function Get-CodexLatestRateLimitSummary {
     param([string[]]$Paths = @())
     $sessionsRoot = Join-Path $env:USERPROFILE '.codex\sessions'

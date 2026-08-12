@@ -5,7 +5,17 @@ function Get-CodexAutoContinuePayload {
   window.__CODEX_PLUS_AUTO_CONTINUE = true;
 
   const AUTO_EVENT = 'codex-plus-auto-continue';
+  const AUTO_STATUS_EVENT = 'codex-plus-auto-continue-status';
   const AUTO_STATE_KEY = 'codex-plus-auto-continue-error-session';
+
+  const emitStatus = (detail) => {
+    window.dispatchEvent(new CustomEvent(AUTO_STATUS_EVENT, { detail }));
+  };
+
+  const errorText = (error) => {
+    const message = error?.message || error?.error || error;
+    return String(message || 'unknown error').replace(/\s+/g, ' ').trim().slice(0, 240);
+  };
 
   const getReactScope = () => {
     const getFiber = (element) => {
@@ -51,21 +61,53 @@ function Get-CodexAutoContinuePayload {
 
   const continueErroredThread = async (session) => {
     const threadId = String(session || '').trim();
-    if (!threadId) return false;
-    if (sessionStorage.getItem(AUTO_STATE_KEY) === threadId) return false;
+    if (!threadId) {
+      const result = { ok: false, reason: 'missing-session' };
+      emitStatus({ ...result, message: 'Auto-continue could not start: missing session id.' });
+      return result;
+    }
+    if (sessionStorage.getItem(AUTO_STATE_KEY) === threadId) {
+      const result = { ok: false, reason: 'already-attempted', session: threadId };
+      emitStatus({ ...result, message: 'Auto-continue was already attempted for this session.' });
+      return result;
+    }
     sessionStorage.setItem(AUTO_STATE_KEY, threadId);
     const manager = getLocalManager();
-    if (!manager) return false;
+    if (!manager) {
+      sessionStorage.removeItem(AUTO_STATE_KEY);
+      const result = { ok: false, reason: 'conversation-manager-unavailable', session: threadId };
+      emitStatus({ ...result, message: 'Auto-continue could not start: the conversation manager was unavailable.' });
+      return result;
+    }
     try {
-      await manager.sendRequest('thread/resume', { threadId });
-      await manager.sendRequest('turn/start', {
-        threadId,
-        clientUserMessageId: crypto.randomUUID(),
-        input: [{ type: 'text', text: 'continue', text_elements: [] }]
-      });
-      return true;
-    } catch {
-      return false;
+      try {
+        await manager.sendRequest('thread/resume', { threadId });
+      } catch (error) {
+        sessionStorage.removeItem(AUTO_STATE_KEY);
+        const result = { ok: false, reason: 'thread-resume-failed', session: threadId, error: errorText(error) };
+        emitStatus({ ...result, message: 'Auto-continue failed while resuming the thread: ' + result.error });
+        return result;
+      }
+      try {
+        await manager.sendRequest('turn/start', {
+          threadId,
+          clientUserMessageId: crypto.randomUUID(),
+          input: [{ type: 'text', text: 'continue', text_elements: [] }]
+        });
+      } catch (error) {
+        sessionStorage.removeItem(AUTO_STATE_KEY);
+        const result = { ok: false, reason: 'turn-start-failed', session: threadId, error: errorText(error) };
+        emitStatus({ ...result, message: 'Auto-continue failed while starting the new turn: ' + result.error });
+        return result;
+      }
+      const result = { ok: true, reason: 'started', session: threadId };
+      emitStatus({ ...result, message: 'Auto-continue started.' });
+      return result;
+    } catch (error) {
+      sessionStorage.removeItem(AUTO_STATE_KEY);
+      const result = { ok: false, reason: 'unexpected-error', session: threadId, error: errorText(error) };
+      emitStatus({ ...result, message: 'Auto-continue failed: ' + result.error });
+      return result;
     }
   };
 
@@ -80,8 +122,11 @@ function Get-CodexAutoContinuePayload {
   window.__CODEX_PLUS_AUTO_CONTINUE_CAN_HANDLE_ERROR = canHandleErroredThread;
   window.__CODEX_PLUS_AUTO_CONTINUE_PREFERS_ERROR = prefersErroredThread;
   window.__CODEX_PLUS_AUTO_CONTINUE_HANDLE_ERROR = (detail) => continueErroredThread(detail?.session);
+  window.__CODEX_PLUS_AUTO_CONTINUE_LAST_PROMISE = null;
   window.addEventListener(AUTO_EVENT, (event) => {
-    void window.__CODEX_PLUS_AUTO_CONTINUE_HANDLE_ERROR(event.detail);
+    const promise = Promise.resolve(window.__CODEX_PLUS_AUTO_CONTINUE_HANDLE_ERROR(event.detail));
+    window.__CODEX_PLUS_AUTO_CONTINUE_LAST_PROMISE = promise;
+    void promise;
   });
 })();
 '@

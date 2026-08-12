@@ -1255,12 +1255,19 @@ Assert-True ($autoContinuePayload.Contains("manager.sendRequest('turn/start'")) 
 Assert-True ($autoContinuePayload.Contains('codex-plus-auto-continue')) 'Automatic continuation should be triggered by a hidden runtime event.'
 Assert-True ($autoContinuePayload.Contains('__CODEX_PLUS_AUTO_CONTINUE_CAN_HANDLE_ERROR')) 'Codex Plus should expose a manager-availability probe for automatic continuation.'
 Assert-True ($autoContinuePayload.Contains('__CODEX_PLUS_AUTO_CONTINUE_PREFERS_ERROR')) 'Codex Plus should prefer the window that already owns the errored thread.'
+Assert-True ($autoContinuePayload.Contains('codex-plus-auto-continue-status')) 'Automatic continuation should publish a separate status event.'
+Assert-True ($autoContinuePayload.Contains('thread-resume-failed')) 'Automatic continuation should report thread-resume failures.'
+Assert-True ($autoContinuePayload.Contains('turn-start-failed')) 'Automatic continuation should report turn-start failures.'
+Assert-True ($autoContinuePayload.Contains('__CODEX_PLUS_AUTO_CONTINUE_LAST_PROMISE')) 'The manager should be able to await the continuation result.'
 Assert-True (-not $autoContinuePayload.Contains('MutationObserver')) 'Automatic continuation should not watch DOM mutations.'
 Assert-True (-not $autoContinuePayload.Contains('textarea,[contenteditable')) 'Automatic continuation should not write to the composer.'
 Assert-True (-not $autoContinuePayload.Contains('tryContinue')) 'The legacy DOM/composer auto-continue trigger should be removed.'
 Assert-True ($managerSource.Contains('__CODEX_PLUS_AUTO_CONTINUE_CAN_HANDLE_ERROR')) 'The global manager should target a loaded Codex Plus page for automatic continuation.'
 Assert-True ($managerSource.Contains('$fallbackTarget')) 'Automatic continuation should dispatch to one target only.'
 Assert-True ($managerSource.Contains('CodexPlusAutoContinuationAttempted')) 'Automatic continuation attempts should be deduplicated by the single global manager.'
+Assert-True ($managerSource.Contains('auto-continue-started')) 'Successful automatic continuation should be logged.'
+Assert-True ($managerSource.Contains('auto-continue-failed')) 'Failed automatic continuation should be logged.'
+Assert-True ($managerSource.Contains('Show-CodexAutoContinueAlert')) 'Automatic continuation should show a distinct status alert.'
 Assert-True ($managerSource.Contains('Test-CodexAutomaticContinuationError -Alert $alert')) 'Capacity errors should be handled before any premature-session alert is shown.'
 $capacityCodeAlert = [pscustomobject]@{ error_code = 'server_overloaded'; error_message = 'Please try a different model.' }
 $capacityMessageAlert = [pscustomobject]@{ error_code = ''; error_message = 'Selected model is at capacity. Please try a different model.' }
@@ -1401,6 +1408,8 @@ Assert-True ($launchSource.Contains('System.Windows.Forms')) 'Premature-session 
 Assert-True ($launchSource.Contains("$button.Text = 'Dismiss'")) 'Windows session alert should provide a dismiss button.'
 Assert-True ($launchSource.Contains('ShowDialog')) 'Windows session alert should remain open until dismissed.'
 $contextBadgePayload = Get-CodexContextBadgePayload
+Assert-True ($contextBadgePayload.Contains('data-codex-plus-auto-continue-alert')) 'Automatic continuation should render a distinct alert.'
+Assert-True ($contextBadgePayload.Contains('#166534')) 'Successful automatic continuation should use a green alert.'
 Assert-True ($contextBadgePayload.Contains('readWindowTitle')) 'Context badge should read the current window title context.'
 Assert-True ($contextBadgePayload.Contains('__CODEX_PLUS_NATIVE_WINDOW_TITLE')) 'Context badge should display the synchronized native window title.'
 Assert-True ($contextBadgePayload.Contains('__CODEX_PLUS_PROJECT_WINDOW_CONTEXT')) 'Context badge should include the project title in project windows.'
