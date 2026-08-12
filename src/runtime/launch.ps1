@@ -1471,20 +1471,80 @@ function Stop-CodexDesktopProcesses {
     param(
         [int]$Port = 0,
         [AllowEmptyString()][string]$LauncherKey,
-        [switch]$CurrentInstanceOnly
+        [switch]$CurrentInstanceOnly,
+        [int[]]$KnownProcessIds = @()
     )
 
-    foreach ($process in @(Get-CodexDesktopProcesses)) {
-        if (-not (Test-CodexProcessIsBrowserProcess -Process $process)) {
-            continue
-        }
+    $processes = @(Get-CodexDesktopProcesses)
+    $selectedIds = @{}
+    $knownIds = @($KnownProcessIds | ForEach-Object {
+        try { [int]$_ } catch { 0 }
+    } | Where-Object { $_ -gt 0 })
+
+    foreach ($process in $processes) {
+        $processId = [int]$process.ProcessId
         if ($CurrentInstanceOnly) {
-            if (-not (Test-CodexProcessMatchesCodexPlusInstance -Process $process -Port $Port -LauncherKey $LauncherKey)) {
+            # The browser process is the identity anchor for a Plus window.
+            # Its renderer/utility ChatGPT.exe children do not carry the
+            # browser-only command-line markers, so collect them below by
+            # walking ParentProcessId instead of filtering them out here.
+            $isKnownProcess = $knownIds -contains $processId
+            $isMatchingBrowser = (Test-CodexProcessIsBrowserProcess -Process $process) -and
+                (Test-CodexProcessMatchesCodexPlusInstance -Process $process -Port $Port -LauncherKey $LauncherKey)
+            if (-not $isKnownProcess -and -not $isMatchingBrowser) {
                 continue
             }
-        } elseif ($Port -gt 0 -and (-not (Test-CodexProcessHasRtlDebugPort -Process $process -Port $Port))) {
-            continue
+        } else {
+            if (-not (Test-CodexProcessIsBrowserProcess -Process $process)) {
+                continue
+            }
+            if ($Port -gt 0 -and (-not (Test-CodexProcessHasRtlDebugPort -Process $process -Port $Port))) {
+                continue
+            }
         }
+        $selectedIds[[string]$processId] = $true
+    }
+
+    if ($CurrentInstanceOnly) {
+        # Include Electron descendants even when the browser process has
+        # already exited. KnownProcessIds preserves the parent identity long
+        # enough for this walk to find any surviving children.
+        do {
+            $added = $false
+            foreach ($process in $processes) {
+                $processId = [int]$process.ProcessId
+                $parentProcessId = try { [int]$process.ParentProcessId } catch { 0 }
+                if (-not $selectedIds.ContainsKey([string]$processId) -and
+                    $parentProcessId -gt 0 -and
+                    $selectedIds.ContainsKey([string]$parentProcessId)) {
+                    $selectedIds[[string]$processId] = $true
+                    $added = $true
+                }
+            }
+        } while ($added)
+    }
+
+    $parentById = @{}
+    foreach ($process in $processes) {
+        $parentById[[string][int]$process.ProcessId] = try { [int]$process.ParentProcessId } catch { 0 }
+    }
+    $selectedProcesses = @($processes | Where-Object { $selectedIds.ContainsKey([string][int]$_.ProcessId) })
+    $orderedProcesses = @(
+        foreach ($process in $selectedProcesses) {
+            $depth = 0
+            $cursor = [int]$process.ProcessId
+            while ($parentById.ContainsKey([string]$cursor) -and $depth -lt 128) {
+                $parent = [int]$parentById[[string]$cursor]
+                if ($parent -le 0 -or $parent -eq $cursor) { break }
+                $depth += 1
+                $cursor = $parent
+            }
+            [pscustomobject]@{ Process = $process; Depth = $depth }
+        }
+    ) | Sort-Object Depth -Descending
+
+    foreach ($entry in $orderedProcesses) {
+        $process = $entry.Process
         try {
             Stop-Process -Id $process.ProcessId -Force -ErrorAction SilentlyContinue
         } catch {

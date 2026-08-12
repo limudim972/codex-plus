@@ -442,10 +442,10 @@ try {
             if (-not $instances.ContainsKey($Key)) { return }
             $instance = $instances[$Key]
             if ($StopProcesses) {
-                try { Stop-CodexDesktopProcesses -Port $instance.Port -LauncherKey $instance.Key -CurrentInstanceOnly } catch { }
-                foreach ($processId in @($instance.SeenProcessIds.Keys)) {
-                    try { Stop-Process -Id ([int]$processId) -Force -ErrorAction SilentlyContinue } catch { }
-                }
+                $knownProcessIds = @($instance.SeenProcessIds.Keys | ForEach-Object { [int]$_ })
+                try {
+                    Stop-CodexDesktopProcesses -Port $instance.Port -LauncherKey $instance.Key -CurrentInstanceOnly -KnownProcessIds $knownProcessIds
+                } catch { }
             }
             Stop-RefreshWorker -Instance $instance
             Stop-CdpWorker -Instance $instance
