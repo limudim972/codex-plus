@@ -201,6 +201,39 @@ function Get-CodexContextBadgePayload {
   };
 
   window.addEventListener('codex-plus-usage-updated', apply);
+  window.addEventListener('codex-plus-auto-continue-status', (event) => {
+    const detail = event?.detail || {};
+    if (document.querySelector('[data-codex-plus-auto-continue-alert]')) return;
+    const alert = document.createElement('div');
+    alert.setAttribute('data-codex-plus-auto-continue-alert', 'true');
+    alert.setAttribute('role', 'status');
+    alert.setAttribute('aria-label', 'Codex auto-continue status');
+    const succeeded = detail.status === 'started' || detail.ok === true;
+    const title = document.createElement('div');
+    title.textContent = succeeded ? 'Auto-continue started' : 'Auto-continue did not start';
+    title.style.fontWeight = '700';
+    const details = document.createElement('div');
+    details.textContent = String(detail.message || (succeeded
+      ? 'A new turn was started after the model-capacity error.'
+      : 'No automatic continuation was started.'));
+    details.style.marginTop = '6px';
+    const dismiss = document.createElement('button');
+    dismiss.type = 'button';
+    dismiss.textContent = 'Dismiss';
+    dismiss.setAttribute('aria-label', 'Dismiss auto-continue alert');
+    dismiss.style.marginTop = '10px';
+    dismiss.style.padding = '4px 10px';
+    dismiss.style.cursor = 'pointer';
+    dismiss.addEventListener('click', () => alert.remove());
+    alert.append(title, details, dismiss);
+    Object.assign(alert.style, {
+      position:'fixed', top:'56px', left:'50%', transform:'translateX(-50%)', zIndex:'2147483647',
+      padding:'12px 16px', minWidth:'360px', maxWidth:'min(720px, calc(100vw - 32px))',
+      borderRadius:'8px', background:succeeded ? '#166534' : '#92400e', color:'#fff',
+      font:'13px system-ui', boxShadow:'0 4px 18px #0008'
+    });
+    (document.body || document.documentElement).appendChild(alert);
+  });
   window.addEventListener('codex-plus-session-alert', (event) => {
     const detail = event?.detail || {};
     if (document.querySelector('[data-codex-plus-session-alert]')) return;

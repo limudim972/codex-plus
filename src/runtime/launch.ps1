@@ -513,6 +513,59 @@ function Test-CodexReasoningRecord {
     return ($Record.type -eq 'response_item' -and $Payload.type -eq 'reasoning')
 }
 
+function Test-CodexGoalContinuationSequence {
+    param([Parameter(Mandatory)][object[]]$Records)
+    $usable = @($Records | Where-Object {
+        $_ -and $_.type -ne 'session_meta' -and $_.payload -and $_.payload.type -ne 'thread_settings_applied'
+    })
+    if ($usable.Count -eq 0) { return $false }
+
+    $taskStartedIndex = -1
+    for ($index = 0; $index -lt $usable.Count; $index++) {
+        if ($usable[$index].type -eq 'event_msg' -and $usable[$index].payload.type -eq 'task_started') {
+            $taskStartedIndex = $index
+        }
+    }
+    if ($taskStartedIndex -lt 0) { return $false }
+
+    # A terminal event after this task start means the continuation already
+    # ended, so it should not suppress a later diagnostic.
+    for ($index = $taskStartedIndex + 1; $index -lt $usable.Count; $index++) {
+        if ($usable[$index].type -eq 'event_msg' -and $usable[$index].payload.type -in @('task_complete', 'turn_aborted')) {
+            return $false
+        }
+    }
+
+    $lastTerminalBeforeTask = -1
+    for ($index = 0; $index -lt $taskStartedIndex; $index++) {
+        if ($usable[$index].type -eq 'event_msg' -and $usable[$index].payload.type -in @('task_complete', 'turn_aborted')) {
+            $lastTerminalBeforeTask = $index
+        }
+    }
+
+    $goalUpdatedIndex = -1
+    for ($index = $lastTerminalBeforeTask + 1; $index -lt $taskStartedIndex; $index++) {
+        if ($usable[$index].type -eq 'event_msg' -and $usable[$index].payload.type -eq 'thread_goal_updated') {
+            $goalUpdatedIndex = $index
+        }
+    }
+    if ($goalUpdatedIndex -lt 0) { return $false }
+
+    $taskTurnId = [string]$usable[$taskStartedIndex].payload.turn_id
+    for ($index = $taskStartedIndex + 1; $index -lt $usable.Count; $index++) {
+        $record = $usable[$index]
+        if ($record.type -ne 'response_item' -or $record.payload.type -ne 'message') { continue }
+        $content = @($record.payload.content | ForEach-Object {
+            if ($_.text) { [string]$_.text }
+        }) -join "`n"
+        if ($content -notmatch '<codex_internal_context\s+source="goal">') { continue }
+        $contextTurnId = [string]$record.internal_chat_message_metadata_passthrough.turn_id
+        if ($taskTurnId -and $contextTurnId -and $taskTurnId -ne $contextTurnId) { continue }
+        return $true
+    }
+    return $false
+}
+
 function Update-CodexPrematureSessionState {
     param([Parameter(Mandatory)][string[]]$Paths)
     $sessionsRoot = Join-Path $env:USERPROFILE '.codex\sessions'
@@ -522,10 +575,18 @@ function Update-CodexPrematureSessionState {
         if (-not (Test-Path -LiteralPath $path -PathType Leaf)) { $script:CodexPlusPrematurePending.Remove($path); continue }
         $file = Get-Item -LiteralPath $path -ErrorAction SilentlyContinue
         if (-not $file -or $file.Extension -ne '.jsonl') { continue }
-        $last = @(Get-Content -LiteralPath $file.FullName -Tail 4 -ErrorAction SilentlyContinue | ForEach-Object { try { $_ | ConvertFrom-Json } catch { $null } } | Where-Object { $_ -and $_.type -ne 'session_meta' -and $_.payload -and $_.payload.type -ne 'thread_settings_applied' } | Select-Object -Last 1)
+        $sessionRecords = @(Get-Content -LiteralPath $file.FullName -Tail 12 -ErrorAction SilentlyContinue | ForEach-Object { try { $_ | ConvertFrom-Json } catch { $null } })
+        $last = @($sessionRecords | Where-Object { $_ -and $_.type -ne 'session_meta' -and $_.payload -and $_.payload.type -ne 'thread_settings_applied' } | Select-Object -Last 1)
         if ($last.Count -eq 0) { continue }
         $payload = $last[0].payload
         if (-not $payload) { continue }
+        if (Test-CodexGoalContinuationSequence -Records $sessionRecords) {
+            # Goal continuations can spend several minutes reconnecting before
+            # the first assistant event is appended. That is expected waiting,
+            # not evidence that the session stopped early.
+            $script:CodexPlusPrematurePending.Remove($path)
+            continue
+        }
         $project = if ($payload.cwd) { Split-Path -Leaf ([string]$payload.cwd) } else { 'unknown' }
         $sessionId = if ($file.BaseName -match '(?<id>[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12})$') { $Matches.id } else { $file.BaseName }
         $recordActivity = $null
@@ -687,6 +748,57 @@ $form.AcceptButton = $button
     $script:CodexPlusPrematureAlertPayload = $literal
     $trigger = if ($Alert.shell_error) { 'The terminal task_complete event contained an error.' } else { 'A new turn started after monitor startup and remained without task_complete or turn_aborted for at least 120 seconds.' }
     $script:CodexPlusPrematureAlertPayload = (@{ name=$Alert.name; session=$Alert.session; turn=$Alert.turn; project=$Alert.project; cwd=$Alert.cwd; path=$Alert.path; last_type=$Alert.last_type; record_line=$Alert.record_line; record_timestamp=$Alert.record_timestamp; record_id=$Alert.record_id; record_type=$Alert.record_type; age_seconds=$Alert.age_seconds; shell_error=$Alert.shell_error; error_message=$Alert.error_message; error_code=$Alert.error_code; trigger=$trigger } | ConvertTo-Json -Compress).Replace('\\', '\\\\').Replace('`"', '\\\`"')
+}
+
+function Show-CodexAutoContinueAlert {
+    param(
+        [Parameter(Mandatory)][ValidateSet('started','failed')][string]$Status,
+        [Parameter(Mandatory)][string]$Message,
+        [string]$Session = ''
+    )
+    $title = if ($Status -eq 'started') { 'Auto-continue started' } else { 'Auto-continue failed' }
+    $background = if ($Status -eq 'started') { '#166534' } else { '#92400e' }
+    $fullMessage = @"
+$Message
+
+Session: $Session
+"@
+    $popupScript = @'
+Add-Type -AssemblyName System.Windows.Forms
+Add-Type -AssemblyName System.Drawing
+$form = New-Object Windows.Forms.Form
+$form.Text = 'Codex Plus auto-continue'
+$form.Size = New-Object Drawing.Size(560, 240)
+$form.StartPosition = 'CenterScreen'
+$form.TopMost = $true
+$form.MinimizeBox = $false
+$form.MaximizeBox = $false
+$form.FormBorderStyle = 'FixedDialog'
+$form.BackColor = [Drawing.ColorTranslator]::FromHtml('__CODEX_BACKGROUND__')
+$label = New-Object Windows.Forms.Label
+$label.Text = __CODEX_MESSAGE__
+$label.Dock = 'Fill'
+$label.Padding = New-Object Windows.Forms.Padding(18)
+$label.Font = New-Object Drawing.Font('Segoe UI', 10)
+$label.ForeColor = [Drawing.Color]::White
+$label.AutoSize = $false
+$label.Height = 145
+$form.Controls.Add($label)
+$button = New-Object Windows.Forms.Button
+$button.Text = 'Dismiss'
+$button.Width = 100
+$button.Height = 32
+$button.Left = 430
+$button.Top = 155
+$button.Add_Click({ $form.Close() })
+$form.Controls.Add($button)
+$form.AcceptButton = $button
+[void]$form.ShowDialog()
+'@
+    $popupScript = $popupScript.Replace('__CODEX_BACKGROUND__', $background)
+    $popupScript = $popupScript.Replace('__CODEX_MESSAGE__', ($fullMessage | ConvertTo-Json -Compress))
+    $encoded = [Convert]::ToBase64String([Text.Encoding]::Unicode.GetBytes($popupScript))
+    try { Start-Process powershell.exe -WindowStyle Hidden -ArgumentList @('-NoProfile','-ExecutionPolicy','Bypass','-EncodedCommand',$encoded) | Out-Null } catch { }
 }
 
 function Get-CodexLatestRateLimitSummary {
@@ -1410,20 +1522,80 @@ function Stop-CodexDesktopProcesses {
     param(
         [int]$Port = 0,
         [AllowEmptyString()][string]$LauncherKey,
-        [switch]$CurrentInstanceOnly
+        [switch]$CurrentInstanceOnly,
+        [int[]]$KnownProcessIds = @()
     )
 
-    foreach ($process in @(Get-CodexDesktopProcesses)) {
-        if (-not (Test-CodexProcessIsBrowserProcess -Process $process)) {
-            continue
-        }
+    $processes = @(Get-CodexDesktopProcesses)
+    $selectedIds = @{}
+    $knownIds = @($KnownProcessIds | ForEach-Object {
+        try { [int]$_ } catch { 0 }
+    } | Where-Object { $_ -gt 0 })
+
+    foreach ($process in $processes) {
+        $processId = [int]$process.ProcessId
         if ($CurrentInstanceOnly) {
-            if (-not (Test-CodexProcessMatchesCodexPlusInstance -Process $process -Port $Port -LauncherKey $LauncherKey)) {
+            # The browser process is the identity anchor for a Plus window.
+            # Its renderer/utility ChatGPT.exe children do not carry the
+            # browser-only command-line markers, so collect them below by
+            # walking ParentProcessId instead of filtering them out here.
+            $isKnownProcess = $knownIds -contains $processId
+            $isMatchingBrowser = (Test-CodexProcessIsBrowserProcess -Process $process) -and
+                (Test-CodexProcessMatchesCodexPlusInstance -Process $process -Port $Port -LauncherKey $LauncherKey)
+            if (-not $isKnownProcess -and -not $isMatchingBrowser) {
                 continue
             }
-        } elseif ($Port -gt 0 -and (-not (Test-CodexProcessHasRtlDebugPort -Process $process -Port $Port))) {
-            continue
+        } else {
+            if (-not (Test-CodexProcessIsBrowserProcess -Process $process)) {
+                continue
+            }
+            if ($Port -gt 0 -and (-not (Test-CodexProcessHasRtlDebugPort -Process $process -Port $Port))) {
+                continue
+            }
         }
+        $selectedIds[[string]$processId] = $true
+    }
+
+    if ($CurrentInstanceOnly) {
+        # Include Electron descendants even when the browser process has
+        # already exited. KnownProcessIds preserves the parent identity long
+        # enough for this walk to find any surviving children.
+        do {
+            $added = $false
+            foreach ($process in $processes) {
+                $processId = [int]$process.ProcessId
+                $parentProcessId = try { [int]$process.ParentProcessId } catch { 0 }
+                if (-not $selectedIds.ContainsKey([string]$processId) -and
+                    $parentProcessId -gt 0 -and
+                    $selectedIds.ContainsKey([string]$parentProcessId)) {
+                    $selectedIds[[string]$processId] = $true
+                    $added = $true
+                }
+            }
+        } while ($added)
+    }
+
+    $parentById = @{}
+    foreach ($process in $processes) {
+        $parentById[[string][int]$process.ProcessId] = try { [int]$process.ParentProcessId } catch { 0 }
+    }
+    $selectedProcesses = @($processes | Where-Object { $selectedIds.ContainsKey([string][int]$_.ProcessId) })
+    $orderedProcesses = @(
+        foreach ($process in $selectedProcesses) {
+            $depth = 0
+            $cursor = [int]$process.ProcessId
+            while ($parentById.ContainsKey([string]$cursor) -and $depth -lt 128) {
+                $parent = [int]$parentById[[string]$cursor]
+                if ($parent -le 0 -or $parent -eq $cursor) { break }
+                $depth += 1
+                $cursor = $parent
+            }
+            [pscustomobject]@{ Process = $process; Depth = $depth }
+        }
+    ) | Sort-Object Depth -Descending
+
+    foreach ($entry in $orderedProcesses) {
+        $process = $entry.Process
         try {
             Stop-Process -Id $process.ProcessId -Force -ErrorAction SilentlyContinue
         } catch {

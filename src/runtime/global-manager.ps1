@@ -442,10 +442,10 @@ try {
             if (-not $instances.ContainsKey($Key)) { return }
             $instance = $instances[$Key]
             if ($StopProcesses) {
-                try { Stop-CodexDesktopProcesses -Port $instance.Port -LauncherKey $instance.Key -CurrentInstanceOnly } catch { }
-                foreach ($processId in @($instance.SeenProcessIds.Keys)) {
-                    try { Stop-Process -Id ([int]$processId) -Force -ErrorAction SilentlyContinue } catch { }
-                }
+                $knownProcessIds = @($instance.SeenProcessIds.Keys | ForEach-Object { [int]$_ })
+                try {
+                    Stop-CodexDesktopProcesses -Port $instance.Port -LauncherKey $instance.Key -CurrentInstanceOnly -KnownProcessIds $knownProcessIds
+                } catch { }
             }
             Stop-RefreshWorker -Instance $instance
             Stop-CdpWorker -Instance $instance
@@ -627,14 +627,10 @@ try {
                             expression = "JSON.stringify((()=>{const detail=$detail;return {can:Boolean(window.__CODEX_PLUS_AUTO_CONTINUE_CAN_HANDLE_ERROR?.(detail)),preferred:Boolean(window.__CODEX_PLUS_AUTO_CONTINUE_PREFERS_ERROR?.(detail))}})())"
                             returnByValue = $true
                         }
-                        $command = New-CodexCdpCommand -Id 92 -Method 'Runtime.evaluate' -Params @{
-                            expression = "window.dispatchEvent(new CustomEvent('codex-plus-auto-continue',{detail:$detail}));"
-                            returnByValue = $true
-                        }
                         $fallbackTarget = $null
-                        $dispatched = $false
+                        $preferredTarget = $null
                         foreach ($instance in @($instances.Values)) {
-                            if ($dispatched) { break }
+                            if ($preferredTarget) { break }
                             foreach ($target in @(Get-CodexDevToolsTargets -Port $instance.Port | Where-Object { Test-CodexDevToolsTarget -Target $_ })) {
                                 try {
                                     $probeResponse = Invoke-CodexCdpCommand -WebSocketDebuggerUrl $target.webSocketDebuggerUrl -Command $probe
@@ -643,16 +639,45 @@ try {
                                     if (-not [bool]$probeResult.can) { continue }
                                     if (-not $fallbackTarget) { $fallbackTarget = $target }
                                     if ([bool]$probeResult.preferred) {
-                                        Invoke-CodexCdpCommand -WebSocketDebuggerUrl $target.webSocketDebuggerUrl -Command $command | Out-Null
-                                        $dispatched = $true
+                                        $preferredTarget = $target
                                         break
                                     }
                                 } catch { }
                             }
                         }
-                        if (-not $dispatched -and $fallbackTarget) {
-                            try { Invoke-CodexCdpCommand -WebSocketDebuggerUrl $fallbackTarget.webSocketDebuggerUrl -Command $command | Out-Null } catch { }
+                        $selectedTarget = if ($preferredTarget) { $preferredTarget } else { $fallbackTarget }
+                        $continuationStatus = 'failed'
+                        $continuationReason = 'no-live-codex-page'
+                        $continuationMessage = 'Auto-continue could not start because no live Codex page was available.'
+                        if ($selectedTarget) {
+                            $command = New-CodexCdpCommand -Id 92 -Method 'Runtime.evaluate' -Params @{
+                                expression = "(async()=>{const detail=$detail;window.dispatchEvent(new CustomEvent('codex-plus-auto-continue',{detail}));const result=await window.__CODEX_PLUS_AUTO_CONTINUE_LAST_PROMISE;return JSON.stringify(result||{ok:false,reason:'handler-did-not-report'});})()"
+                                awaitPromise = $true
+                                returnByValue = $true
+                            }
+                            try {
+                                $response = Invoke-CodexCdpCommand -WebSocketDebuggerUrl $selectedTarget.webSocketDebuggerUrl -Command $command
+                                $value = $response.result.result.value
+                                $result = if ($value -is [string]) { $value | ConvertFrom-Json } else { $value }
+                                if ([bool]$result.ok) {
+                                    $continuationStatus = 'started'
+                                    $continuationReason = 'started'
+                                    $continuationMessage = 'Auto-continue started a new turn after the model-capacity error.'
+                                } elseif ($result.reason) {
+                                    $continuationReason = [string]$result.reason
+                                    $continuationMessage = if ($result.error) { "Auto-continue failed: $($result.error)" } elseif ($result.message) { [string]$result.message } else { "Auto-continue failed: $continuationReason." }
+                                }
+                            } catch {
+                                $continuationReason = 'cdp-dispatch-failed'
+                                $continuationMessage = "Auto-continue could not reach the Codex page: $($_.Exception.Message)"
+                            }
                         }
+                        Write-ManagerLog -Event (if ($continuationStatus -eq 'started') { 'auto-continue-started' } else { 'auto-continue-failed' }) -Fields @{
+                            session=[string]$alert.session
+                            reason=$continuationReason
+                            target_id=if ($selectedTarget) { [string]$selectedTarget.id } else { '' }
+                        }
+                        Show-CodexAutoContinueAlert -Status $continuationStatus -Message $continuationMessage -Session ([string]$alert.session)
                     }
                     $script:CodexPlusPrematurePending.Remove($Path)
                     continue

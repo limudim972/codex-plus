@@ -26,6 +26,9 @@ function Get-CodexSidebarPagingPayload {
   const THREAD_NAVIGATION_TIMEOUT_MS = 20000;
   const THREAD_PRELOAD_TIMEOUT_MS = 15000;
   const THREAD_PRELOAD_START_DELAY_MS = 500;
+  // Hydrate visible synthetic Recents after startup so opening one does not
+  // need to wait for the full conversation history to arrive.
+  const THREAD_PRELOAD_ENABLED = true;
   const NATIVE_PROJECT_PAGER_MAX_EXPANSIONS = 8;
   const SIDEBAR_REFRESH_DEBOUNCE_MS = 250;
   const SIDEBAR_NAVIGATION_REFRESH_RETRY_MS = 100;
@@ -42,9 +45,13 @@ function Get-CodexSidebarPagingPayload {
   const PROJECT_WINDOW_MARKER = 'data-codex-plus-project-window';
   const THREAD_UNREAD_INDICATOR_ATTR = 'data-codex-plus-thread-unread-indicator';
   const THREAD_UPDATED_ATTR = 'data-codex-plus-thread-updated-ms';
+  const THREAD_SOURCE_TEMPLATE_ATTR = 'data-codex-plus-thread-source-template-id';
   const THREADS_HEADER_ATTR = 'data-codex-plus-sidebar-threads-header';
   const THREADS_CONTAINER_ATTR = 'data-codex-plus-sidebar-threads-container';
   const THREADS_HEADER_ACTIONS_ATTR = 'data-codex-plus-sidebar-threads-actions';
+  const PROJECT_THREADS_HIDDEN_ATTR = 'data-codex-plus-project-threads-hidden';
+  const PROJECTS_SECTION_COLLAPSED_ATTR = 'data-codex-plus-projects-section-collapsed';
+  const PROJECTS_LIST_HIDDEN_ATTR = 'data-codex-plus-projects-list-hidden';
   const MARK_ALL_READ_ACTION = 'mark-all-read';
   const BUTTON_CLASS = 'border-token-border no-drag cursor-interaction flex items-center gap-1 border whitespace-nowrap select-none focus:outline-none disabled:cursor-not-allowed disabled:opacity-40 rounded-full text-token-muted-foreground enabled:hover:bg-transparent data-[state=open]:bg-transparent hover:text-token-foreground border-transparent px-2 py-0.5 text-sm leading-[18px] text-token-description-foreground hover:text-token-foreground -ml-[9px]';
   const LEGACY_TIMESTAMP_SUFFIX_SELECTOR = 'span[aria-hidden="true"].pointer-events-none.select-none.whitespace-nowrap.text-token-description-foreground';
@@ -83,6 +90,9 @@ function Get-CodexSidebarPagingPayload {
   const PAGE_START_TIME = Number(window.performance?.timeOrigin || Date.now());
   const nativeThreadUnreadStateCache = new Set();
   const nativeThreadWorkingCache = new Set();
+  const projectClosedSuppressedThreadIds = new Set();
+  const projectsSectionSuppressedThreadIds = new Set();
+  let projectsSectionExpansionSuppressed = false;
   let reconciliationCache = null;
 
   const SECTION_SPECS = [
@@ -167,7 +177,9 @@ function Get-CodexSidebarPagingPayload {
   }
 
   function getSectionShellFromTitle(title) {
-    return title?.parentElement || null;
+    return title?.closest('[data-app-action-sidebar-section]')
+      || title?.parentElement
+      || null;
   }
 
   function getSidebarSectionList(title) {
@@ -317,13 +329,21 @@ function Get-CodexSidebarPagingPayload {
   }
 
   function getReactThreadStatusState(row) {
+    const threadId = normalizeThreadId(getThreadIdForRow(row));
     for (const fiber of getReactFiberCandidates(row)) {
       let currentFiber = fiber;
       let fiberDepth = 0;
       while (currentFiber && fiberDepth < 40) {
         const statusState = currentFiber.memoizedProps?.statusState;
         if (statusState && typeof statusState.type === 'string') {
-          return statusState;
+          // A project list can render several thread rows below a shared
+          // status-bearing component. Do not inherit that component's state
+          // for every sibling: only accept the status owner whose data
+          // attributes identify this exact thread.
+          const statusThreadId = normalizeThreadId(
+            currentFiber.memoizedProps?.dataAttributes?.['data-app-action-sidebar-thread-id']
+          );
+          if (threadId && statusThreadId === threadId) return statusState;
         }
         currentFiber = currentFiber.return;
         fiberDepth += 1;
@@ -348,6 +368,30 @@ function Get-CodexSidebarPagingPayload {
       }
     }
     return Array.from(rows);
+  }
+
+  function getNativeThreadRowsByThreadId() {
+    const rows = new Map();
+    for (const nativeRow of getNativeThreadRows()) {
+      const threadId = normalizeThreadId(getThreadIdForRow(nativeRow));
+      if (!threadId) continue;
+      rows.set(threadId, nativeRow);
+    }
+    return rows;
+  }
+
+  function getNativeThreadTemplatesByThreadId() {
+    const templates = new Map();
+    for (const [threadId, nativeRow] of getNativeThreadRowsByThreadId()) {
+
+      // Clone the thread's own listitem, not an unrelated first row. The
+      // listitem preserves the exact native status rail for this thread while
+      // keeping the synthetic row's outer structure intact.
+      const template = nativeRow.closest?.('[role="listitem"]') || nativeRow;
+      if (template.closest?.('[' + SYNTHETIC_ROW_ATTR + '="threads"]')) continue;
+      templates.set(threadId, template);
+    }
+    return templates;
   }
 
   function getWorkingThreadIds() {
@@ -1658,11 +1702,10 @@ function Get-CodexSidebarPagingPayload {
     const existingConversation = typeof manager?.getConversation === 'function'
       ? manager.getConversation(threadId)
       : null;
-    // activateThreadSummary only registers a summary.  On a collapsed project
-    // row the full conversation may still be absent, and the old immediate
-    // getConversation check treated that normal state as a navigation failure.
+    // A collapsed project may not have mounted its native thread row yet.
     // Hydrate through Codex's mounted manager before changing the route so the
-    // synthetic row can open the conversation without clicking its source row.
+    // synthetic row can open the conversation without activating the native
+    // summary (which would expand the source project).
     if (existingConversation && Array.isArray(existingConversation.turns)) {
       return existingConversation;
     }
@@ -1848,20 +1891,27 @@ function Get-CodexSidebarPagingPayload {
       && sourceProjectRow.getAttribute('aria-expanded') !== 'true'
       && sourceProjectRow.getAttribute('data-app-action-sidebar-project-collapsed') !== 'false'
     );
+    const projectsToggle = getProjectsSectionToggle();
+    const projectsSectionWasClosed = Boolean(
+      projectsToggle && projectsToggle.getAttribute('aria-expanded') !== 'true'
+    );
+    if (sourceProjectWasClosed) suppressProjectThreads(sourceProjectId);
+    if (projectsSectionWasClosed) suppressProjectsSectionForNavigation(sourceProjectId);
+
     // The mounted manager and router are already live. Importing Codex's
     // private app bundle here blocks the first synthetic navigation for
     // several seconds and can remain pending in secondary renderers.
     const manager = getThreadHydrationManager(scope);
-    if (!manager || typeof manager.activateThreadSummary !== 'function') return false;
+    if (!manager) return false;
 
     try {
       await hydrateThreadForNavigation(manager, threadId);
-      manager.activateThreadSummary(threadId);
       routerNavigator.push('/local/' + threadId);
       syncSyntheticThreadActiveState();
       window.setTimeout(syncSyntheticThreadActiveState, 50);
       window.setTimeout(syncSyntheticThreadActiveState, 250);
-      restoreClosedProject(sourceProjectId, sourceProjectWasClosed);
+      stabilizeSuppressedProjectState(sourceProjectId, sourceProjectWasClosed);
+      stabilizeSuppressedProjectsSection(projectsSectionWasClosed);
       return true;
     } catch {
       return false;
@@ -2206,20 +2256,168 @@ function Get-CodexSidebarPagingPayload {
       .find((row) => normalizeProjectId(getProjectIdForRow(row)) === normalizedProjectId) || null;
   }
 
-  function restoreClosedProject(projectId, wasClosed) {
-    if (!projectId || !wasClosed) return;
+  function getProjectsSectionToggle() {
+    return Array.from(document.querySelectorAll('[data-app-action-sidebar-section-toggle]'))
+      .find((toggle) => normalizeText(toggle.innerText || toggle.textContent) === 'Projects') || null;
+  }
+
+  function syncProjectThreadVisibility() {
+    const projectsToggle = getProjectsSectionToggle();
+    const projectsSectionCollapsed = Boolean(
+      projectsToggle && projectsToggle.getAttribute('aria-expanded') !== 'true'
+    );
+    const projectsSectionVisuallyCollapsed = projectsSectionCollapsed
+      || projectsSectionExpansionSuppressed;
+    document.documentElement?.toggleAttribute(
+      PROJECTS_SECTION_COLLAPSED_ATTR,
+      projectsSectionVisuallyCollapsed
+    );
+
+    const projectsSpec = SECTION_SPECS.find((spec) => spec.key === 'projects');
+    const projectsList = projectsSpec ? resolveSidebarSectionList(projectsSpec) : null;
+    projectsList?.toggleAttribute(PROJECTS_LIST_HIDDEN_ATTR, projectsSectionVisuallyCollapsed);
+
+    for (const projectRow of Array.from(document.querySelectorAll('[data-app-action-sidebar-project-row]'))) {
+      const projectId = normalizeProjectId(getProjectIdForRow(projectRow));
+      const expanded = projectRow.getAttribute('aria-expanded') === 'true'
+        || projectRow.getAttribute('data-app-action-sidebar-project-collapsed') === 'false';
+      const projectShell = projectRow.closest('[role="listitem"]');
+      if (!projectShell) continue;
+      projectShell.toggleAttribute(
+        PROJECT_THREADS_HIDDEN_ATTR,
+        projectsSectionVisuallyCollapsed
+          || !expanded
+          || projectClosedSuppressedThreadIds.has(projectId)
+          || projectsSectionSuppressedThreadIds.has(projectId)
+      );
+    }
+  }
+
+  function suppressProjectThreads(projectId) {
+    const normalizedProjectId = normalizeProjectId(projectId);
+    if (!normalizedProjectId) return;
+    projectClosedSuppressedThreadIds.add(normalizedProjectId);
+    syncProjectThreadVisibility();
+  }
+
+  function suppressProjectsSectionForNavigation(projectId) {
+    const normalizedProjectId = normalizeProjectId(projectId);
+    if (normalizedProjectId) projectsSectionSuppressedThreadIds.add(normalizedProjectId);
+    projectsSectionExpansionSuppressed = true;
+    syncProjectThreadVisibility();
+  }
+
+  function releaseProjectThreadSuppression(event) {
+    const target = event?.target instanceof Element ? event.target : null;
+    const projectRow = target?.closest('[data-app-action-sidebar-project-row]');
+    if (!projectRow) return;
+    if (event.type === 'keydown' && event.key !== 'Enter' && event.key !== ' ') return;
+
+    const expanded = projectRow.getAttribute('aria-expanded') === 'true'
+      || projectRow.getAttribute('data-app-action-sidebar-project-collapsed') === 'false';
+    if (expanded) return;
+    const projectId = normalizeProjectId(getProjectIdForRow(projectRow));
+    const releasedClosedProject = projectClosedSuppressedThreadIds.delete(projectId);
+    const releasedSectionProject = projectsSectionSuppressedThreadIds.delete(projectId);
+    if (releasedClosedProject || releasedSectionProject) syncProjectThreadVisibility();
+  }
+
+  function releaseProjectsSectionSuppression(event) {
+    const target = event?.target instanceof Element ? event.target : null;
+    const sectionToggle = target?.closest('[data-app-action-sidebar-section-toggle]');
+    if (!sectionToggle || normalizeText(sectionToggle.innerText || sectionToggle.textContent) !== 'Projects') return;
+    if (event.type === 'keydown' && event.key !== 'Enter' && event.key !== ' ') return;
+    if (sectionToggle.getAttribute('aria-expanded') === 'true') return;
+
+    projectsSectionExpansionSuppressed = false;
+    projectsSectionSuppressedThreadIds.clear();
+    syncProjectThreadVisibility();
+  }
+
+  function stabilizeSuppressedProjectState(projectId, wasClosed) {
+    const normalizedProjectId = normalizeProjectId(projectId);
+    if (!normalizedProjectId || !wasClosed) return;
+
     let attempts = 0;
-    const collapse = () => {
-      const projectRow = findProjectRowById(projectId);
+    let collapseClicks = 0;
+    let previousExpanded = false;
+    let lastClickedProjectRow = null;
+    const stabilize = () => {
+      if (!projectClosedSuppressedThreadIds.has(normalizedProjectId)) return;
+      syncProjectThreadVisibility();
+      const projectRow = findProjectRowById(normalizedProjectId);
       if (projectRow) {
         const expanded = projectRow.getAttribute('aria-expanded') === 'true'
           || projectRow.getAttribute('data-app-action-sidebar-project-collapsed') === 'false';
-        if (expanded && typeof projectRow.click === 'function') projectRow.click();
+        if (
+          expanded
+          && (!previousExpanded || projectRow !== lastClickedProjectRow)
+          && collapseClicks < 4
+          && typeof projectRow.click === 'function'
+        ) {
+          collapseClicks += 1;
+          lastClickedProjectRow = projectRow;
+          projectRow.click();
+        }
+        previousExpanded = expanded;
       }
       attempts += 1;
-      if (attempts < 8) window.setTimeout(collapse, 75);
+      if (attempts < 800) window.setTimeout(stabilize, 50);
     };
-    window.setTimeout(collapse, 50);
+    window.setTimeout(stabilize, 0);
+  }
+
+  function stabilizeSuppressedProjectsSection(wasClosed) {
+    if (!wasClosed) return;
+
+    let attempts = 0;
+    let collapseClicks = 0;
+    let previousExpanded = false;
+    let lastClickedToggle = null;
+    const stabilize = () => {
+      if (!projectsSectionExpansionSuppressed) return;
+      syncProjectThreadVisibility();
+      const projectsToggle = getProjectsSectionToggle();
+      if (projectsToggle) {
+        const expanded = projectsToggle.getAttribute('aria-expanded') === 'true';
+        if (
+          expanded
+          && (!previousExpanded || projectsToggle !== lastClickedToggle)
+          && collapseClicks < 4
+          && typeof projectsToggle.click === 'function'
+        ) {
+          collapseClicks += 1;
+          lastClickedToggle = projectsToggle;
+          projectsToggle.click();
+        }
+        previousExpanded = expanded;
+      }
+      attempts += 1;
+      if (attempts < 800) window.setTimeout(stabilize, 50);
+    };
+    window.setTimeout(stabilize, 0);
+  }
+
+  function installProjectThreadVisibilityGuard() {
+    const styleId = 'codex-plus-project-thread-visibility';
+    if (!document.getElementById(styleId)) {
+      const style = document.createElement('style');
+      style.id = styleId;
+      style.textContent = [
+        '[' + PROJECT_THREADS_HIDDEN_ATTR + '] [data-app-action-sidebar-project-list-id],',
+        '[' + PROJECT_THREADS_HIDDEN_ATTR + '] > div:has([data-app-action-sidebar-project-list-id]),',
+        'html[' + PROJECTS_SECTION_COLLAPSED_ATTR + '] [data-app-action-sidebar-project-list-id],',
+        '[' + PROJECTS_LIST_HIDDEN_ATTR + '] {',
+        '  display: none !important;',
+        '  visibility: hidden !important;',
+        '}'
+      ].join('\n');
+      (document.head || document.documentElement).appendChild(style);
+    }
+    document.addEventListener('pointerdown', releaseProjectThreadSuppression, true);
+    document.addEventListener('keydown', releaseProjectThreadSuppression, true);
+    document.addEventListener('pointerdown', releaseProjectsSectionSuppression, true);
+    document.addEventListener('keydown', releaseProjectsSectionSuppression, true);
   }
 
   function expandSourceProject(sourceListLabel) {
@@ -2277,16 +2475,19 @@ function Get-CodexSidebarPagingPayload {
     if (sourceProjectId) row.setAttribute(SOURCE_PROJECT_ID_ATTR, sourceProjectId);
 
     const invokeSourceRow = (event) => {
-      if (row.getAttribute(NAVIGATION_PENDING_ATTR) === 'true') {
-        return;
-      }
-
       const stopSyntheticEvent = () => {
         event.preventDefault();
         event.stopPropagation();
         event.stopImmediatePropagation();
       };
       stopSyntheticEvent();
+      // A real pointer activation emits both pointerup and click. The first
+      // event starts direct navigation and marks the row pending; the second
+      // event must still be swallowed or React will activate the cloned
+      // source row as well.
+      if (row.getAttribute(NAVIGATION_PENDING_ATTR) === 'true') {
+        return;
+      }
       row.setAttribute(NAVIGATION_PENDING_ATTR, 'true');
       navigateThreadThroughCodex(row)
         .then((handled) => {
@@ -2867,22 +3068,6 @@ function Get-CodexSidebarPagingPayload {
     return map;
   }
 
-  function getSyntheticThreadTemplateRow() {
-    const candidateLists = [
-      getNonSyntheticSidebarSectionListByLabel(document, 'Tasks'),
-      getNonSyntheticSidebarSectionListByLabel(document, 'Threads'),
-      getNonSyntheticSidebarSectionListByLabel(document, 'Chats'),
-      ...getSidebarSectionLists(document, (label) => label.startsWith('Scheduled tasks in '))
-    ].filter(Boolean);
-
-    for (const list of candidateLists) {
-      const row = getSidebarRows(list)[0];
-      if (row) return row;
-    }
-
-    return null;
-  }
-
   function updateProjectThreadTimestamps() {
     const entries = getRecentThreadEntries();
     const byTitle = new Map(entries.map((entry) => [normalizeText(entry.title).toLowerCase(), entry]));
@@ -2952,6 +3137,18 @@ function Get-CodexSidebarPagingPayload {
     }
   }
 
+  function removeSyntheticNativeStatusIcons(row) {
+    if (!row) return;
+
+    // A previous generic template could leave Codex's cloud/environment icon
+    // in an existing Recents row. It is a native source-row affordance, not a
+    // Recents status indicator, so remove the whole trailing rail.
+    for (const icon of Array.from(row.querySelectorAll('svg.icon-2xs'))) {
+      const rail = icon.closest('[data-hover-card-open-immediately]') || icon;
+      if (rail !== row) rail.remove();
+    }
+  }
+
   function sanitizeSyntheticThreadTemplate(row) {
     const nativeStateAttributes = [
       'data-app-action-sidebar-thread-id',
@@ -2976,6 +3173,7 @@ function Get-CodexSidebarPagingPayload {
 
     const unreadIndicator = getThreadUnreadIndicator(row);
     if (unreadIndicator) unreadIndicator.remove();
+    removeSyntheticNativeStatusIcons(row);
     removeSyntheticThreadActions(row);
   }
 
@@ -3094,12 +3292,8 @@ function Get-CodexSidebarPagingPayload {
   function syncSyntheticThreadRows(listElement, threadRows) {
     if (!listElement) return;
 
-    const nativeRowsByThreadId = new Map();
+    const nativeRowsByThreadId = getNativeThreadRowsByThreadId();
     const catalog = getLiveSidebarCatalog();
-    for (const nativeRow of getNativeThreadRows()) {
-      const threadId = normalizeThreadId(getThreadIdForRow(nativeRow));
-      if (threadId) nativeRowsByThreadId.set(threadId, nativeRow);
-    }
 
     const existingRows = new Map();
     for (const row of getSidebarRows(listElement)) {
@@ -3125,6 +3319,7 @@ function Get-CodexSidebarPagingPayload {
         row.setAttribute('data-app-action-sidebar-thread-id', threadId);
       }
       applySyntheticThreadIndent(row);
+      removeSyntheticNativeStatusIcons(row);
       removeSyntheticThreadActions(row);
       syncThreadUnreadIndicator(
         row,
@@ -3250,17 +3445,29 @@ function Get-CodexSidebarPagingPayload {
     let listElement = shell?.querySelector('[' + SYNTHETIC_LIST_ATTR + ']') || null;
 
     if (!projectsShell || !projectsHeading) {
+      // React can temporarily unmount the native Projects heading while a
+      // running thread or section transition reconciles the sidebar. Keep an
+      // already-rendered Recents section independent during that gap.
+      if (shell && listElement && getSidebarRows(listElement).length > 0) {
+        return listElement;
+      }
       removeSyntheticSection('threads');
       return null;
     }
 
     const recentThreadEntries = getRecentThreadEntries();
     if (recentThreadEntries.length === 0 && !projectWindowContext) {
+      // A collapsed Projects section can briefly leave the live catalog with
+      // no mounted project entries. Do not erase known Recents rows; a later
+      // catalog refresh will reconcile them in place.
+      if (shell && listElement && getSidebarRows(listElement).length > 0) {
+        return listElement;
+      }
       removeSyntheticSection('threads');
       return null;
     }
 
-    const templateRow = getSyntheticThreadTemplateRow();
+    const nativeThreadTemplatesByThreadId = getNativeThreadTemplatesByThreadId();
     const existingRowsByThreadId = new Map();
     for (const row of getSidebarRows(listElement)) {
       const threadId = normalizeThreadId(getThreadIdForRow(row) || row.getAttribute('data-codex-plus-thread-id'));
@@ -3273,11 +3480,18 @@ function Get-CodexSidebarPagingPayload {
       if (seen.has(signature)) continue;
       seen.add(signature);
       const label = formatThreadLabelFromCatalog(entry);
-      const existingRow = existingRowsByThreadId.get(normalizeThreadId(entry.id));
-      const clone = existingRow || createSyntheticThreadRow(label, entry.lastModifiedMs, templateRow);
+      const threadId = normalizeThreadId(entry.id);
+      const existingRow = existingRowsByThreadId.get(threadId);
+      const sourceRow = nativeThreadTemplatesByThreadId.get(threadId) || null;
+      const existingRowHasMatchingSource = existingRow
+        && existingRow.getAttribute(THREAD_SOURCE_TEMPLATE_ATTR) === (sourceRow ? threadId : 'fallback');
+      const clone = existingRowHasMatchingSource
+        ? existingRow
+        : createSyntheticThreadRow(label, entry.lastModifiedMs, sourceRow);
       clone.setAttribute('data-codex-plus-thread-id', entry.id);
       clone.setAttribute(SYNTHETIC_ROW_ATTR, 'threads');
       clone.setAttribute(THREAD_UPDATED_ATTR, String(entry.lastModifiedMs));
+      clone.setAttribute(THREAD_SOURCE_TEMPLATE_ATTR, sourceRow ? threadId : 'fallback');
       if (entry.projectTitle) clone.setAttribute(THREAD_PROJECT_TITLE_ATTR, entry.projectTitle);
       if (entry.branch) clone.setAttribute(THREAD_BRANCH_ATTR, entry.branch);
       if (!existingRow) {
@@ -3474,7 +3688,9 @@ function Get-CodexSidebarPagingPayload {
         const next = Math.min(hiddenRows.length, (current > 0 ? current : 0) + PAGE_SIZE);
         writeLoaded(sectionList, next);
         renderSidebarSection(sectionList, visibleCount, sectionKey);
-        if (sectionKey === 'threads') window.setTimeout(preloadStartupThreads, 0);
+        if (THREAD_PRELOAD_ENABLED && sectionKey === 'threads') {
+          window.setTimeout(preloadStartupThreads, 0);
+        }
         event.preventDefault();
         event.stopPropagation();
         event.stopImmediatePropagation();
@@ -3529,6 +3745,7 @@ function Get-CodexSidebarPagingPayload {
     if (wasObserving) disconnect();
     try {
       installNativeThreadStatusSlotStyle();
+      syncProjectThreadVisibility();
       renameNativeRecentsHeading();
       if (projectWindowContext) {
         document.documentElement?.setAttribute(PROJECT_WINDOW_MARKER, projectWindowContext.id);
@@ -3563,7 +3780,8 @@ function Get-CodexSidebarPagingPayload {
       sortUnmanagedSidebarLists();
       syncSyntheticThreadActiveState();
       syncStartupThreadPreloadIndicators();
-      window.setTimeout(preloadStartupThreads, 0);
+      if (THREAD_PRELOAD_ENABLED) window.setTimeout(preloadStartupThreads, 0);
+      syncProjectThreadVisibility();
     } finally {
       reconciliationCache = previousReconciliationCache;
       if (wasObserving) observe();
@@ -3635,10 +3853,27 @@ function Get-CodexSidebarPagingPayload {
   window.setInterval(schedule, SIDEBAR_POLL_INTERVAL_MS);
   window.setInterval(tryClaimPendingProjectWindowContext, 250);
 
+  const projectThreadVisibilityObserver = new MutationObserver(syncProjectThreadVisibility);
+  let projectThreadVisibilityRoot = null;
+  const observeProjectThreadVisibility = () => {
+    const root = getSidebarObserverRoot() || document.documentElement;
+    if (!root || projectThreadVisibilityRoot === root) return;
+    projectThreadVisibilityObserver.disconnect();
+    projectThreadVisibilityObserver.observe(root, {
+      attributes: true,
+      attributeFilter: ['aria-expanded', 'data-app-action-sidebar-project-collapsed'],
+      childList: true,
+      subtree: true
+    });
+    projectThreadVisibilityRoot = root;
+  };
+
   const observer = new MutationObserver(schedule);
   const start = () => {
     disconnect();
     installProjectHoverGuard();
+    installProjectThreadVisibilityGuard();
+    observeProjectThreadVisibility();
     try {
       applying = true;
       apply();
@@ -3653,13 +3888,15 @@ function Get-CodexSidebarPagingPayload {
         window.setTimeout(schedule, delayMs);
       }
     }
-      const beginStartupPreload = () => {
-        window.setTimeout(preloadStartupThreads, THREAD_PRELOAD_START_DELAY_MS);
-      };
-      if (document.readyState === 'complete') {
-        beginStartupPreload();
-      } else {
-        window.addEventListener('load', beginStartupPreload, { once: true });
+      if (THREAD_PRELOAD_ENABLED) {
+        const beginStartupPreload = () => {
+          window.setTimeout(preloadStartupThreads, THREAD_PRELOAD_START_DELAY_MS);
+        };
+        if (document.readyState === 'complete') {
+          beginStartupPreload();
+        } else {
+          window.addEventListener('load', beginStartupPreload, { once: true });
+        }
       }
   };
 
