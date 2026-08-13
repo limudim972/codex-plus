@@ -99,6 +99,14 @@ function Get-CodexSplitModelEffortSelectorPayload {
     return null;
   }
 
+  function getLiveController() {
+    for (const trigger of document.querySelectorAll(NATIVE_TRIGGER_SELECTOR)) {
+      const controller = getController(trigger);
+      if (controller) return controller;
+    }
+    return null;
+  }
+
   function getVisibleModels(controller) {
     return (controller.models || []).filter((model) => !model.hidden);
   }
@@ -320,7 +328,7 @@ function Get-CodexSplitModelEffortSelectorPayload {
       models.map((model) => ({ value: model.model || model.id, label: modelLabel(model) })),
       selectedModelValue,
       (value) => {
-        const latest = getController(document.querySelector(NATIVE_TRIGGER_SELECTOR));
+        const latest = getLiveController();
         if (!latest || latest.modelOptionsDisabled) return;
         const model = getVisibleModels(latest).find((candidate) => candidate.model === value || candidate.id === value);
         if (!model) return;
@@ -340,7 +348,7 @@ function Get-CodexSplitModelEffortSelectorPayload {
       efforts.map((effort) => ({ value: effort, label: effortLabel(effort) })),
       selectedEffort,
       (value) => {
-        const latest = getController(document.querySelector(NATIVE_TRIGGER_SELECTOR));
+        const latest = getLiveController();
         if (!latest || latest.reasoningEffortDisabled) return;
         closeMenus();
         latest.onSelectReasoningEffort(value);
@@ -389,7 +397,7 @@ function Get-CodexSplitModelEffortSelectorPayload {
     });
 
     host.querySelector('[data-codex-plus-speed-button]').addEventListener('click', () => {
-      const latest = getController(document.querySelector(NATIVE_TRIGGER_SELECTOR));
+      const latest = getLiveController();
       if (!latest || latest.serviceTierOptionsLoading || typeof latest.onSelectServiceTier !== 'function') return;
       const serviceTiers = getServiceTiers(latest);
       if (serviceTiers.length <= 1) return;

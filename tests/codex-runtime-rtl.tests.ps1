@@ -857,6 +857,8 @@ Assert-True ($splitSelectorPayload.Contains('LIGHTNING_FULL')) 'Split selector s
 Assert-True ($splitSelectorPayload.Contains('data-codex-plus-speed-active')) 'Speed control should expose an active-state marker.'
 Assert-True ($splitSelectorPayload.Contains('stroke="#facc15"')) 'Fast speed should use a yellow lightning-shaped border.'
 Assert-True ($splitSelectorPayload.Contains('supportedReasoningEfforts')) 'Split selector should derive effort options from the selected live model.'
+Assert-True ($splitSelectorPayload.Contains('function getLiveController')) 'Split selector should resolve the current React controller across re-renders.'
+Assert-True ($splitSelectorPayload.Contains('const latest = getLiveController()')) 'Split selector actions should use the current React controller.'
 Assert-True ($splitSelectorPayload.Contains('latest.onSelectModel(model.model || model.id, nextEffort)')) 'Split selector should use Codex native model and effort callback arguments.'
 Assert-True ($splitSelectorPayload.Contains('latest.onSelectReasoningEffort(value)')) 'Split selector should use Codex native effort callback.'
 Assert-True ($splitSelectorPayload.Contains('const CHEVRON')) 'Split selector should render a native-style chevron for each button.'
