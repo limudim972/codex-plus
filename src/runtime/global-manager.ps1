@@ -479,6 +479,23 @@ try {
                 }
             )
             $visibleWindowCount = @($windowSnapshot | ForEach-Object { @($_.visible_window_handles) }).Count
+            $targets = @(Get-CodexDevToolsTargets -Port $Instance.Port | Where-Object { Test-CodexDevToolsTarget -Target $_ })
+            if ($targets.Count -eq 0 -and $matching.Count -gt 0 -and
+                ([DateTime]::UtcNow -ge $Instance.StartupDeadline -or $Instance.HasSeenTarget)) {
+                Write-ManagerLog -Event 'close-check' -Fields @{
+                    launcher_key=$Instance.Key
+                    port=$Instance.Port
+                    matching_process_count=$matching.Count
+                    visible_process_count=$visible
+                    visible_window_count=$visibleWindowCount
+                    devtools_target_count=0
+                    process_snapshot=$windowSnapshot
+                    has_seen_target=[bool]$Instance.HasSeenTarget
+                    action='remove-empty-devtools-target-list'
+                }
+                Remove-ManagerInstance -Key $Instance.Key -StopProcesses
+                return
+            }
             if ($visible -gt 0) {
                 $Instance.HasSeenWindow = $true
                 Write-ManagerLog -Event 'close-check' -Fields @{
@@ -534,14 +551,20 @@ try {
         function Get-UsageCandidate {
             param([string[]]$Paths)
             $sessionsRoot = Join-Path $env:USERPROFILE '.codex\sessions'
-            $files = if (@($Paths).Count -gt 0) {
+            $changedFiles = if (@($Paths).Count -gt 0) {
                 @($Paths | Where-Object { $_ -and (Test-Path -LiteralPath $_ -PathType Leaf) } | ForEach-Object {
                     Get-Item -LiteralPath $_ -ErrorAction SilentlyContinue
                 } | Where-Object { $_ -and $_.Extension -eq '.jsonl' } | Sort-Object LastWriteTime -Descending)
             } else {
-                @(Get-ChildItem -LiteralPath $sessionsRoot -Recurse -Filter '*.jsonl' -File -ErrorAction SilentlyContinue |
-                    Sort-Object LastWriteTime -Descending | Select-Object -First 100)
+                @()
             }
+            # FileSystemWatcher can report the write before the token_count
+            # record is flushed. Always keep a bounded newest-session fallback
+            # so a missed/early event cannot leave the shared usage cache stale.
+            $recentFiles = @(Get-ChildItem -LiteralPath $sessionsRoot -Recurse -Filter '*.jsonl' -File -ErrorAction SilentlyContinue |
+                Sort-Object LastWriteTime -Descending | Select-Object -First 100)
+            $files = @($changedFiles + $recentFiles | Where-Object { $_ } |
+                Sort-Object FullName -Unique | Sort-Object LastWriteTime -Descending)
             foreach ($file in $files) {
                 $primary = $null
                 foreach ($line in Get-Content -LiteralPath $file.FullName -Tail 10 -ErrorAction SilentlyContinue) {
@@ -598,6 +621,10 @@ try {
                 Add-EventCount 'usage_revision'
                 foreach ($instance in @($instances.Values)) { Refresh-ManagerInstance -Instance $instance }
                 Schedule-UsageBoundary
+            } elseif (@($Paths).Count -gt 0) {
+                # The write notification may have preceded the flush. Retry
+                # after the producer has had time to finish the JSONL record.
+                Set-ManagerTask -Key 'usage-retry' -DelayMilliseconds 500 -Kind 'usage-refresh' -Data $null
             }
             if (@($Paths).Count -gt 0) {
                 Update-CodexPrematureSessionState -Paths $Paths

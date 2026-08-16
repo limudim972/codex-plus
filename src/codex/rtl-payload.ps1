@@ -169,6 +169,14 @@ function Get-CodexRtlPayload {
       '  direction: ltr !important;',
       '  unicode-bidi: isolate !important;',
       '}',
+      'ol[data-codex-rtl-fix="rtl"],',
+      'ul[data-codex-rtl-fix="rtl"] {',
+      '  direction: rtl !important;',
+      '  text-align: right !important;',
+      '  list-style-position: outside !important;',
+      '  padding-inline-start: 1.5rem !important;',
+      '  padding-inline-end: 0 !important;',
+      '}',
       '[class*="bg-token-input-validation-error-background"]:has(.text-xs.font-semibold) {',
       '  display: none !important;',
       '}'
@@ -300,12 +308,15 @@ function Get-CodexRtlPayload {
 
   function processLists(root) {
     for (const list of root.querySelectorAll(LIST_CONTAINER_SELECTOR)) {
-      if (shouldSkipElement(list)) continue;
-      const listDirection = classifyDirection(list);
+      if (list.closest('pre, code, kbd, samp, [contenteditable="false"]')) continue;
+      const listText = Array.from(list.querySelectorAll(':scope > ' + LIST_ITEM_SELECTOR))
+        .map((item) => getListItemOwnText(item))
+        .join(' ');
+      const listDirection = classifyDirection(listText || list);
       applyBlockDirection(list, listDirection);
 
       for (const item of list.querySelectorAll(':scope > ' + LIST_ITEM_SELECTOR)) {
-        if (shouldSkipElement(item)) continue;
+        if (item.closest('pre, code, kbd, samp, [contenteditable="false"]')) continue;
         const itemDirection = classifyDirection(getListItemOwnText(item));
         const direction = itemDirection === 'neutral' ? listDirection : itemDirection;
         applyBlockDirection(item, direction, { forceLtr: listDirection === 'rtl' });

@@ -39,6 +39,8 @@ Assert-True ($managerSource.Contains("fallback='persistent-cdp-lifecycle'")) 'Pe
 Assert-True ($managerSource.Contains('''-File'', (''"{0}"'' -f $scriptPath)')) 'Manager bootstrap should quote the installed runtime path, which contains a space.'
 Assert-True (-not $managerSource.Contains('PollMilliseconds')) 'Manager should not expose a recurring poll interval.'
 Assert-True ($managerSource.Contains('$script:CodexPlusGlobalUsageAuthority = $true')) 'Only the manager should be authoritative for the shared usage cache.'
+Assert-True ($managerSource.Contains('FileSystemWatcher can report the write before the token_count')) 'Usage refresh should tolerate an early file notification.'
+Assert-True ($managerSource.Contains("Set-ManagerTask -Key 'usage-retry' -DelayMilliseconds 500")) 'Usage refresh should retry after an early file notification.'
 Assert-True ($managerSource.Contains('$instance.CdpStarting -and $instance.CdpAsync')) 'Manager should not duplicate an in-flight persistent CDP connection.'
 Assert-True ($managerSource.Contains("`$method -eq 'Target.targetInfoChanged'")) 'CDP target-info events should be deduplicated instead of creating a title-refresh feedback loop.'
 Assert-True (-not $launcherSource.Contains('-StartCloseWatchdog')) 'Launcher should not create one watchdog per window.'
