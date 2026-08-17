@@ -407,7 +407,9 @@ try {
     if ($targets.Count -gt 0) {
         $Instance.HasSeenTarget = $true
     }
-    if (-not $Instance.Payload) { $Instance.Payload = Get-CodexPlusPayloadBundle }
+    # Rebuild the payload on every refresh so an already-running manager picks
+    # up installed runtime changes before injecting newly created targets.
+    $Instance.Payload = Get-CodexPlusPayloadBundle
     foreach ($target in $targets) {
         $targetId = [string]$target.id
         if ($targetId -and $Instance.InjectedTargetIds.ContainsKey($targetId)) { continue }
@@ -571,8 +573,15 @@ try {
             # so a missed/early event cannot leave the shared usage cache stale.
             $recentFiles = @(Get-ChildItem -LiteralPath $sessionsRoot -Recurse -Filter '*.jsonl' -File -ErrorAction SilentlyContinue |
                 Sort-Object LastWriteTime -Descending | Select-Object -First 100)
-            $files = @($changedFiles + $recentFiles | Where-Object { $_ } |
-                Sort-Object FullName -Unique | Sort-Object LastWriteTime -Descending)
+            # Do not use binary '+' here: PowerShell unwraps a one-item
+            # @(...)-assignment to FileInfo, so FileInfo + FileInfo can throw
+            # "does not contain a method named op_Addition". Emit both
+            # collections through a pipeline instead.
+            $files = @(
+                @($changedFiles)
+                @($recentFiles)
+            ) | Where-Object { $_ } |
+                Sort-Object FullName -Unique | Sort-Object LastWriteTime -Descending
             foreach ($file in $files) {
                 $primary = $null
                 foreach ($line in Get-Content -LiteralPath $file.FullName -Tail 10 -ErrorAction SilentlyContinue) {

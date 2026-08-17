@@ -1,11 +1,50 @@
 function Get-CodexContextBadgePayload {
     @'
 (function () {
+  const BADGE_ID = 'data-codex-plus-context-badge';
+  const OPEN_ELSEWHERE_HIDE_STYLE_ID = 'codex-plus-open-elsewhere-hide-style';
+  const OPEN_ELSEWHERE_TITLE = 'This is open in another app';
+  const OPEN_ELSEWHERE_MESSAGE = 'Close it there to continue here.';
+  const observedOpenElsewhereDocuments = new WeakSet();
+
+  function normalizeAlertText(text) {
+    return String(text || '').replace(/\s+/g, ' ').trim();
+  }
+
+  function hideOpenElsewhereAlerts(scopeDoc) {
+    if (!scopeDoc) return;
+    const root = scopeDoc.head || scopeDoc.documentElement;
+    if (root && !scopeDoc.getElementById(OPEN_ELSEWHERE_HIDE_STYLE_ID)) {
+      const style = scopeDoc.createElement('style');
+      style.id = OPEN_ELSEWHERE_HIDE_STYLE_ID;
+      style.textContent = '[data-codex-plus-hide-open-alert]{display:none!important}';
+      root.appendChild(style);
+    }
+    for (const alert of Array.from(scopeDoc.querySelectorAll('[role="alert"]'))) {
+      const title = Array.from(alert.querySelectorAll('h1,h2,h3,[role="heading"]'))
+        .some((heading) => normalizeAlertText(heading.textContent) === OPEN_ELSEWHERE_TITLE);
+      const message = normalizeAlertText(alert.textContent).includes(OPEN_ELSEWHERE_MESSAGE);
+      if (title && message) {
+        alert.setAttribute('data-codex-plus-hide-open-alert', 'true');
+      }
+    }
+  }
+
+  function installOpenElsewhereAlertHider(scopeDoc) {
+    if (!scopeDoc) return;
+    hideOpenElsewhereAlerts(scopeDoc);
+    if (observedOpenElsewhereDocuments.has(scopeDoc)) return;
+    const observer = new MutationObserver(() => hideOpenElsewhereAlerts(scopeDoc));
+    observer.observe(scopeDoc, { childList: true, subtree: true });
+    observedOpenElsewhereDocuments.add(scopeDoc);
+  }
+
+  installOpenElsewhereAlertHider(document);
+
   if (window.__CODEX_PLUS_CONTEXT_BADGE && window.__CODEX_PLUS_CONTEXT_BADGE.observer) {
     return;
   }
 
-  const BADGE_ID = 'data-codex-plus-context-badge';
   const BADGE_HOST_ID = 'data-codex-plus-context-badge-host';
   const TITLE_SELECTOR = [
     '[data-thread-title="true"]',
@@ -67,6 +106,7 @@ function Get-CodexContextBadgePayload {
 
   function ensureBadge(scopeDoc) {
     if (!scopeDoc) return;
+    installOpenElsewhereAlertHider(scopeDoc);
 
     let badge = scopeDoc.querySelector('[' + BADGE_ID + ']');
     if (!badge) {

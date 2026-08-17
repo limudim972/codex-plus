@@ -20,6 +20,7 @@ function Get-CodexRtlPayload {
   const BLOCKQUOTE_SELECTOR = 'blockquote';
   const TABLE_SELECTOR = 'table';
   const TABLE_CELL_SELECTOR = 'th, td';
+  const TABLE_ALIGNMENT_ATTRIBUTE = 'data-codex-rtl-table-align';
   const INLINE_TECHNICAL_SELECTOR = 'code, kbd, samp';
   const TASK_CHECKBOX_SELECTOR = 'input[type="checkbox"]';
   const REQUEST_CARD_SELECTOR = '[class*="request-card"]';
@@ -333,15 +334,37 @@ function Get-CodexRtlPayload {
     }
   }
 
+  function applyTableAlignment(element, tableDirection, elementDirection) {
+    if (tableDirection === 'rtl') {
+      if (element.getAttribute(TABLE_ALIGNMENT_ATTRIBUTE) !== 'right') {
+        element.setAttribute(TABLE_ALIGNMENT_ATTRIBUTE, 'right');
+      }
+      if (element.style.textAlign !== 'right') {
+        element.style.textAlign = 'right';
+      }
+      return;
+    }
+
+    if (element.getAttribute(TABLE_ALIGNMENT_ATTRIBUTE) !== 'right') return;
+    element.removeAttribute(TABLE_ALIGNMENT_ATTRIBUTE);
+    if (elementDirection === 'rtl') {
+      element.style.textAlign = 'start';
+    } else {
+      element.style.textAlign = '';
+    }
+  }
+
   function processTables(root) {
     for (const table of root.querySelectorAll(TABLE_SELECTOR)) {
       const tableDirection = classifyDirection(table);
       applyBlockDirection(table, tableDirection);
+      applyTableAlignment(table, tableDirection, tableDirection);
 
       for (const cell of table.querySelectorAll(TABLE_CELL_SELECTOR)) {
         const cellDirection = classifyDirection(cell);
         const direction = cellDirection === 'neutral' ? tableDirection : cellDirection;
         applyBlockDirection(cell, direction, { forceLtr: tableDirection === 'rtl' });
+        applyTableAlignment(cell, tableDirection, direction);
         processInlineTechnicalIslands(cell);
       }
     }
