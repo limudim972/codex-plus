@@ -14,7 +14,7 @@ function Get-CodexNewChatButtonPayload {
   const UTILITY_BAR_SCROLL_SELECTOR = '[data-composer-utility-bar-scroll-area]';
   const PERSISTENT_UTILITY_BAR_ATTR = 'data-codex-plus-persistent-composer-utility-bar';
   const CONVERSATION_ID_ATTR = 'data-above-composer-conversation-id';
-  const UTILITY_BAR_STORAGE_KEY = 'codex-plus-composer-utility-bars-v3';
+  const UTILITY_BAR_STORAGE_KEY = 'codex-plus-composer-utility-bars-v4';
   const PENDING_CONTEXT_STORAGE_KEY = 'codex-plus-new-chat-pending-context-v1';
   const MAX_STORED_UTILITY_BARS = 50;
   const RESTORE_TIMEOUT_MS = 15000;
@@ -372,6 +372,9 @@ function Get-CodexNewChatButtonPayload {
     const location = document.createElement('span');
     location.className = 'flex items-center gap-2 px-1.5 py-1 text-base text-token-text-primary';
     location.innerHTML = '<svg width="20" height="20" viewBox="0 0 20 20" fill="none" xmlns="http://www.w3.org/2000/svg"><rect x="2.5" y="4.5" width="15" height="10.5" rx="1.5" stroke="currentColor" stroke-width="1.4"/><path d="M6 17h8" stroke="currentColor" stroke-width="1.4" stroke-linecap="round"/></svg><span>Local</span>';
+    const branch = document.createElement('span');
+    branch.className = 'flex items-center gap-2 px-1.5 py-1 text-base text-token-text-primary';
+    branch.innerHTML = '<svg width="20" height="20" viewBox="0 0 20 20" fill="none" xmlns="http://www.w3.org/2000/svg"><circle cx="6" cy="5" r="1.7" stroke="currentColor" stroke-width="1.4"/><circle cx="14" cy="15" r="1.7" stroke="currentColor" stroke-width="1.4"/><path d="M6 6.7v4.1c0 1.4 1.1 2.5 2.5 2.5H12M6 6.7v1.1c0 1.4 1.1 2.5 2.5 2.5H12V13.3" stroke="currentColor" stroke-width="1.4" stroke-linecap="round"/></svg><span>main</span>';
     const newChat = document.createElement('button');
     newChat.type = 'button';
     newChat.textContent = 'New chat';
@@ -385,7 +388,7 @@ function Get-CodexNewChatButtonPayload {
     commit.setAttribute(COMMIT_PUSH_BUTTON_ATTR, 'true');
     commit.setAttribute('aria-label', 'Commit or push');
     commit.className = 'no-drag ms-auto rounded-md border border-transparent px-2.5 py-1 text-sm text-token-text-primary';
-    bar.append(project, location, newChat, commit);
+    bar.append(project, location, branch, newChat, commit);
     return bar;
   }
 
@@ -431,12 +434,27 @@ function Get-CodexNewChatButtonPayload {
     const host = findComposerContentHost(root);
     if (!root || !host) return;
 
+    // React can re-render the copied project control after the bar is mounted.
+    // Re-assert the decorative icon on every install pass so it cannot flash
+    // briefly and then disappear from the persistent row.
+    host.querySelectorAll('[' + PERSISTENT_UTILITY_BAR_ATTR + ']').forEach(ensureProjectFolderIcon);
+
     const nativeScrollArea = Array.from(root.querySelectorAll(UTILITY_BAR_SCROLL_SELECTOR))
       .find((candidate) => !candidate.closest('[' + PERSISTENT_UTILITY_BAR_ATTR + ']'));
     const existingPersistentBars = Array.from(host.querySelectorAll(':scope > [' + PERSISTENT_UTILITY_BAR_ATTR + ']'));
+    const conversationId = currentComposerConversationId(root);
+
+    // A blank/new chat owns a live native utility row. Do not show the
+    // persisted row alongside it; the persisted copy is only needed after a
+    // conversation has been created and the native row is hidden.
+    if (nativeScrollArea && !conversationId) {
+      existingPersistentBars.forEach((bar) => bar.remove());
+      return;
+    }
 
     if (nativeScrollArea) {
-      existingPersistentBars.forEach((bar) => bar.remove());
+      // Keep an already-mounted copy visible while React assembles the native
+      // row. Removing it here causes a visible disappear/reappear flicker.
       const nativeWrapper = Array.from(host.children).find((candidate) => candidate.contains(nativeScrollArea));
       if (!isComposerUtilityBarReady(nativeWrapper)) {
         pendingUtilityBarSnapshot = '';
@@ -460,7 +478,6 @@ function Get-CodexNewChatButtonPayload {
       if (!snapshotHtml) return;
 
       pendingUtilityBarSnapshot = snapshotHtml;
-      const conversationId = currentComposerConversationId(root);
       if (conversationId) {
         const snapshots = readUtilityBarSnapshots();
         snapshots[conversationId] = { html: snapshotHtml, capturedAt: Date.now() };
@@ -471,7 +488,6 @@ function Get-CodexNewChatButtonPayload {
 
     if (existingPersistentBars.length) return;
 
-    const conversationId = currentComposerConversationId(root);
     const snapshots = readUtilityBarSnapshots();
     let snapshotHtml = normalizeText(snapshots[conversationId]?.html);
     if (!snapshotHtml && pendingUtilityBarSnapshot) {

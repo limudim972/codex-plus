@@ -175,24 +175,15 @@ function Unregister-CodexPlusManagerInstance {
 function New-CodexPlusManagerPipeServer {
     param([Parameter(Mandatory)]$Identity)
 
-    $sid = [Security.Principal.SecurityIdentifier]::new($Identity.Sid)
-    $security = [IO.Pipes.PipeSecurity]::new()
-    $security.SetOwner($sid)
-    $security.SetAccessRuleProtection($true, $false)
-    $security.AddAccessRule([IO.Pipes.PipeAccessRule]::new(
-        $sid,
-        [IO.Pipes.PipeAccessRights]::FullControl,
-        [Security.AccessControl.AccessControlType]::Allow
-    ))
+    # Use the OS default local named-pipe ACL. The previous hand-built ACL
+    # could create a server that existed but rejected the same-user launcher
+    # client, leaving registration and renderer injection waiting forever.
     return [IO.Pipes.NamedPipeServerStream]::new(
         $Identity.PipeName,
         [IO.Pipes.PipeDirection]::InOut,
         8,
         [IO.Pipes.PipeTransmissionMode]::Byte,
-        [IO.Pipes.PipeOptions]::Asynchronous,
-        8192,
-        8192,
-        $security
+        [IO.Pipes.PipeOptions]::Asynchronous
     )
 }
 
@@ -1101,11 +1092,16 @@ try {
         }
         Start-ManagerDashboard
         Set-ManagerTask -Key 'usage-startup' -DelayMilliseconds 500 -Kind 'usage-refresh' -Data $null
-        Set-ManagerTask -Key 'session-scan' -DelayMilliseconds 500 -Kind 'session-scan' -Data $null
+        # Session diagnostics are intentionally deferred until after startup.
+        # The scan reads recent JSONL history and can be expensive enough to
+        # delay the manager pipe, which would prevent renderer registration and
+        # Codex Plus injection during launch.
+        Set-ManagerTask -Key 'session-scan' -DelayMilliseconds 30000 -Kind 'session-scan' -Data $null
         Set-ManagerTask -Key 'manager-idle' -DelayMilliseconds 10000 -Kind 'manager-idle' -Data $null
 
         $pipe = New-CodexPlusManagerPipeServer -Identity $identity
         $pipeWait = $pipe.BeginWaitForConnection($null, $null)
+        Write-ManagerLog -Event 'manager-pipe-ready'
         while (-not $managerState.Stopping) {
             $now = [DateTime]::UtcNow
             $dueTasks = @($scheduled.Values | Where-Object { $_.Due -le $now } | Sort-Object Due)
@@ -1120,18 +1116,27 @@ try {
             if ($managerState.Stopping) { break }
 
             $message = $null
-            while ($shared.Queue.TryDequeue([ref]$message)) {
+            $processedEventCount = 0
+            while ($processedEventCount -lt 256 -and $shared.Queue.TryDequeue([ref]$message)) {
+                $processedEventCount++
                 try {
                     Handle-ManagerEvent -Message $message
                 } catch {
                     Write-ManagerLog -Event 'event-handler-error' -Fields @{ kind=$message.kind; error=$_.Exception.Message }
                 }
             }
+            if ($processedEventCount -ge 256 -and $shared.Queue.Count -gt 0) {
+                [void]$shared.Signal.Set()
+            }
 
             $next = @($scheduled.Values | Sort-Object Due | Select-Object -First 1)
             $timeout = if ($next.Count -eq 0) { -1 } else { [Math]::Max(0, [int][Math]::Min([int]::MaxValue, ($next[0].Due - [DateTime]::UtcNow).TotalMilliseconds)) }
-            $waitResult = [Threading.WaitHandle]::WaitAny(@($shared.Signal, $pipeWait.AsyncWaitHandle), $timeout)
-            if ($waitResult -eq 1) {
+            # The native window hook can produce a continuous stream of
+            # desktop-wide events. Prefer a waiting manager command whenever
+            # both handles are signaled so registration/status cannot starve
+            # behind the event queue and block renderer injection.
+            $waitResult = [Threading.WaitHandle]::WaitAny(@($pipeWait.AsyncWaitHandle, $shared.Signal), $timeout)
+            if ($waitResult -eq 0) {
                 try {
                     $pipe.EndWaitForConnection($pipeWait)
                     $reader = [IO.StreamReader]::new($pipe)

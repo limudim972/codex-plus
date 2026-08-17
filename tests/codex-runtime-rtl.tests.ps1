@@ -154,6 +154,7 @@ Assert-True (-not $installBody.Contains('Invoke-CodexRtlInjection')) 'Patch flow
 $launchBody = (Get-Command -Name Launch-CodexRtl -CommandType Function).ScriptBlock.ToString()
 Assert-True ($launchBody.Contains('Start-CodexForRtl')) 'Codex launch should delegate to the approved-verb launch helper.'
 Assert-True ($launchBody.Contains('Register-CodexPlusManagerInstance')) 'Codex launch should register with the independent manager before starting the app.'
+Assert-True ($launchBody.Contains('Invoke-CodexPlusInjection -Port $port -LauncherKey $LauncherKey')) 'Codex launch should fall back to direct Plus injection when manager registration is unavailable.'
 Assert-True (-not [bool](Get-Command -Name Watch-CodexCloseToQuit -CommandType Function -ErrorAction SilentlyContinue)) 'The retired per-window polling watchdog should not be loaded.'
 $devToolsBody = (Get-Command -Name Get-CodexDevToolsTargets -CommandType Function).ScriptBlock.ToString()
 Assert-True ($devToolsBody.Contains('ForEach-Object { $_ }')) 'Codex DevTools target enumeration should flatten multiple page targets.'
@@ -1150,7 +1151,7 @@ Assert-True ($newChatPayload.Contains('restorePendingNewChatContext')) 'Composer
 Assert-True ($newChatPayload.Contains('data-codex-plus-persistent-composer-utility-bar')) 'Composer context row should expose a dedicated marker after the native row is removed.'
 Assert-True ($newChatPayload.Contains('data-composer-utility-bar-scroll-area')) 'Composer context persistence should capture the native utility bar before the first message hides it.'
 Assert-True ($newChatPayload.Contains('data-above-composer-conversation-id')) 'Composer context persistence should key captured utility bars to the created conversation.'
-Assert-True ($newChatPayload.Contains('codex-plus-composer-utility-bars-v3')) 'Composer context persistence should use a new storage version after changing snapshot structure.'
+Assert-True ($newChatPayload.Contains('codex-plus-composer-utility-bars-v4')) 'Composer context persistence should use a new storage version after changing snapshot structure.'
 Assert-True ($newChatPayload.Contains('createPersistentUtilityBarSnapshot')) 'Composer context persistence should clone the native row without moving React-owned nodes.'
 Assert-True ($newChatPayload.Contains('isComposerUtilityBarReady')) 'Composer context persistence should wait for the native utility row to finish rendering before cloning it.'
 Assert-True ($newChatPayload.Contains('getComposerUtilityBarSignature')) 'Composer context persistence should detect changes while the native utility row is still assembling.'

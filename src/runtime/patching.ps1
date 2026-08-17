@@ -171,11 +171,24 @@ function Launch-CodexRtl {
         Invoke-CodexGraphicsDriverCheck | Out-Null
     }
     $userDataDirectory = Get-CodexPlusUserDataDirectory -LauncherKey $LauncherKey
-    Register-CodexPlusManagerInstance -LauncherKey $LauncherKey -Port $port -UserDataDirectory $userDataDirectory | Out-Null
+    $managerRegistered = $false
+    try {
+        Register-CodexPlusManagerInstance -LauncherKey $LauncherKey -Port $port -UserDataDirectory $userDataDirectory | Out-Null
+        $managerRegistered = $true
+    } catch {
+        Write-Warn "Codex Plus manager registration failed; using one-shot launch injection: $($_.Exception.Message)"
+    }
     try {
         Start-CodexForRtl -Inspection $installInfo -Port $port -LauncherKey $LauncherKey | Out-Null
     } catch {
-        Unregister-CodexPlusManagerInstance -LauncherKey $LauncherKey | Out-Null
+        if ($managerRegistered) { Unregister-CodexPlusManagerInstance -LauncherKey $LauncherKey | Out-Null }
         throw
+    }
+    if (-not $managerRegistered) {
+        try {
+            Invoke-CodexPlusInjection -Port $port -LauncherKey $LauncherKey | Out-Null
+        } catch {
+            Write-Warn "One-shot Codex Plus injection failed: $($_.Exception.Message)"
+        }
     }
 }
