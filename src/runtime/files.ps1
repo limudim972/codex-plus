@@ -106,7 +106,7 @@ End If
 If desktopLaunch Then
     shell.Environment("Process")("CODEX_PLUS_DESKTOP_LAUNCH") = "1"
 End If
-command = "powershell.exe -NoProfile -ExecutionPolicy Bypass -WindowStyle Hidden -File " & Chr(34) & "$escapedPatchScriptPath" & Chr(34) & " -LaunchCodexRtl"
+command = "powershell.exe -NoProfile -ExecutionPolicy Bypass -WindowStyle Minimized -File " & Chr(34) & "$escapedPatchScriptPath" & Chr(34) & " -LaunchCodexRtl"
 launchSplashCommand = "powershell.exe -NoProfile -ExecutionPolicy Bypass -WindowStyle Hidden -File " & Chr(34) & "$escapedPatchScriptPath" & Chr(34) & " -ShowLaunchSplash"
 If preferredPort > 0 Then
     command = command & " -PreferredPort " & CStr(preferredPort)
@@ -117,7 +117,7 @@ If instanceKey <> "" Then
     launchSplashCommand = launchSplashCommand & " -LauncherKey " & Chr(34) & instanceKey & Chr(34)
 End If
 shell.Run launchSplashCommand, 0, False
-shell.Run command, 0, False
+shell.Run command, 7, False
 "@
 }
 

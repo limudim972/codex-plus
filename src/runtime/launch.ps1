@@ -1485,6 +1485,219 @@ function Get-CodexDesktopProcesses {
     }
 
     try {
+        if (-not ('CodexPlusNativeProcesses' -as [type])) {
+            Add-Type -TypeDefinition @'
+using System;
+using System.Collections.Generic;
+using System.Runtime.InteropServices;
+using System.Text;
+
+public class CodexPlusNativeProcessInfo {
+    public int ProcessId;
+    public int ParentProcessId;
+    public string ExecutablePath;
+    public string CommandLine;
+    public string ProcessName;
+}
+
+public static class CodexPlusNativeProcesses {
+    [StructLayout(LayoutKind.Sequential)]
+    private struct PROCESS_BASIC_INFORMATION {
+        public IntPtr Reserved1;
+        public IntPtr PebBaseAddress;
+        public IntPtr Reserved2_0;
+        public IntPtr Reserved2_1;
+        public IntPtr UniqueProcessId;
+        public IntPtr InheritedFromUniqueProcessId;
+    }
+
+    [DllImport("ntdll.dll")]
+    private static extern int NtQueryInformationProcess(IntPtr processHandle, int processInformationClass, ref PROCESS_BASIC_INFORMATION processInformation, int processInformationLength, out int returnLength);
+
+    [DllImport("kernel32.dll", SetLastError = true)]
+    private static extern IntPtr OpenProcess(int processAccess, bool bInheritHandle, int processId);
+
+    [DllImport("kernel32.dll", SetLastError = true)]
+    private static extern bool ReadProcessMemory(IntPtr hProcess, IntPtr lpBaseAddress, byte[] lpBuffer, int nSize, out IntPtr lpNumberOfBytesRead);
+
+    [DllImport("kernel32.dll", SetLastError = true)]
+    private static extern bool CloseHandle(IntPtr hObject);
+
+    [DllImport("kernel32.dll", SetLastError = true)]
+    private static extern bool QueryFullProcessImageName(IntPtr hProcess, int dwFlags, StringBuilder lpExeName, ref int lpdwSize);
+
+    private const int PROCESS_QUERY_LIMITED_INFORMATION = 0x1000;
+    private const int PROCESS_VM_READ = 0x0010;
+
+    public static string GetCommandLine(int processId) {
+        IntPtr hProcess = OpenProcess(PROCESS_QUERY_LIMITED_INFORMATION | PROCESS_VM_READ, false, processId);
+        if (hProcess == IntPtr.Zero) return "";
+        try {
+            PROCESS_BASIC_INFORMATION pbi = new PROCESS_BASIC_INFORMATION();
+            int returnLength;
+            int status = NtQueryInformationProcess(hProcess, 0, ref pbi, Marshal.SizeOf(pbi), out returnLength);
+            if (status != 0 || pbi.PebBaseAddress == IntPtr.Zero) return "";
+
+            IntPtr processParametersPtr = IntPtr.Zero;
+            byte[] ptrBuffer = new byte[IntPtr.Size];
+            IntPtr bytesRead;
+            int procParamsOffset = IntPtr.Size == 8 ? 0x20 : 0x10;
+            if (!ReadProcessMemory(hProcess, pbi.PebBaseAddress + procParamsOffset, ptrBuffer, ptrBuffer.Length, out bytesRead)) {
+                return "";
+            }
+
+            if (IntPtr.Size == 8) {
+                processParametersPtr = new IntPtr(BitConverter.ToInt64(ptrBuffer, 0));
+            } else {
+                processParametersPtr = new IntPtr(BitConverter.ToInt32(ptrBuffer, 0));
+            }
+
+            if (processParametersPtr == IntPtr.Zero) return "";
+
+            int cmdLineOffset = IntPtr.Size == 8 ? 0x70 : 0x40;
+            int unicodeStructSize = IntPtr.Size == 8 ? 16 : 8;
+            byte[] cmdLineStructBuffer = new byte[unicodeStructSize];
+            if (!ReadProcessMemory(hProcess, processParametersPtr + cmdLineOffset, cmdLineStructBuffer, cmdLineStructBuffer.Length, out bytesRead)) {
+                return "";
+            }
+
+            ushort length = BitConverter.ToUInt16(cmdLineStructBuffer, 0);
+            IntPtr bufferPtr = IntPtr.Size == 8 ?
+                new IntPtr(BitConverter.ToInt64(cmdLineStructBuffer, 8)) :
+                new IntPtr(BitConverter.ToInt32(cmdLineStructBuffer, 4));
+
+            if (length == 0 || bufferPtr == IntPtr.Zero) return "";
+
+            byte[] cmdBuffer = new byte[length];
+            if (!ReadProcessMemory(hProcess, bufferPtr, cmdBuffer, length, out bytesRead)) {
+                return "";
+            }
+
+            return Encoding.Unicode.GetString(cmdBuffer);
+        } catch {
+            return "";
+        } finally {
+            CloseHandle(hProcess);
+        }
+    }
+
+    public static string GetExecutablePath(int processId) {
+        IntPtr hProcess = OpenProcess(PROCESS_QUERY_LIMITED_INFORMATION, false, processId);
+        if (hProcess == IntPtr.Zero) return "";
+        try {
+            StringBuilder sb = new StringBuilder(1024);
+            int size = sb.Capacity;
+            if (QueryFullProcessImageName(hProcess, 0, sb, ref size)) {
+                return sb.ToString();
+            }
+            return "";
+        } finally {
+            CloseHandle(hProcess);
+        }
+    }
+
+    public static int GetParentProcessId(int processId) {
+        IntPtr hProcess = OpenProcess(PROCESS_QUERY_LIMITED_INFORMATION, false, processId);
+        if (hProcess == IntPtr.Zero) return 0;
+        try {
+            PROCESS_BASIC_INFORMATION pbi = new PROCESS_BASIC_INFORMATION();
+            int returnLength;
+            int status = NtQueryInformationProcess(hProcess, 0, ref pbi, Marshal.SizeOf(pbi), out returnLength);
+            if (status == 0) {
+                return pbi.InheritedFromUniqueProcessId.ToInt32();
+            }
+            return 0;
+        } finally {
+            CloseHandle(hProcess);
+        }
+    }
+
+    public static CodexPlusNativeProcessInfo[] GetDesktopProcesses(string[] processNames) {
+        var result = new List<CodexPlusNativeProcessInfo>();
+        if (processNames == null || processNames.Length == 0) return result.ToArray();
+
+        var nameSet = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+        foreach (var name in processNames) {
+            if (!string.IsNullOrWhiteSpace(name)) {
+                string trimmed = name.Trim();
+                if (trimmed.EndsWith(".exe", StringComparison.OrdinalIgnoreCase)) {
+                    trimmed = trimmed.Substring(0, trimmed.Length - 4);
+                }
+                nameSet.Add(trimmed);
+            }
+        }
+
+        foreach (var processName in nameSet) {
+            System.Diagnostics.Process[] procs;
+            try {
+                procs = System.Diagnostics.Process.GetProcessesByName(processName);
+            } catch {
+                continue;
+            }
+
+            foreach (var proc in procs) {
+                try {
+                    int pid = proc.Id;
+                    string exePath = GetExecutablePath(pid);
+                    if (string.IsNullOrEmpty(exePath)) {
+                        try { exePath = proc.MainModule.FileName; } catch { }
+                    }
+
+                    if (!string.IsNullOrEmpty(exePath)) {
+                        string lower = exePath.ToLowerInvariant();
+                        if (lower.IndexOf(@"\windowsapps\openai.codex_", StringComparison.OrdinalIgnoreCase) < 0 &&
+                            lower.IndexOf(@"\openai.codex", StringComparison.OrdinalIgnoreCase) < 0 &&
+                            lower.IndexOf(@"\chatgpt.exe", StringComparison.OrdinalIgnoreCase) < 0 &&
+                            lower.IndexOf(@"\codex.exe", StringComparison.OrdinalIgnoreCase) < 0) {
+                            continue;
+                        }
+                        if (lower.IndexOf(@"\resources\", StringComparison.OrdinalIgnoreCase) >= 0) {
+                            continue;
+                        }
+                    }
+
+                    string cmdLine = GetCommandLine(pid);
+                    int parentPid = GetParentProcessId(pid);
+
+                    result.Add(new CodexPlusNativeProcessInfo {
+                        ProcessId = pid,
+                        ParentProcessId = parentPid,
+                        ExecutablePath = exePath,
+                        CommandLine = cmdLine,
+                        ProcessName = proc.ProcessName + ".exe"
+                    });
+                } catch {
+                } finally {
+                    try { proc.Dispose(); } catch { }
+                }
+            }
+        }
+
+        return result.ToArray();
+    }
+}
+'@
+        }
+        
+        if ('CodexPlusNativeProcesses' -as [type]) {
+            $nativeProcs = [CodexPlusNativeProcesses]::GetDesktopProcesses($processNames)
+            if ($null -ne $nativeProcs) {
+                return @(
+                    $nativeProcs | ForEach-Object {
+                        [pscustomobject]@{
+                            ProcessId = $_.ProcessId
+                            ParentProcessId = $_.ParentProcessId
+                            ExecutablePath = $_.ExecutablePath
+                            CommandLine = $_.CommandLine
+                            Name = $_.ProcessName
+                        }
+                    }
+                )
+            }
+        }
+    } catch {
+    }
+    try {
         return @(
             Get-CimInstance Win32_Process -Filter $nameFilter -OperationTimeoutSec 3 -ErrorAction Stop |
                 Where-Object {
@@ -1616,26 +1829,25 @@ function Start-CodexWithRtlDebug {
         [int]$WindowTitleOrdinal = 0
     )
 
-    $startInfo = [System.Diagnostics.ProcessStartInfo]::new()
-    $startInfo.FileName = $AppExe
-    $startInfo.Arguments = Join-CodexRtlProcessArguments -Arguments (New-CodexRtlLaunchArguments -Port $Port -LauncherKey $LauncherKey -WindowTitleOrdinal $WindowTitleOrdinal)
-    $startInfo.WorkingDirectory = Get-CodexRtlWorkingDirectory
-    $startInfo.UseShellExecute = $false
-
+    $argList = Join-CodexRtlProcessArguments -Arguments (New-CodexRtlLaunchArguments -Port $Port -LauncherKey $LauncherKey -WindowTitleOrdinal $WindowTitleOrdinal)
+    $workingDir = Get-CodexRtlWorkingDirectory
     $userDataDir = Get-CodexPlusUserDataDirectory -LauncherKey $LauncherKey
+
     if ($userDataDir) {
-        $startInfo.EnvironmentVariables['CODEX_ELECTRON_USER_DATA_PATH'] = $userDataDir
+        $env:CODEX_ELECTRON_USER_DATA_PATH = $userDataDir
     }
 
-    [System.Diagnostics.Process]::Start($startInfo) | Out-Null
+    Start-Process -FilePath $AppExe -ArgumentList $argList -WorkingDirectory $workingDir -WindowStyle Normal -ErrorAction SilentlyContinue | Out-Null
+
+    if ($userDataDir) {
+        Remove-Item Env:CODEX_ELECTRON_USER_DATA_PATH -ErrorAction SilentlyContinue
+    }
 }
 
 function Start-CodexNormally {
     param([Parameter(Mandatory)][string]$AppExe)
 
-    Start-Process `
-        -FilePath $AppExe `
-        -WorkingDirectory (Split-Path -Parent $AppExe) | Out-Null
+    Start-Process -FilePath $AppExe -WorkingDirectory (Split-Path -Parent $AppExe) -WindowStyle Normal -ErrorAction SilentlyContinue | Out-Null
 }
 
 function Start-CodexForRtl {
@@ -1914,15 +2126,13 @@ function Invoke-CodexPlusInjection {
             # context just after Runtime.evaluate returns. Retry briefly so
             # the native taskbar title observes the project name as soon as it
             # becomes available, instead of leaving the window on its launch
-            # title until the next polling cycle.
-            Start-Sleep -Milliseconds 100
-            Update-CodexWindowTitles -Port $Port -LauncherKey $LauncherKey | Out-Null
-            Start-Sleep -Milliseconds 250
-            Update-CodexWindowTitles -Port $Port -LauncherKey $LauncherKey | Out-Null
-            Start-Sleep -Milliseconds 500
-            Update-CodexWindowTitles -Port $Port -LauncherKey $LauncherKey | Out-Null
-            Start-Sleep -Milliseconds 1000
-            Update-CodexWindowTitles -Port $Port -LauncherKey $LauncherKey | Out-Null
+            # Stop retrying as soon as titles are stable to avoid unnecessary
+            # DevTools round-trips on targets that resolve quickly.
+            foreach ($titleSyncDelay in @(100, 250, 500, 1000)) {
+                Start-Sleep -Milliseconds $titleSyncDelay
+                $titleChanged = Update-CodexWindowTitles -Port $Port -LauncherKey $LauncherKey
+                if (-not $titleChanged) { break }
+            }
         } catch {
             Write-Warn "Codex Plus injection failed for target '$($target.title)': $($_.Exception.Message)"
         }

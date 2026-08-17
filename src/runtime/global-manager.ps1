@@ -151,9 +151,10 @@ function Register-CodexPlusManagerInstance {
     )
 
     Ensure-CodexPlusGlobalManager | Out-Null
+    $resolvedKey = if ([string]::IsNullOrWhiteSpace($LauncherKey)) { 'default' } else { $LauncherKey }
     $response = Send-CodexPlusManagerCommand -Command @{
         action = 'register'
-        launcher_key = $LauncherKey
+        launcher_key = $resolvedKey
         port = $Port
         user_data_dir = $UserDataDirectory
     }
@@ -166,7 +167,8 @@ function Register-CodexPlusManagerInstance {
 function Unregister-CodexPlusManagerInstance {
     param([AllowEmptyString()][string]$LauncherKey)
     try {
-        Send-CodexPlusManagerCommand -Command @{ action = 'unregister'; launcher_key = $LauncherKey } -ConnectTimeoutMilliseconds 250
+        $resolvedKey = if ([string]::IsNullOrWhiteSpace($LauncherKey)) { 'default' } else { $LauncherKey }
+        Send-CodexPlusManagerCommand -Command @{ action = 'unregister'; launcher_key = $resolvedKey } -ConnectTimeoutMilliseconds 250
     } catch {
         $null
     }
@@ -202,6 +204,7 @@ function Start-CodexPlusGlobalManager {
         $shared = [hashtable]::Synchronized(@{
             Queue = [Collections.Concurrent.ConcurrentQueue[object]]::new()
             Signal = [Threading.AutoResetEvent]::new($false)
+            Watcher = $null
         })
         $instances = @{}
         $scheduled = @{}
@@ -389,12 +392,21 @@ try {
     $matching = @(Get-CodexDesktopProcesses | Where-Object {
         Test-CodexProcessMatchesCodexPlusInstance -Process $_ -Port $Instance.Port -LauncherKey $Instance.Key
     })
-    foreach ($process in $matching) { $Instance.SeenProcessIds[[string]$process.ProcessId] = $true }
+    foreach ($process in $matching) {
+        $Instance.SeenProcessIds[[string]$process.ProcessId] = $true
+        if ($Shared.Watcher) {
+            try { $Shared.Watcher.AddWatchedProcessId([int]$process.ProcessId) } catch { }
+        }
+    }
     if ($matching.Count -gt 0) { $Instance.HasSeenProcess = $true }
-    if ((Get-CodexVisibleProcessCount -Port $Instance.Port -LauncherKey $Instance.Key) -gt 0) { $Instance.HasSeenWindow = $true }
+    if ((Get-CodexVisibleProcessCount -Port $Instance.Port -LauncherKey $Instance.Key) -gt 0) {
+        $Instance.HasSeenWindow = $true
+    }
 
     $targets = @(Get-CodexDevToolsTargets -Port $Instance.Port | Where-Object { Test-CodexDevToolsTarget -Target $_ })
-    if ($targets.Count -gt 0) { $Instance.HasSeenTarget = $true }
+    if ($targets.Count -gt 0) {
+        $Instance.HasSeenTarget = $true
+    }
     if (-not $Instance.Payload) { $Instance.Payload = Get-CodexPlusPayloadBundle }
     foreach ($target in $targets) {
         $targetId = [string]$target.id
@@ -432,6 +444,11 @@ try {
             param([string]$Key, [switch]$StopProcesses)
             if (-not $instances.ContainsKey($Key)) { return }
             $instance = $instances[$Key]
+            if ($shared.Watcher) {
+                foreach ($pidStr in @($instance.SeenProcessIds.Keys)) {
+                    try { $shared.Watcher.RemoveWatchedProcessId([int]$pidStr) } catch { }
+                }
+            }
             if ($StopProcesses) {
                 $knownProcessIds = @($instance.SeenProcessIds.Keys | ForEach-Object { [int]$_ })
                 try {
@@ -784,7 +801,8 @@ try {
                 'status' { return Get-ManagerStatus }
                 'register' {
                     $key = [string]$Request.launcher_key
-                    if ([string]::IsNullOrWhiteSpace($key) -or [int]$Request.port -le 0) {
+                    if ([string]::IsNullOrWhiteSpace($key)) { $key = 'default' }
+                    if ([int]$Request.port -le 0) {
                         return [ordered]@{ ok=$false; error='launcher_key and port are required' }
                     }
                     if ($instances.ContainsKey($key)) { Remove-ManagerInstance -Key $key }
@@ -1085,6 +1103,7 @@ try {
         Register-ManagerEvents
         try {
             $nativeWindowWatcher = Start-CodexNativeWindowEventWatcher -Queue $shared.Queue -Signal $shared.Signal
+            $shared.Watcher = $nativeWindowWatcher
             [void]$eventSources.Add($nativeWindowWatcher)
             Write-ManagerLog -Event 'native-window-hook-started' -Fields @{ hook_events='EVENT_OBJECT_DESTROY,EVENT_OBJECT_SHOW,EVENT_OBJECT_HIDE' }
         } catch {
@@ -1197,6 +1216,18 @@ try {
         } catch { }
         try {
             if ($dashboard -and $dashboard.PowerShell) {
+                try {
+                    $client = [System.Net.Sockets.TcpClient]::new()
+                    $asyncConnect = $client.BeginConnect('127.0.0.1', 3000, $null, $null)
+                    if ($asyncConnect.AsyncWaitHandle.WaitOne(100)) {
+                        $client.EndConnect($asyncConnect)
+                        $stream = $client.GetStream()
+                        $writer = [System.IO.StreamWriter]::new($stream)
+                        $writer.WriteLine("GET /__codex_shutdown HTTP/1.1`r`nHost: 127.0.0.1:3000`r`nConnection: close`r`n`r`n")
+                        $writer.Flush()
+                    }
+                    $client.Close()
+                } catch { }
                 $dashboard.PowerShell.Stop()
                 $dashboard.PowerShell.Dispose()
             }

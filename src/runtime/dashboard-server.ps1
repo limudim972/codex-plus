@@ -200,10 +200,18 @@ function Write-Response {
 
 try {
     $listener.Start()
-    while ($true) {
-        $context = $listener.GetContext()
+    while ($listener.IsListening) {
+        try {
+            $context = $listener.GetContext()
+        } catch [System.Net.HttpListenerException], [System.ObjectDisposedException] {
+            break
+        }
         try {
             $path = $context.Request.Url.AbsolutePath
+            if ($path -eq '/__codex_shutdown') {
+                Write-Response $context 200 'text/plain; charset=utf-8' ([Text.Encoding]::UTF8.GetBytes('OK'))
+                break
+            }
             if ($path -eq '/api/summary') { $body = (Get-Summary | ConvertTo-Json -Depth 20 -Compress); Write-Response $context 200 'application/json; charset=utf-8' ([Text.Encoding]::UTF8.GetBytes($body)); continue }
             if ($path -eq '/api/threads') { $period = $context.Request.QueryString['period']; if (-not $period) { $period='last_week' }; $body = (Get-ThreadData $period | ConvertTo-Json -Depth 20 -Compress); Write-Response $context 200 'application/json; charset=utf-8' ([Text.Encoding]::UTF8.GetBytes($body)); continue }
             $relative = if ($path -eq '/') { 'index.html' } else { $path.TrimStart('/') }
@@ -215,3 +223,4 @@ try {
         } catch { try { Write-Response $context 500 'text/plain; charset=utf-8' ([Text.Encoding]::UTF8.GetBytes($_.Exception.Message)) } catch {} }
     }
 } finally { if ($listener.IsListening) { $listener.Stop() }; $listener.Close() }
+
