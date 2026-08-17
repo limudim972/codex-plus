@@ -14,7 +14,7 @@ function Get-CodexNewChatButtonPayload {
   const UTILITY_BAR_SCROLL_SELECTOR = '[data-composer-utility-bar-scroll-area]';
   const PERSISTENT_UTILITY_BAR_ATTR = 'data-codex-plus-persistent-composer-utility-bar';
   const CONVERSATION_ID_ATTR = 'data-above-composer-conversation-id';
-  const UTILITY_BAR_STORAGE_KEY = 'codex-plus-composer-utility-bars-v4';
+  const UTILITY_BAR_STORAGE_KEY = 'codex-plus-composer-utility-bars-v5';
   const PENDING_CONTEXT_STORAGE_KEY = 'codex-plus-new-chat-pending-context-v1';
   const MAX_STORED_UTILITY_BARS = 50;
   const RESTORE_TIMEOUT_MS = 15000;
@@ -344,6 +344,18 @@ function Get-CodexNewChatButtonPayload {
         }
         element.style.pointerEvents = 'none';
       });
+    const snapshotRow = snapshot.querySelector(UTILITY_BAR_SCROLL_SELECTOR)?.firstElementChild;
+    const snapshotProject = normalizeText(snapshotRow?.querySelector('[data-composer-navigation-target="workspace-project"]')?.textContent);
+    const snapshotBranch = Array.from(snapshotRow?.children || []).find((child) => {
+      const value = normalizeText(child.textContent);
+      return value && value !== snapshotProject && value !== 'Local' && value !== 'New chat' && value !== 'Commit or push';
+    });
+    if (snapshotBranch) {
+      const valueNode = Array.from(snapshotBranch.querySelectorAll('span')).reverse()
+        .find((candidate) => normalizeText(candidate.textContent) === normalizeText(snapshotBranch.textContent))
+        || snapshotBranch;
+      valueNode.setAttribute('data-codex-plus-branch-value', 'true');
+    }
     return snapshot.outerHTML;
   }
 
@@ -374,7 +386,7 @@ function Get-CodexNewChatButtonPayload {
     location.innerHTML = '<svg width="20" height="20" viewBox="0 0 20 20" fill="none" xmlns="http://www.w3.org/2000/svg"><rect x="2.5" y="4.5" width="15" height="10.5" rx="1.5" stroke="currentColor" stroke-width="1.4"/><path d="M6 17h8" stroke="currentColor" stroke-width="1.4" stroke-linecap="round"/></svg><span>Local</span>';
     const branch = document.createElement('span');
     branch.className = 'flex items-center gap-2 px-1.5 py-1 text-base text-token-text-primary';
-    branch.innerHTML = '<svg width="20" height="20" viewBox="0 0 20 20" fill="none" xmlns="http://www.w3.org/2000/svg"><circle cx="6" cy="5" r="1.7" stroke="currentColor" stroke-width="1.4"/><circle cx="14" cy="15" r="1.7" stroke="currentColor" stroke-width="1.4"/><path d="M6 6.7v4.1c0 1.4 1.1 2.5 2.5 2.5H12M6 6.7v1.1c0 1.4 1.1 2.5 2.5 2.5H12V13.3" stroke="currentColor" stroke-width="1.4" stroke-linecap="round"/></svg><span>main</span>';
+    branch.innerHTML = '<svg width="20" height="20" viewBox="0 0 20 20" fill="none" xmlns="http://www.w3.org/2000/svg"><circle cx="6" cy="5" r="1.7" stroke="currentColor" stroke-width="1.4"/><circle cx="14" cy="15" r="1.7" stroke="currentColor" stroke-width="1.4"/><path d="M6 6.7v4.1c0 1.4 1.1 2.5 2.5 2.5H12M6 6.7v1.1c0 1.4 1.1 2.5 2.5 2.5H12V13.3" stroke="currentColor" stroke-width="1.4" stroke-linecap="round"/></svg><span data-codex-plus-branch-value="true">' + currentBranchName() + '</span>';
     const newChat = document.createElement('button');
     newChat.type = 'button';
     newChat.textContent = 'New chat';
@@ -390,6 +402,27 @@ function Get-CodexNewChatButtonPayload {
     commit.className = 'no-drag ms-auto rounded-md border border-transparent px-2.5 py-1 text-sm text-token-text-primary';
     bar.append(project, location, branch, newChat, commit);
     return bar;
+  }
+
+  function currentBranchName() {
+    const switchBranchButton = document.querySelector('button[title="Switch branch"]');
+    const switchBranchValue = normalizeText(switchBranchButton?.textContent);
+    if (switchBranchValue) return switchBranchValue;
+    const nativeRow = document.querySelector('[data-composer-utility-bar-scroll-area] > *');
+    const nativeBranch = Array.from(nativeRow?.children || [])
+      .map((child) => normalizeText(child.textContent))
+      .find((value) => value && value !== currentProjectName() && value !== 'Local' && value !== 'New chat' && value !== 'Commit or push');
+    if (nativeBranch) return nativeBranch;
+    const active = document.querySelector('[data-app-action-sidebar-thread-active]:not([data-app-action-sidebar-thread-active="false"])');
+    return normalizeText(active?.closest('[data-codex-plus-thread-branch]')?.getAttribute('data-codex-plus-thread-branch'))
+      || normalizeText(active?.getAttribute('data-codex-plus-thread-branch'))
+      || 'unknown';
+  }
+
+  function syncPersistentBranchLabels() {
+    const branchName = currentBranchName();
+    document.querySelectorAll('[' + PERSISTENT_UTILITY_BAR_ATTR + '] [data-codex-plus-branch-value]')
+      .forEach((label) => { label.textContent = branchName; });
   }
 
   function createProjectFolderIcon() {
@@ -438,6 +471,7 @@ function Get-CodexNewChatButtonPayload {
     // Re-assert the decorative icon on every install pass so it cannot flash
     // briefly and then disappear from the persistent row.
     host.querySelectorAll('[' + PERSISTENT_UTILITY_BAR_ATTR + ']').forEach(ensureProjectFolderIcon);
+    syncPersistentBranchLabels();
 
     const nativeScrollArea = Array.from(root.querySelectorAll(UTILITY_BAR_SCROLL_SELECTOR))
       .find((candidate) => !candidate.closest('[' + PERSISTENT_UTILITY_BAR_ATTR + ']'));
