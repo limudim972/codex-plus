@@ -638,6 +638,22 @@ try {
             }
         }
 
+        function Refresh-PrematureSessionWatchdog {
+            $sessionsRoot = Join-Path $env:USERPROFILE '.codex\sessions'
+            if (-not (Test-Path -LiteralPath $sessionsRoot -PathType Container)) { return }
+            $paths = @(Get-ChildItem -LiteralPath $sessionsRoot -Recurse -Filter '*.jsonl' -File -ErrorAction SilentlyContinue |
+                Sort-Object LastWriteTime -Descending | Select-Object -First 100 | ForEach-Object { $_.FullName })
+            if ($paths.Count -gt 0) { Update-CodexPrematureSessionState -Paths $paths }
+            foreach ($path in @($script:CodexPlusPrematurePending.Keys)) {
+                $pending = $script:CodexPlusPrematurePending[$path]
+                if (-not $pending) { continue }
+                $due = if ($pending.shell_error) { [DateTime]::UtcNow } else { $pending.last_activity.AddSeconds(120) }
+                $delay = [Math]::Max(1, [int][Math]::Min([int]::MaxValue, ($due - [DateTime]::UtcNow).TotalMilliseconds))
+                Set-ManagerTask -Key ("session-alert:$path") -DelayMilliseconds $delay -Kind 'session-alert' -Data $path
+            }
+            Set-ManagerTask -Key 'session-scan' -DelayMilliseconds 30000 -Kind 'session-scan' -Data $null
+        }
+
         function Publish-PrematureAlert {
             param([string]$Path)
             Update-CodexPrematureSessionState -Paths @($Path)
@@ -1055,6 +1071,7 @@ try {
                     Set-ManagerTask -Key ("cdp-retry:$key") -DelayMilliseconds $delays[$delayIndex] -Kind 'cdp-retry' -Data $key
                 }
                 'session-alert' { Publish-PrematureAlert -Path ([string]$Task.Data) }
+                'session-scan' { Refresh-PrematureSessionWatchdog }
                 'dashboard-start' { Start-ManagerDashboard }
                 'dashboard-check' {
                     if ($dashboard.PowerShell -and -not $dashboard.Async.IsCompleted -and -not (Test-TcpPortAvailable -Port 3000)) {
@@ -1084,6 +1101,7 @@ try {
         }
         Start-ManagerDashboard
         Set-ManagerTask -Key 'usage-startup' -DelayMilliseconds 500 -Kind 'usage-refresh' -Data $null
+        Set-ManagerTask -Key 'session-scan' -DelayMilliseconds 500 -Kind 'session-scan' -Data $null
         Set-ManagerTask -Key 'manager-idle' -DelayMilliseconds 10000 -Kind 'manager-idle' -Data $null
 
         $pipe = New-CodexPlusManagerPipeServer -Identity $identity

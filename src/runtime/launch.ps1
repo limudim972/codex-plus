@@ -623,6 +623,7 @@ function Update-CodexPrematureSessionState {
             $script:CodexPlusPrematurePending.Remove($path)
             continue
         }
+        $hasStartedTurn = @($sessionRecords | Where-Object { $_.type -eq 'event_msg' -and $_.payload.type -eq 'task_started' }).Count -gt 0
         $script:CodexPlusPrematurePending[$path] = [pscustomobject]@{
             name = Get-CodexSessionDisplayName -SessionId $sessionId
             session = $sessionId
@@ -639,6 +640,7 @@ function Update-CodexPrematureSessionState {
             error_message = ''
             error_code = ''
             shell_error = $false
+            orphaned_turn = $hasStartedTurn
             last_activity = $lastActivity
         }
     }
@@ -682,10 +684,12 @@ function Get-CodexPrematureSessionAlerts {
         foreach ($property in @('session','cwd','project','turn','last_type','record_line','record_timestamp','record_id','record_type','payload_name')) {
             $pending | Add-Member -NotePropertyName $property -NotePropertyValue $diagnostic.$property -Force
         }
-        $key = "$path|$($pending.last_activity.Ticks)"
+        $orphanedTurn = [bool]$pending.orphaned_turn
+        $key = "$path|$($pending.last_activity.Ticks)|orphaned"
         if ($script:CodexPlusPrematureAlerted.ContainsKey($key)) { continue }
         $script:CodexPlusPrematureAlerted[$key] = $true
         $pending | Add-Member -NotePropertyName age_seconds -NotePropertyValue $ageSeconds -Force
+        $pending | Add-Member -NotePropertyName orphaned_turn -NotePropertyValue $orphanedTurn -Force
         $alerts += $pending
     }
     return $alerts
@@ -708,7 +712,7 @@ Last event: $($Alert.last_type)
 Record: line $($Alert.record_line), $($Alert.record_type), id $($Alert.record_id)
 Record timestamp: $($Alert.record_timestamp)
 Age: $($Alert.age_seconds) seconds
-Triggered by: No new session row was written for at least 120 seconds, and the last row was not task_complete or turn_aborted.
+Triggered by: No new session row was written for at least 120 seconds after a turn started, and the session had no task_complete or turn_aborted event.
 "@
     $popupScript = @'
 Add-Type -AssemblyName System.Windows.Forms

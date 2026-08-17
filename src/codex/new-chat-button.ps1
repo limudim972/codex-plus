@@ -14,7 +14,7 @@ function Get-CodexNewChatButtonPayload {
   const UTILITY_BAR_SCROLL_SELECTOR = '[data-composer-utility-bar-scroll-area]';
   const PERSISTENT_UTILITY_BAR_ATTR = 'data-codex-plus-persistent-composer-utility-bar';
   const CONVERSATION_ID_ATTR = 'data-above-composer-conversation-id';
-  const UTILITY_BAR_STORAGE_KEY = 'codex-plus-composer-utility-bars-v2';
+  const UTILITY_BAR_STORAGE_KEY = 'codex-plus-composer-utility-bars-v3';
   const PENDING_CONTEXT_STORAGE_KEY = 'codex-plus-new-chat-pending-context-v1';
   const MAX_STORED_UTILITY_BARS = 50;
   const RESTORE_TIMEOUT_MS = 15000;
@@ -360,23 +360,25 @@ function Get-CodexNewChatButtonPayload {
     const bar = document.createElement('div');
     bar.setAttribute(PERSISTENT_UTILITY_BAR_ATTR, 'true');
     bar.setAttribute('aria-label', 'Composer context');
-    bar.className = 'z-0 relative -mb-2 flex min-w-0 items-center gap-1 px-2 py-1 text-sm text-token-text-tertiary';
+    bar.className = 'z-0 relative -mb-2 flex min-w-0 items-center gap-1 rounded-t-3xl border border-b-0 border-token-border bg-token-main-surface-secondary px-4 py-2 text-base text-token-text-tertiary';
     const project = document.createElement('button');
     project.type = 'button';
     project.textContent = currentProjectName() || 'Choose project';
     project.setAttribute('aria-label', 'Change project: ' + project.textContent);
     project.setAttribute('data-composer-navigation-target', 'workspace-project');
-    project.className = 'no-drag rounded-md border border-transparent px-1.5 py-1 text-sm text-token-text-tertiary';
+    project.className = 'no-drag flex items-center gap-2 rounded-md border border-transparent px-1.5 py-1 text-base text-token-text-primary';
     project.style.pointerEvents = 'none';
+    project.insertBefore(createProjectFolderIcon(), project.firstChild);
     const location = document.createElement('span');
-    location.textContent = 'Local';
-    location.className = 'px-1.5 py-1';
+    location.className = 'flex items-center gap-2 px-1.5 py-1 text-base text-token-text-primary';
+    location.innerHTML = '<svg width="20" height="20" viewBox="0 0 20 20" fill="none" xmlns="http://www.w3.org/2000/svg"><rect x="2.5" y="4.5" width="15" height="10.5" rx="1.5" stroke="currentColor" stroke-width="1.4"/><path d="M6 17h8" stroke="currentColor" stroke-width="1.4" stroke-linecap="round"/></svg><span>Local</span>';
     const newChat = document.createElement('button');
     newChat.type = 'button';
     newChat.textContent = 'New chat';
     newChat.setAttribute(BUTTON_ATTR, 'true');
     newChat.setAttribute('aria-label', 'New chat');
-    newChat.className = 'no-drag rounded-md border border-transparent px-2.5 py-1 text-sm text-token-text-primary';
+    newChat.className = 'no-drag flex items-center gap-2 rounded-md border border-transparent px-2.5 py-1 text-base text-token-text-primary';
+    newChat.appendChild(createNewChatIcon());
     const commit = document.createElement('button');
     commit.type = 'button';
     commit.textContent = 'Commit or push';
@@ -385,6 +387,17 @@ function Get-CodexNewChatButtonPayload {
     commit.className = 'no-drag ms-auto rounded-md border border-transparent px-2.5 py-1 text-sm text-token-text-primary';
     bar.append(project, location, newChat, commit);
     return bar;
+  }
+
+  function createProjectFolderIcon() {
+    const template = document.createElement('span');
+    template.innerHTML = '<svg width="20" height="20" viewBox="0 0 20 20" fill="none" xmlns="http://www.w3.org/2000/svg" class="icon-sm shrink-0" aria-hidden="true"><path d="M2.5 5.83333C2.5 4.91286 3.24619 4.16667 4.16667 4.16667H8.33333L10 5.83333H15.8333C16.7538 5.83333 17.5 6.57953 17.5 7.5V14.1667C17.5 15.0871 16.7538 15.8333 15.8333 15.8333H4.16667C3.24619 15.8333 2.5 15.0871 2.5 14.1667V5.83333Z" stroke="currentColor" stroke-width="1.4"/></svg>';
+    return template.firstElementChild;
+  }
+
+  function ensureProjectFolderIcon(bar) {
+    const project = bar?.querySelector('button[aria-label^="Project:"], button[aria-label^="Change project:"]') || bar?.querySelector('button');
+    if (project && !project.querySelector('svg')) project.insertBefore(createProjectFolderIcon(), project.firstChild);
   }
 
   function wirePersistentNewChatButton(bar) {
@@ -470,6 +483,7 @@ function Get-CodexNewChatButtonPayload {
     }
     if (!snapshotHtml) {
       const fallbackBar = createFallbackUtilityBar();
+      ensureProjectFolderIcon(fallbackBar);
       wirePersistentNewChatButton(fallbackBar);
       wirePersistentCommitPushButton(fallbackBar);
       host.insertBefore(fallbackBar, host.firstElementChild);
@@ -478,6 +492,7 @@ function Get-CodexNewChatButtonPayload {
 
     const persistentBar = utilityBarFromSnapshot(snapshotHtml);
     if (!persistentBar) return;
+    ensureProjectFolderIcon(persistentBar);
     wirePersistentNewChatButton(persistentBar);
     wirePersistentCommitPushButton(persistentBar);
     host.insertBefore(persistentBar, host.firstElementChild);

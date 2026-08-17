@@ -1150,7 +1150,7 @@ Assert-True ($newChatPayload.Contains('restorePendingNewChatContext')) 'Composer
 Assert-True ($newChatPayload.Contains('data-codex-plus-persistent-composer-utility-bar')) 'Composer context row should expose a dedicated marker after the native row is removed.'
 Assert-True ($newChatPayload.Contains('data-composer-utility-bar-scroll-area')) 'Composer context persistence should capture the native utility bar before the first message hides it.'
 Assert-True ($newChatPayload.Contains('data-above-composer-conversation-id')) 'Composer context persistence should key captured utility bars to the created conversation.'
-Assert-True ($newChatPayload.Contains('codex-plus-composer-utility-bars-v2')) 'Composer context persistence should use a new storage version after changing snapshot structure.'
+Assert-True ($newChatPayload.Contains('codex-plus-composer-utility-bars-v3')) 'Composer context persistence should use a new storage version after changing snapshot structure.'
 Assert-True ($newChatPayload.Contains('createPersistentUtilityBarSnapshot')) 'Composer context persistence should clone the native row without moving React-owned nodes.'
 Assert-True ($newChatPayload.Contains('isComposerUtilityBarReady')) 'Composer context persistence should wait for the native utility row to finish rendering before cloning it.'
 Assert-True ($newChatPayload.Contains('getComposerUtilityBarSignature')) 'Composer context persistence should detect changes while the native utility row is still assembling.'
@@ -1334,6 +1334,16 @@ try {
     Assert-Equal 1 $prematureAlerts.Count 'A stale non-terminal session should produce one watchdog alert.'
     Assert-Equal 'token_count' $prematureAlerts[0].last_type 'Watchdog alerts should retain the latest session event type.'
 
+$interruptedSessionId = '019fe0b7-f7ad-78e3-81aa-f6e581da20be'
+$interruptedSessionPath = Join-Path $tmpPrematureSessionRoot ".codex\sessions\2026\08\08\rollout-2026-08-08T12-37-00-$interruptedSessionId.jsonl"
+(
+    (@{ type='session_meta'; payload=@{ id=$interruptedSessionId; cwd='C:\Users\Noam\Documents\code\codex-plus' } } | ConvertTo-Json -Compress),
+    (@{ type='event_msg'; timestamp=$staleTimestamp; payload=@{ type='turn_aborted'; turn_id='turn-interrupted-id' } } | ConvertTo-Json -Compress)
+) | Set-Content -LiteralPath $interruptedSessionPath -Encoding UTF8
+Update-CodexPrematureSessionState -Paths @($interruptedSessionPath)
+$interruptedAlerts = @(Get-CodexPrematureSessionAlerts | Where-Object { $_.path -eq $interruptedSessionPath })
+Assert-Equal 0 $interruptedAlerts.Count 'A user-aborted session should not produce a watchdog alert.'
+
     $goalContinuationSessionId = '019fe0b7-f7ad-78e3-81aa-f6e581da20bf'
     $goalContinuationSessionPath = Join-Path $tmpPrematureSessionRoot ".codex\sessions\2026\08\08\rollout-2026-08-08T12-36-00-$goalContinuationSessionId.jsonl"
     @(
@@ -1396,6 +1406,8 @@ Assert-True ($launchSource.Contains('Update-CodexWindowTitles -Port $Port -Launc
 Assert-True ($launchSource.Contains('__CODEX_PLUS_USAGE_WINDOW_TITLE')) 'Native title synchronization should publish the same usage title to the app header.'
 Assert-True ($launchSource.Contains('Get-CodexPrematureSessionAlerts')) 'Runtime should monitor stale sessions for missing terminal events.'
 Assert-True ($launchSource.Contains('Update-CodexPrematureSessionState')) 'Task monitor should update pending state only for changed session paths.'
+Assert-True ($managerSource.Contains('Refresh-PrematureSessionWatchdog')) 'Global manager should periodically scan session files so missed file events still reach the watchdog.'
+Assert-True ($managerSource.Contains("Set-ManagerTask -Key 'session-scan'")) 'Global manager should schedule recurring watchdog scans.'
 Assert-True ($launchSource.Contains('CodexPlusPrematurePending')) 'Task monitor should retain changed files until they finish or become inactive.'
 Assert-True ($launchSource.Contains('[DateTime]::Parse([string]$last[0].timestamp).ToUniversalTime()')) 'Premature-session activity should prefer the latest JSONL record timestamp over file mtime.'
 Assert-True ($launchSource.Contains('$diagnostic.record_timestamp')) 'Premature-session alerts should re-read the latest JSONL timestamp before alerting.'
