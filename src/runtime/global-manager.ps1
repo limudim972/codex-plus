@@ -762,7 +762,7 @@ try {
                 return
             }
             $dashboardScript = Join-Path $runtimeRoot 'src\runtime\dashboard-server.ps1'
-            $dashboardRoot = Join-Path $env:USERPROFILE 'Documents\code\Codex Usage Dashboard'
+            $dashboardRoot = Join-Path $runtimeRoot 'dashboard'
             $powerShell = [PowerShell]::Create()
             [void]$powerShell.AddCommand($dashboardScript).AddParameter('DashboardRoot', $dashboardRoot).AddParameter('Port', 3000)
             $dashboard.PowerShell = $powerShell

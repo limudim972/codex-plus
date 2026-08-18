@@ -14,6 +14,7 @@ function Install-CodexRtlRuntimeFiles {
         'patch.ps1',
         'src/runtime/assets/codex-plus.ico',
         'src/runtime/dashboard-server.ps1',
+        'src/runtime/dashboard/index.html',
         'src/runtime/global-manager.ps1',
         'src/shared/logging.ps1',
         'src/shared/prompting.ps1',

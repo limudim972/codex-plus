@@ -1,0 +1,972 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Codex State Viewer</title>
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
+    <!-- Chart.js CDN -->
+    <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+    <style>
+        :root {
+            --bg-dark: #0a0a0c;
+            --bg-card: rgba(255, 255, 255, 0.05);
+            --border-color: rgba(255, 255, 255, 0.1);
+            --text-primary: #ffffff;
+            --text-secondary: #a1a1aa;
+            --accent: #6e5aff;
+            --accent-glow: rgba(110, 90, 255, 0.2);
+            --green: #10b981;
+            --orange: #f59e0b;
+        }
+        
+        * {
+            box-sizing: border-box;
+            margin: 0;
+            padding: 0;
+        }
+
+        body {
+            font-family: 'Inter', sans-serif;
+            background-color: var(--bg-dark);
+            color: var(--text-primary);
+            line-height: 1.6;
+            min-height: 100vh;
+            background-image: 
+                radial-gradient(circle at 15% 50%, var(--accent-glow), transparent 25%),
+                radial-gradient(circle at 85% 30%, rgba(16, 185, 129, 0.1), transparent 25%);
+            background-attachment: fixed;
+        }
+
+        .container {
+            max-width: 1400px;
+            margin: 0 auto;
+            padding: 40px 20px;
+        }
+
+        header {
+            margin-bottom: 40px;
+        }
+
+        h1 {
+            font-size: 2.5rem;
+            font-weight: 700;
+            background: linear-gradient(to right, #fff, #a1a1aa);
+            -webkit-background-clip: text;
+            -webkit-text-fill-color: transparent;
+            margin-bottom: 8px;
+        }
+
+        .stats-grid {
+            display: flex;
+            flex-wrap: nowrap;
+            gap: 24px;
+            margin-bottom: 30px;
+            overflow-x: auto;
+            padding-bottom: 4px;
+        }
+
+        @media (max-width: 1100px) {
+            .stats-grid {
+                flex-wrap: wrap;
+                overflow-x: visible;
+            }
+        }
+
+        .section-title {
+            font-size: 1.1rem;
+            font-weight: 600;
+            margin: 12px 0 16px;
+            color: var(--text-primary);
+        }
+
+        .stat-card {
+            flex: 0 0 280px;
+            display: flex;
+            flex-direction: column;
+            justify-content: flex-start;
+            background: var(--bg-card);
+            backdrop-filter: blur(12px);
+            -webkit-backdrop-filter: blur(12px);
+            border: 1px solid var(--border-color);
+            border-radius: 16px;
+            padding: 24px;
+            transition: transform 0.3s ease, box-shadow 0.3s ease;
+            position: relative;
+        }
+
+        .stat-card:hover {
+            transform: translateY(-5px);
+            box-shadow: 0 10px 30px rgba(0, 0, 0, 0.5);
+            border-color: rgba(255, 255, 255, 0.2);
+        }
+
+        .stat-title {
+            min-height: 1.2em;
+            color: var(--text-secondary);
+            font-size: 0.875rem;
+            font-weight: 500;
+            text-transform: uppercase;
+            letter-spacing: 0.05em;
+            margin-bottom: 8px;
+        }
+
+        .stat-value {
+            font-size: 2rem;
+            font-weight: 700;
+        }
+        
+        .stat-value.accent { color: var(--accent); }
+        .stat-value.green { color: var(--green); }
+        .stat-value.orange { color: var(--orange); }
+
+        .reset-list {
+            margin-top: 8px;
+            color: var(--text-secondary);
+            font-size: 0.95rem;
+            line-height: 1.5;
+            font-variant-numeric: tabular-nums;
+        }
+
+        .price-input {
+            background: rgba(0,0,0,0.3);
+            border: 1px solid var(--border-color);
+            color: #fff;
+            padding: 4px 8px;
+            border-radius: 6px;
+            width: 80px;
+            font-size: 0.8rem;
+            margin-left: 8px;
+            outline: none;
+        }
+        
+        .price-input:focus {
+            border-color: var(--accent);
+        }
+
+        .charts-grid {
+            display: grid;
+            grid-template-columns: 2fr 1fr;
+            gap: 24px;
+            margin-bottom: 40px;
+        }
+
+        .chart-container {
+            background: var(--bg-card);
+            backdrop-filter: blur(12px);
+            border: 1px solid var(--border-color);
+            border-radius: 16px;
+            padding: 24px;
+            height: 350px;
+            position: relative;
+        }
+
+        .table-container {
+            overflow: visible;
+            width: max-content;
+            min-width: 100%;
+        }
+
+        table {
+            width: 100%;
+            border-collapse: collapse;
+            text-align: left;
+        }
+
+        tbody.week-group {
+            border: 2px solid var(--accent);
+        }
+
+        th, td {
+            padding: 16px 24px;
+            border-bottom: 1px solid var(--border-color);
+        }
+
+        th {
+            font-size: 0.75rem;
+            text-transform: uppercase;
+            letter-spacing: 0.05em;
+            color: var(--text-secondary);
+            font-weight: 600;
+            background: rgba(0, 0, 0, 0.2);
+        }
+
+        tbody tr { transition: background-color 0.2s ease; }
+        tbody tr:hover { background-color: rgba(255, 255, 255, 0.03); }
+        tbody tr:last-child td { border-bottom: none; }
+
+        .thread-title {
+            font-weight: 500;
+            max-width: 400px;
+            white-space: nowrap;
+            overflow: hidden;
+            text-overflow: ellipsis;
+        }
+        
+        .badge {
+            display: inline-block;
+            padding: 4px 8px;
+            border-radius: 20px;
+            font-size: 0.75rem;
+            font-weight: 500;
+            background: rgba(110, 90, 255, 0.15);
+            color: #b4a8ff;
+            border: 1px solid rgba(110, 90, 255, 0.3);
+        }
+
+        .tokens { font-variant-numeric: tabular-nums; font-weight: 500; }
+        
+        /* Loading animation */
+        .loading {
+            text-align: center;
+            padding: 60px;
+            color: var(--text-secondary);
+            font-size: 1.2rem;
+            animation: pulse 2s infinite;
+        }
+        @keyframes pulse {
+            0% { opacity: 0.5; }
+            50% { opacity: 1; }
+            100% { opacity: 0.5; }
+        }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <header style="display: flex; justify-content: space-between; align-items: flex-end;">
+            <div>
+                <h1>Codex State Viewer</h1>
+                <p style="color: var(--text-secondary);">Live analytics from local Codex sessions</p>
+            </div>
+            <div>
+                <select id="grouping-select" class="price-input" style="width: auto; padding: 8px 12px; font-size: 0.9rem;" onchange="if(window.currentThreads) window.renderTable(window.currentThreads)">
+                    <option value="thread">No Grouping</option>
+                    <option value="5hr">5-Hour Reset</option>
+                    <option value="day" selected>Daily</option>
+                    <option value="week">Weekly Reset</option>
+                </select>
+                <select id="period-select" class="price-input" style="width: auto; padding: 8px 12px; font-size: 0.9rem;" onchange="fetchData()">
+                    <option value="current_5_hour">Current 5 hour reset</option>
+                    <option value="previous_5_hour">Previous 5 hour reset</option>
+                    <option value="today">Today</option>
+                    <option value="current_reset">Current reset</option>
+                    <option value="previous_reset" selected>Previous reset</option>
+                    <option value="last_7_days">Last 7 days</option>
+                    <option value="last_30_days">Last 30 Days</option>
+                    <option value="all_time">All Time</option>
+                </select>
+            </div>
+        </header>
+
+        <!-- Stats Row -->
+        <div class="stats-grid" style="margin-bottom: 40px;">
+            <div class="stat-card">
+                <div class="stat-title" id="tokens-title">Used</div>
+                <div class="stat-value accent" id="total-tokens">...</div>
+                <div class="stat-title" style="margin-top: 16px;">Estimated Cost</div>
+                <div class="stat-value green" id="est-cost">$0.00</div>
+            </div>
+            <div class="stat-card">
+                <div style="display: grid; gap: 12px; margin-top: 4px;">
+                    <div>
+                        <div class="stat-title" style="margin-bottom: 4px;">Weekly Reset</div>
+                        <div class="stat-value accent" id="primary-window">...</div>
+                        <div style="color: var(--text-secondary);" id="primary-window-reset">...</div>
+                    </div>
+                </div>
+            </div>
+            <div class="stat-card">
+                <div class="stat-title">Reset Credits</div>
+                <div class="stat-value" id="reset-count">...</div>
+                <div class="reset-list" id="reset-list">...</div>
+            </div>
+            <div class="stat-card">
+                <div class="stat-title">Credits Used in Period</div>
+                <div class="stat-value green" id="weekly-credits-used">...</div>
+                <div class="reset-list">Calculated from selected reset period</div>
+            </div>
+        </div>
+
+        <!-- Charts Row -->
+        <div class="charts-grid">
+            <div class="chart-container">
+                <h3 class="stat-title" style="margin-bottom:16px;">Daily Usage (Tokens vs Credits)</h3>
+                <canvas id="barChart"></canvas>
+            </div>
+            <div class="chart-container" style="width: 300px; flex-shrink: 0;">
+                <h3 class="stat-title" style="margin-bottom:16px;">Tokens by Model</h3>
+                <canvas id="pieChart"></canvas>
+            </div>
+        </div>
+
+        <!-- Table Row -->
+        <div class="table-container">
+            <table>
+                <thead>
+                    <tr>
+                        <th>#</th>
+                        <th>Time</th>
+                        <th>Title</th>
+                        <th>Model</th>
+                        <th>Effort</th>
+                        <th>Input Tokens</th>
+                        <th>Cached Input</th>
+                        <th>Uncached Input</th>
+                        <th>Output Tokens</th>
+                        <th>Total Tokens</th>
+                        <th style="text-align: right;">Weekly Burn</th>
+                    </tr>
+                </thead>
+                <tbody id="table-body">
+                </tbody>
+            </table>
+        </div>
+    </div>
+
+    <script>
+        let currentTotalTokens = 0;
+        let barChartInstance = null;
+        let pieChartInstance = null;
+        
+        // Chart.js global defaults
+        Chart.defaults.color = '#a1a1aa';
+        Chart.defaults.font.family = "'Inter', sans-serif";
+        
+        // Cost Logic
+        function calculateTotalCost(threads) {
+            let totalCredits = 0;
+            threads.forEach(t => {
+                totalCredits += (t.credits || 0);
+            });
+            
+            // 1000 credits = $40 -> 1 credit = $0.04
+            const totalCost = totalCredits * 0.04;
+            document.getElementById('est-cost').innerText = '$' + totalCost.toFixed(2);
+        }
+
+        // Fetch Data
+        async function fetchData() {
+            const periodSelect = document.getElementById('period-select');
+            const period = periodSelect ? periodSelect.value : 'previous_reset';
+            localStorage.setItem('selectedPeriod', period);
+
+            // Render the selected period as soon as its request finishes.
+            fetch('/api/threads?period=' + period)
+                .then(response => response.json())
+                .then(result => {
+                    if (result.success) {
+                        currentTotalTokens = result.total_tokens;
+                        renderDashboard(result.data, result.total_tokens, result.start_date, result.end_date);
+                        calculateTotalCost(result.data);
+                        if (result.summary) renderSummary(result.summary);
+                        const selectedCredits = result.data.reduce((sum, thread) => sum + (Number(thread.credits) || 0), 0);
+                        document.getElementById('weekly-credits-used').innerText = selectedCredits.toFixed(2) + 'c';
+                    }
+                })
+                .catch(error => console.error("Thread fetch error:", error));
+        }
+
+        function formatTokens(num) {
+            if (num >= 1000000) return (num / 1000000).toFixed(1) + 'M';
+            if (num >= 1000) return (num / 1000).toFixed(1) + 'K';
+            return num.toString();
+        }
+
+        function escapeHtml(value) {
+            return String(value ?? '')
+                .replace(/&/g, '&amp;')
+                .replace(/</g, '&lt;')
+                .replace(/>/g, '&gt;')
+                .replace(/"/g, '&quot;')
+                .replace(/'/g, '&#39;');
+        }
+
+        function limitTitle(value, maxLength = 48) {
+            const title = String(value ?? '').trim() || 'Untitled';
+            return title.length > maxLength ? `${title.slice(0, maxLength - 1)}…` : title;
+        }
+
+        function limitMessage(value, maxLength = 180) {
+            const message = String(value ?? '').split(/\r?\n/)[0].trim();
+            return message.length > maxLength ? `${message.slice(0, maxLength - 1)}…` : message;
+        }
+
+        function renderSummary(summary) {
+            const primary = summary.primary_window || {};
+            const secondary = summary.secondary_window || {};
+            const resets = summary.reset_credits || {};
+
+            const setText = (id, value) => {
+                const element = document.getElementById(id);
+                if (element) element.innerText = value;
+            };
+
+            setText('primary-window', primary.used_percent != null ? `${primary.used_percent}%` : '—');
+            setText('primary-window-reset', primary.resets_in ? `Resets in ${primary.resets_in}` : 'Reset time unavailable');
+
+            setText('secondary-window', secondary.used_percent != null ? `${secondary.used_percent}%` : '—');
+            setText('secondary-window-reset', secondary.resets_in ? `Resets in ${secondary.resets_in}` : 'Reset time unavailable');
+
+            setText('reset-count', resets.available_count != null ? new Intl.NumberFormat().format(resets.available_count) : '—');
+            const credits = Array.isArray(resets.available_credits) ? resets.available_credits : [];
+            const resetList = document.getElementById('reset-list');
+            if (resetList) {
+                resetList.innerHTML = credits.length
+                    ? credits.map((credit, index) => `<div>${index + 1}. ${credit.expires_at_local || '—'}</div>`).join('')
+                    : 'No available reset found';
+            }
+        }
+
+        function renderDashboard(threads, totalTokens, startDateStr, endDateStr) {
+            const periodSelect = document.getElementById('period-select');
+            if (periodSelect) {
+                document.getElementById('tokens-title').innerText = 'Used';
+            }
+            
+            let globalCredits = 0;
+            threads.forEach(t => {
+                globalCredits += (t.credits || 0);
+            });
+            
+            document.getElementById('total-tokens').innerHTML = `${formatTokens(totalTokens)} <span style="font-size: 0.5em; color: var(--text-secondary); font-weight: normal; margin-left: 8px;">(${globalCredits.toFixed(2)}c)</span>`;
+            // --- Model Aggregation (Pie Chart) ---
+            const modelCounts = {};
+            const modelCredits = {};
+            threads.forEach(t => {
+                const m = t.model || "Default";
+                modelCounts[m] = (modelCounts[m] || 0) + t.tokens_used;
+                
+                let creds = t.credits || 0;
+                modelCredits[m] = (modelCredits[m] || 0) + creds;
+            });
+            
+            const pieLabels = Object.keys(modelCounts);
+            const pieDataTokens = Object.values(modelCounts);
+            const colors = ['#6e5aff', '#10b981', '#f59e0b', '#ec4899', '#3b82f6'];
+            
+            if (pieChartInstance) {
+                pieChartInstance.data.labels = pieLabels;
+                pieChartInstance.data.datasets[0].data = pieDataTokens;
+                pieChartInstance.update('none'); // Update without animation
+            } else {
+                const ctxPie = document.getElementById('pieChart').getContext('2d');
+                pieChartInstance = new Chart(ctxPie, {
+                    type: 'doughnut',
+                    data: {
+                        labels: pieLabels,
+                        datasets: [{
+                            data: pieDataTokens,
+                            backgroundColor: colors,
+                            borderWidth: 0,
+                            hoverOffset: 4
+                        }]
+                    },
+                    options: {
+                        responsive: true,
+                        maintainAspectRatio: false,
+                        plugins: { 
+                            legend: { position: 'bottom' },
+                            tooltip: {
+                                callbacks: {
+                                    label: function(context) {
+                                        const m = context.label;
+                                        const c = modelCredits[m] ? modelCredits[m].toFixed(2) : '0.00';
+                                        return m + ': ' + formatTokens(context.raw) + ' (' + c + 'c)';
+                                    }
+                                }
+                            }
+                        }
+                    }
+                });
+            }
+            
+            // --- Daily Aggregation (Stacked Bar Chart by Model) ---
+            const dailyModelData = {};
+            const dailyModelCredits = {};
+            const uniqueModels = new Set();
+            const period = document.getElementById('period-select') ? document.getElementById('period-select').value : 'previous_reset';
+            
+            if (period === 'all_time') {
+                threads.forEach(t => {
+                    const date = new Date(t.updated_at);
+                    if(!isNaN(date)) {
+                        const dateStr = date.toLocaleDateString(undefined, { month: 'short', day: 'numeric' });
+                        if (!dailyModelData[dateStr]) dailyModelData[dateStr] = {};
+                        if (!dailyModelCredits[dateStr]) dailyModelCredits[dateStr] = {};
+                    }
+                });
+            } else {
+                const start = new Date(startDateStr);
+                const end = new Date(endDateStr);
+                start.setHours(0,0,0,0);
+                end.setHours(0,0,0,0);
+                let curr = new Date(start);
+                while (curr <= end) {
+                    const dateStr = curr.toLocaleDateString(undefined, { month: 'short', day: 'numeric' });
+                    dailyModelData[dateStr] = {};
+                    dailyModelCredits[dateStr] = {};
+                    curr.setDate(curr.getDate() + 1);
+                }
+            }
+
+            threads.forEach(t => {
+                const date = new Date(t.updated_at);
+                if(!isNaN(date)) {
+                    const dateStr = date.toLocaleDateString(undefined, { month: 'short', day: 'numeric' });
+                    if (dailyModelData[dateStr] !== undefined) {
+                        const m = t.model || "Default";
+                        uniqueModels.add(m);
+                        if (!dailyModelData[dateStr][m]) dailyModelData[dateStr][m] = 0;
+                        if (!dailyModelCredits[dateStr][m]) dailyModelCredits[dateStr][m] = 0;
+                        
+                        let creds = t.credits || 0;
+                        
+                        dailyModelData[dateStr][m] += t.tokens_used;
+                        dailyModelCredits[dateStr][m] += creds;
+                    }
+                }
+            });
+            
+            // Tokens Datasets
+            const tokenDatasets = Array.from(uniqueModels).map((model, index) => {
+                const data = Object.keys(dailyModelData).map(date => dailyModelData[date][model] || 0);
+                return {
+                    label: model,
+                    data: data,
+                    backgroundColor: colors[index % colors.length],
+                    borderRadius: 2,
+                    stack: 'Tokens',
+                    hoverBackgroundColor: colors[index % colors.length]
+                };
+            });
+
+            // Credits Datasets
+            const creditDatasets = Array.from(uniqueModels).map((model, index) => {
+                const data = Object.keys(dailyModelData).map(date => dailyModelCredits[date][model] || 0);
+                return {
+                    label: model,
+                    data: data,
+                    backgroundColor: colors[index % colors.length],
+                    borderRadius: 2,
+                    stack: 'Credits',
+                    yAxisID: 'y2',
+                    hoverBackgroundColor: colors[index % colors.length]
+                };
+            });
+            
+            const allDatasets = [...tokenDatasets, ...creditDatasets];
+            const labels = Object.keys(dailyModelData);
+            
+            // Tokens & Credits Bar Chart
+            if (barChartInstance) {
+                barChartInstance.data.labels = labels;
+                barChartInstance.data.datasets = allDatasets;
+                barChartInstance.update('none'); // Update without animation to prevent flicker
+            } else {
+                const ctxBar = document.getElementById('barChart').getContext('2d');
+                barChartInstance = new Chart(ctxBar, {
+                    type: 'bar',
+                    data: {
+                        labels: labels,
+                        datasets: allDatasets
+                    },
+                    options: {
+                        responsive: true,
+                        maintainAspectRatio: false,
+                        interaction: {
+                            mode: 'index',
+                            intersect: false,
+                        },
+                        scales: {
+                            y: { 
+                                type: 'linear',
+                                display: true,
+                                position: 'left',
+                                beginAtZero: true, 
+                                stacked: true,
+                                grid: { color: 'rgba(255, 255, 255, 0.05)' },
+                                ticks: { callback: function(val) { return formatTokens(val); } }
+                            },
+                            y2: {
+                                type: 'linear',
+                                display: true,
+                                position: 'right',
+                                beginAtZero: true,
+                                stacked: true,
+                                grid: { display: false },
+                                ticks: { callback: function(val) { return val.toFixed(2) + 'c'; } }
+                            },
+                            x: { 
+                                stacked: true,
+                                grid: { display: false } 
+                            }
+                        },
+                        plugins: { 
+                            legend: { 
+                                display: true, 
+                                position: 'bottom',
+                                labels: { 
+                                    usePointStyle: true, 
+                                    boxWidth: 8,
+                                    filter: function(item, chartData) {
+                                        return item.datasetIndex < (chartData.datasets.length / 2);
+                                    }
+                                }
+                            },
+                            tooltip: {
+                                callbacks: {
+                                    label: function(context) {
+                                        let val = context.raw;
+                                        let isCredit = context.dataset.stack === 'Credits';
+                                        if (isCredit) {
+                                            return context.dataset.label + ' (Credits): ' + val.toFixed(2) + 'c';
+                                        } else {
+                                            return context.dataset.label + ' (Tokens): ' + formatTokens(val);
+                                        }
+                                    }
+                                }
+                            }
+                        }
+                    }
+                });
+            }
+
+            // --- Render Table ---
+            window.renderTable = (threads) => {
+                const table = document.querySelector('.table-container table');
+                Array.from(table.querySelectorAll('tbody')).forEach(tbody => tbody.remove());
+                
+                const groupMode = document.getElementById('grouping-select') ? document.getElementById('grouping-select').value : 'day';
+                
+                let sumInput = 0, sumCached = 0, sumUncached = 0, sumOutput = 0, sumCredits = 0, sumTotal = 0;
+                let sumCachedC = 0, sumUncachedC = 0, sumOutputC = 0;
+                
+                let subInput = 0, subCached = 0, subUncached = 0, subOutput = 0, subCredits = 0, subTotal = 0;
+                let subCachedC = 0, subUncachedC = 0, subOutputC = 0;
+                
+                let lastGroupKey = null;
+                const currentTbody = document.createElement('tbody');
+                table.appendChild(currentTbody);
+                
+                let newestGroupThread = null;
+                let oldestGroupThread = null;
+                
+                const renderSubtotal = (groupLabel) => {
+                    if (groupMode === 'thread') return;
+                    
+                    const tr = document.createElement('tr');
+                    tr.style.fontWeight = 'bold';
+                    tr.style.backgroundColor = 'rgba(255, 255, 255, 0.02)';
+                    
+                    let burnCol1 = "";
+                    let burnCol2 = "";
+                    let burnPrim = "0.00";
+                    if (newestGroupThread && oldestGroupThread && newestGroupThread.last_prim !== undefined && oldestGroupThread.first_prim !== undefined && newestGroupThread.last_prim >= oldestGroupThread.first_prim) {
+                        burnPrim = (newestGroupThread.last_prim - oldestGroupThread.first_prim).toFixed(2);
+                    }
+                    let burnSec = "0.00";
+                    if (newestGroupThread && oldestGroupThread && newestGroupThread.last_sec !== undefined && oldestGroupThread.first_sec !== undefined && newestGroupThread.last_sec >= oldestGroupThread.first_sec) {
+                        burnSec = (newestGroupThread.last_sec - oldestGroupThread.first_sec).toFixed(2);
+                    }
+                    
+                    if (groupMode === '5hr') {
+                        burnCol1 = `+${burnPrim}%`;
+                    } else if (groupMode === 'week') {
+                        burnCol2 = `+${burnSec}%`;
+                    } else if (groupMode === 'day') {
+                        burnCol2 = `+${burnSec}%`;
+                    }
+                    
+                    tr.innerHTML = `
+                        <td colspan="4" style="text-align: right; color: var(--accent); font-size: 0.8rem;">Subtotal ${groupLabel} (${subCredits.toFixed(2)}c)</td>
+                        <td class="tokens" style="font-size: 0.8rem; color: var(--accent);">
+                            ${formatTokens(subInput)}
+                            <span style="color:var(--text-secondary); font-size:0.7rem; font-weight:normal; margin-left:4px;">${(subCachedC + subUncachedC).toFixed(2)}c</span>
+                        </td>
+                        <td class="tokens" style="font-size: 0.8rem; color: var(--accent);">
+                            ${formatTokens(subCached)}
+                            <span style="color:var(--text-secondary); font-size:0.7rem; font-weight:normal; margin-left:4px;">${subCachedC.toFixed(2)}c</span>
+                        </td>
+                        <td class="tokens" style="font-size: 0.8rem; color: var(--accent);">
+                            ${formatTokens(subUncached)}
+                            <span style="color:var(--text-secondary); font-size:0.7rem; font-weight:normal; margin-left:4px;">${subUncachedC.toFixed(2)}c</span>
+                        </td>
+                        <td class="tokens" style="font-size: 0.8rem; color: var(--accent);">
+                            ${formatTokens(subOutput)}
+                            <span style="color:var(--text-secondary); font-size:0.7rem; font-weight:normal; margin-left:4px;">${subOutputC.toFixed(2)}c</span>
+                        </td>
+                        <td class="tokens" style="font-size: 0.8rem; color: var(--accent);">
+                            ${formatTokens(subTotal)}
+                            <span style="color:var(--text-secondary); font-size:0.7rem; font-weight:normal; margin-left:4px;">${subCredits.toFixed(2)}c</span>
+                        </td>
+                        <td style="text-align: right; color: var(--accent); font-size: 0.8rem;">${burnCol1}</td>
+                        <td style="text-align: right; color: var(--accent); font-size: 0.8rem;">${burnCol2}</td>
+                    `;
+                    currentTbody.appendChild(tr);
+                    subInput = 0; subCached = 0; subUncached = 0; subOutput = 0; subCredits = 0; subTotal = 0;
+                    subCachedC = 0; subUncachedC = 0; subOutputC = 0;
+                    newestGroupThread = null; oldestGroupThread = null;
+                };
+
+                threads.forEach((thread, index) => {
+                    const date = new Date(thread.updated_at);
+                    const dateStr = isNaN(date) ? "Unknown" : date.toLocaleString(undefined, {
+                        month: 'short', day: 'numeric', hour: '2-digit', minute: '2-digit'
+                    });
+                    
+                    let groupKey = "All";
+                    let groupLabel = "All";
+                    
+                    if (groupMode === 'day') {
+                        groupKey = isNaN(date) ? "Unknown" : date.toLocaleDateString(undefined, { month: 'short', day: 'numeric' });
+                        groupLabel = groupKey;
+                    } else if (groupMode === '5hr') {
+                        groupKey = thread.prim_reset || "Unknown";
+                        if (groupKey !== "Unknown") {
+                            groupLabel = new Date(groupKey * 1000).toLocaleString(undefined, { month: 'short', day: 'numeric', hour: '2-digit', minute: '2-digit' });
+                        }
+                    } else if (groupMode === 'week') {
+                        groupKey = thread.sec_reset || "Unknown";
+                        if (groupKey !== "Unknown") {
+                            groupLabel = new Date(groupKey * 1000).toLocaleDateString(undefined, { month: 'short', day: 'numeric' });
+                        }
+                    } else {
+                        groupKey = "thread";
+                        groupLabel = "thread";
+                    }
+                    
+                    if (lastGroupKey !== null && lastGroupKey !== groupKey) {
+                        renderSubtotal(lastGroupKey);
+                    }
+                    if (lastGroupKey !== groupKey) {
+                        newestGroupThread = thread;
+                    }
+                    oldestGroupThread = thread;
+                    
+                    lastGroupKey = groupKey;
+                    
+                    // Token logic
+                    const input = thread.input_tokens || 0;
+                    const cached = thread.cached_tokens || 0;
+                    const output = thread.output_tokens || 0;
+                    const uncached = Math.max(0, input - cached);
+                    const creds = thread.credits || 0;
+                    
+                    sumInput += input;
+                    sumCached += cached;
+                    sumUncached += uncached;
+                    sumOutput += output;
+                    sumCredits += creds;
+                    sumTotal += thread.tokens_used;
+                    
+                    sumCachedC += (thread.cached_credits || 0);
+                    sumUncachedC += (thread.uncached_credits || 0);
+                    sumOutputC += (thread.output_credits || 0);
+                    
+                    subInput += input;
+                    subCached += cached;
+                    subUncached += uncached;
+                    subOutput += output;
+                    subCredits += creds;
+                    subTotal += thread.tokens_used;
+                    
+                    subCachedC += (thread.cached_credits || 0);
+                    subUncachedC += (thread.uncached_credits || 0);
+                    subOutputC += (thread.output_credits || 0);
+                    
+                    // Effort Badge Style
+                    let effortColor = '#e5e7eb';
+                    let effortBg = '#f3f4f6';
+                    let effortText = '#374151';
+                    if (thread.effort === 'low') {
+                        effortBg = '#d1fae5';
+                        effortText = '#065f46';
+                    } else if (thread.effort === 'medium') {
+                        effortBg = '#fef3c7';
+                        effortText = '#92400e';
+                    } else if (thread.effort === 'high') {
+                        effortBg = '#fee2e2';
+                        effortText = '#991b1b';
+                    }
+
+                    let primBurnText = "-";
+                    if (thread.first_prim !== null && thread.last_prim !== null && thread.first_prim !== undefined && thread.last_prim !== undefined) {
+                        const diff = thread.last_prim - thread.first_prim;
+                        if (diff > 0) {
+                            const rate = creds / diff;
+                            primBurnText = `+${diff.toFixed(2)}%<br><span style="color:var(--text-secondary); font-size:0.7rem;">(${rate.toFixed(1)}c / %)</span>`;
+                        } else if (diff === 0) {
+                            primBurnText = `0%`;
+                        } else {
+                            primBurnText = `<span style="color:var(--text-secondary); font-style:italic;">Reset</span>`;
+                        }
+                    }
+                    
+                    let secBurnText = "-";
+                    if (thread.first_sec !== null && thread.last_sec !== null && thread.first_sec !== undefined && thread.last_sec !== undefined) {
+                        const diff = thread.last_sec - thread.first_sec;
+                        if (diff > 0) {
+                            const rate = creds / diff;
+                            secBurnText = `+${diff.toFixed(2)}%<br><span style="color:var(--text-secondary); font-size:0.7rem;">(${rate.toFixed(1)}c / %)</span>`;
+                        } else if (diff === 0) {
+                            secBurnText = `0%`;
+                        } else {
+                            secBurnText = `<span style="color:var(--text-secondary); font-style:italic;">Reset</span>`;
+                        }
+                    }
+
+                    const tr = document.createElement('tr');
+                    const detailRowId = `thread-details-${thread.id}`;
+                    tr.innerHTML = `
+                        <td style="color: var(--text-secondary); font-size: 0.875rem;">
+                            <button type="button" data-thread-details-target="${detailRowId}" style="border:1px solid var(--border-color); background:transparent; color:var(--text-secondary); border-radius:6px; width:24px; height:24px; line-height:1; cursor:pointer;">+</button>
+                            <span style="margin-left:6px;">${index + 1}</span>
+                        </td>
+                        <td style="color: var(--text-secondary); font-size: 0.875rem;">${dateStr}</td>
+                        <td>
+                            <div style="display:flex; flex-direction:column; gap:2px; line-height:1.2;">
+                                <span title="${escapeHtml(thread.title || 'Untitled')}" style="color: var(--text-primary); font-size: 0.875rem; white-space: nowrap;">${escapeHtml(limitTitle(thread.title || 'Untitled'))}</span>
+                            </div>
+                        </td>
+                        <td>
+                            <div style="display:flex; flex-direction:column; gap:2px; line-height:1.2;">
+                                <span style="color: var(--text-primary); font-size: 0.875rem; white-space: nowrap;">${thread.model ? thread.model : 'Default'}</span>
+                                <span style="color: var(--text-secondary); font-size: 0.72rem; white-space: nowrap;">Models seen: ${(thread.models_seen && thread.models_seen.length) ? thread.models_seen.join(', ') : 'Default'}</span>
+                            </div>
+                        </td>
+                        <td><span class="badge" style="background-color: ${effortBg}; color: ${effortText}; font-size: 0.75rem; padding: 2px 8px; font-weight: 600; text-transform: lowercase;">${thread.effort || '-'}</span></td>
+                        <td class="tokens" title="${new Intl.NumberFormat().format(input)}">
+                            ${formatTokens(input)}
+                            <span style="color:var(--text-secondary); font-size:0.75rem; margin-left:4px;">${((thread.cached_credits || 0) + (thread.uncached_credits || 0)).toFixed(2)}c</span>
+                        </td>
+                        <td class="tokens" title="${new Intl.NumberFormat().format(cached)}">
+                            ${formatTokens(cached)}
+                            <span style="color:var(--text-secondary); font-size:0.75rem; margin-left:4px;">${(thread.cached_credits || 0).toFixed(2)}c</span>
+                        </td>
+                        <td class="tokens" title="${new Intl.NumberFormat().format(uncached)}">
+                            ${formatTokens(uncached)}
+                            <span style="color:var(--text-secondary); font-size:0.75rem; margin-left:4px;">${(thread.uncached_credits || 0).toFixed(2)}c</span>
+                        </td>
+                        <td class="tokens" title="${new Intl.NumberFormat().format(output)}">
+                            ${formatTokens(output)}
+                            <span style="color:var(--text-secondary); font-size:0.75rem; margin-left:4px;">${(thread.output_credits || 0).toFixed(2)}c</span>
+                        </td>
+                        <td class="tokens" style="font-weight: bold;" title="${new Intl.NumberFormat().format(thread.tokens_used)}">
+                            ${formatTokens(thread.tokens_used)}
+                            <span style="color:var(--text-secondary); font-size:0.75rem; margin-left:4px;">${(thread.credits || 0).toFixed(2)}c</span>
+                        </td>
+                        <td style="text-align: right; font-size: 0.875rem;">${primBurnText}</td>
+                    `;
+                    currentTbody.appendChild(tr);
+
+                    const detailTr = document.createElement('tr');
+                    detailTr.id = detailRowId;
+                    detailTr.style.display = 'none';
+                    detailTr.style.backgroundColor = 'rgba(255, 255, 255, 0.02)';
+                    const modelsSeenText = (thread.models_seen && thread.models_seen.length) ? thread.models_seen.join(', ') : 'None';
+                    const rowDay = isNaN(date) ? null : date.toISOString().slice(0, 10);
+                    const messages = (Array.isArray(thread.messages) ? thread.messages : [])
+                        .filter(message => {
+                            if (!rowDay || !message.timestamp) return false;
+                            const messageDay = new Date(message.timestamp).toISOString().slice(0, 10);
+                            return messageDay === rowDay;
+                        });
+                    const messagesHtml = messages.length
+                        ? messages.map((message) => {
+                            const messageDate = new Date(message.timestamp);
+                            const messageTime = isNaN(messageDate) ? (message.timestamp || '') : messageDate.toLocaleString(undefined, {
+                                month: 'short', day: 'numeric', hour: '2-digit', minute: '2-digit'
+                            });
+                            return `
+                            <div style="display:grid; grid-template-columns:210px 100px minmax(0, 1fr); gap:12px; align-items:center; padding:8px 0; border-top:1px solid rgba(255,255,255,0.06);">
+                                <span style="font-size:0.72rem; color:var(--text-secondary); white-space:nowrap;">${escapeHtml(messageTime)}</span>
+                                <span style="font-size:0.72rem; color:var(--text-secondary); white-space:nowrap;">${escapeHtml(message.type || 'message')}</span>
+                                <div title="${escapeHtml(String(message.text || '').split(/\r?\n/)[0].trim())}" style="min-width:0; margin:0; white-space:nowrap; overflow:hidden; text-overflow:ellipsis; color:var(--text-primary); font-size:0.85rem; line-height:1.45;">${escapeHtml(limitMessage(message.text || ''))}</div>
+                            </div>
+                        `;
+                        }).join('')
+                        : '<div style="color:var(--text-secondary); font-size:0.85rem;">No message text found.</div>';
+                    detailTr.innerHTML = `
+                        <td colspan="11" style="padding:0 16px 16px 16px;">
+                            <div style="border:1px solid var(--border-color); border-radius:8px; padding:12px 14px; background:rgba(255,255,255,0.02);">
+                                <div style="display:flex; flex-wrap:wrap; gap:16px; margin-bottom:10px; color:var(--text-secondary); font-size:0.8rem;">
+                                    <span><strong style="color:var(--text-primary);">Models seen:</strong> ${escapeHtml(modelsSeenText)}</span>
+                                </div>
+                                <div style="max-height:320px; overflow:auto;">
+                                    ${messagesHtml}
+                                </div>
+                            </div>
+                        </td>
+                    `;
+                    currentTbody.appendChild(detailTr);
+                    tr.querySelector('[data-thread-details-target]')?.addEventListener('click', (event) => {
+                        const button = event.currentTarget;
+                        const targetId = button.getAttribute('data-thread-details-target');
+                        const targetRow = document.getElementById(targetId);
+                        if (!targetRow) return;
+                        const isOpen = targetRow.style.display !== 'none';
+                        targetRow.style.display = isOpen ? 'none' : 'table-row';
+                        button.textContent = isOpen ? '+' : '−';
+                    });
+                });
+                
+                // Add Total Row
+                if (threads.length > 0) {
+                    if (lastGroupKey !== null) renderSubtotal(lastGroupKey);
+                    
+                    const oldestAll = threads[threads.length - 1];
+                    const newestAll = threads[0];
+                    let overallSec = "0.00";
+                    if (newestAll.last_sec !== undefined && oldestAll.first_sec !== undefined && newestAll.last_sec >= oldestAll.first_sec) {
+                        overallSec = (newestAll.last_sec - oldestAll.first_sec).toFixed(2);
+                    }
+                    
+                    const tr = document.createElement('tr');
+                    tr.style.fontWeight = 'bold';
+                    tr.style.backgroundColor = 'rgba(255, 255, 255, 0.05)';
+                    tr.style.borderTop = '2px solid var(--border-color)';
+                    tr.innerHTML = `
+                        <td colspan="4" style="text-align: right; color: var(--text-primary);">Total ${threads.length} Threads</td>
+                        <td class="tokens">
+                            ${formatTokens(sumInput)}
+                            <span style="color:var(--text-secondary); font-size:0.75rem; font-weight:normal; margin-left:4px;">${(sumCachedC + sumUncachedC).toFixed(2)}c</span>
+                        </td>
+                        <td class="tokens">
+                            ${formatTokens(sumCached)}
+                            <span style="color:var(--text-secondary); font-size:0.75rem; font-weight:normal; margin-left:4px;">${sumCachedC.toFixed(2)}c</span>
+                        </td>
+                        <td class="tokens">
+                            ${formatTokens(sumUncached)}
+                            <span style="color:var(--text-secondary); font-size:0.75rem; font-weight:normal; margin-left:4px;">${sumUncachedC.toFixed(2)}c</span>
+                        </td>
+                        <td class="tokens">
+                            ${formatTokens(sumOutput)}
+                            <span style="color:var(--text-secondary); font-size:0.75rem; font-weight:normal; margin-left:4px;">${sumOutputC.toFixed(2)}c</span>
+                        </td>
+                        <td class="tokens">
+                            ${formatTokens(sumTotal)}
+                            <span style="color:var(--text-secondary); font-size:0.75rem; font-weight:normal; margin-left:4px;">${sumCredits.toFixed(2)}c</span>
+                        </td>
+                        <td></td>
+                        <td style="text-align: right; color: var(--text-primary); font-size: 0.875rem;">+${overallSec}%</td>
+                    `;
+                    currentTbody.appendChild(tr);
+                }
+            };
+            
+            window.currentThreads = threads;
+            window.renderTable(threads);
+        }
+
+        // Init
+        const savedPeriod = localStorage.getItem('selectedPeriod');
+        if (savedPeriod) {
+            const select = document.getElementById('period-select');
+            if (select) select.value = savedPeriod;
+        }
+        fetchData();
+    </script>
+</body>
+</html>
